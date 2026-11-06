@@ -77,7 +77,7 @@ def aql_plan(db: Session, lot_size: float, aql: float, level: str = "II", severi
 
 def sampling_for_line(
     db: Session, *, lot_size: float, classification: str, sampling_type: str, aql: float | None,
-    level: str, severity: str, fixed_sample_size: int | None,
+    level: str, severity: str, fixed_sample_size: int | None, double_fixed_when_tightened: bool = False,
 ) -> SamplingResult:
     lot_units = max(1, int(math.ceil(lot_size)))
     if classification == "critical":
@@ -85,7 +85,13 @@ def sampling_for_line(
     if sampling_type == "full":
         return SamplingResult(sample_size=lot_units, accept_number=0, reject_number=1, basis="100% inspection")
     if sampling_type == "fixed":
-        n = min(lot_units, max(1, int(fixed_sample_size or 1)))
+        base_n = max(1, int(fixed_sample_size or 1))
+        if severity == "tightened" and double_fixed_when_tightened:
+            # Standard checklist F/STR/01 only: on an abnormal result / customer complaint the sample is doubled.
+            n = min(lot_units, base_n * 2)
+            return SamplingResult(sample_size=n, accept_number=0, reject_number=1,
+                                  basis=f"Fixed sample of {base_n} doubled to {n} (tightened inspection), accept 0")
+        n = min(lot_units, base_n)
         return SamplingResult(sample_size=n, accept_number=0, reject_number=1, basis=f"Fixed sample of {n}, accept 0")
     if aql is None:
         raise ValueError("This plan uses AQL sampling but no AQL is set on the plan or the line — set one in the inspection plan.")

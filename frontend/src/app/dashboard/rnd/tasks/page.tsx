@@ -8,7 +8,7 @@
 // Project Management › My Tasks. People without the "All R&D tasks & analytics"
 // feature (and who are not heads) see only the tasks assigned to or created by them.
 
-import Select from '@/components/shared/Select'
+import FilterMenu from '@/components/shared/FilterMenu'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -16,8 +16,6 @@ import { rndApi, usersApi } from '@/lib/api'
 import { DirectoryUser } from '@/types'
 import { TEXT } from '@/lib/theme'
 import { primaryBtnStyle, secondaryBtnStyle, inputStyle as sharedInputStyle } from '@/components/shared/ui'
-import { FiltersButton, FiltersSheet } from '@/components/p2p/POTrackingShared'
-import { sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import DateField from '@/components/erp/DateField'
 import RndNav from '@/components/rnd/RndNav'
 import TaskCreateSheet from '@/components/rnd/TaskCreateSheet'
@@ -73,8 +71,6 @@ export default function RndTasksPage() {
   const router = useRouter()
 
   const [applied, setApplied] = useState<Draft>(EMPTY)
-  const [draft, setDraft] = useState<Draft>(EMPTY)
-  const [showFilters, setShowFilters] = useState(false)
   const [search, setSearch] = useState('')
   const [view, setView] = useState<TaskView>('task')
   const [page, setPage] = useState(1)
@@ -130,10 +126,8 @@ export default function RndTasksPage() {
   const activeCount = Object.values(applied).filter(Boolean).length
   const seesAll = canFeature('rnd', 'tasks', 'analytics', 'view')
 
-  const openFilters = () => { setDraft(applied); setShowFilters(true) }
-  const apply = () => { setApplied(draft); setShowFilters(false) }
-  const clear = () => { setApplied(EMPTY); setDraft(EMPTY); setSearch(''); setShowFilters(false) }
-  const set = (patch: Partial<Draft>) => setDraft((d) => ({ ...d, ...patch }))
+  const clear = () => { setApplied(EMPTY); setSearch('') }
+  const set = (patch: Partial<Draft>) => setApplied((d) => ({ ...d, ...patch }))
 
   // Opens the task's parent through a signed ref — never a raw id; an edited link shows "Invalid link".
   const openTask = (t: RndTaskRow) => {
@@ -181,74 +175,32 @@ export default function RndTasksPage() {
         )}
         <input data-tour="rnd-tasks-search" aria-label="Search R&D tasks" style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }}
           placeholder="Search task, R&D ID, project or person…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <FiltersButton count={activeCount} onOpen={openFilters} tour="rnd-tasks-filter-btn" />
+        <FilterMenu
+          tourId="rnd-tasks-filter-btn"
+          fields={[
+            { key: 'parent', label: 'Project / requirement', value: applied.parent, allLabel: 'All projects and requirements',
+              options: [
+                ...projs.map((o) => ({ value: o.value, label: `Prototype / Research · ${o.label}` })),
+                ...pmProjs.map((o) => ({ value: o.value, label: `All Projects · ${o.label}` })),
+                ...reqs.map((o) => ({ value: o.value, label: `Requirement · ${o.label}` })),
+              ] },
+            { key: 'user', label: 'Assigned user', value: applied.user, allLabel: 'Everyone', options: sortedUsers.map((u) => ({ value: String(u.id), label: u.name })) },
+            { key: 'department', label: 'Department', value: applied.department, allLabel: 'All departments', options: departments.map((d) => ({ value: d, label: d })) },
+            { key: 'type', label: 'Type', value: applied.type, allLabel: 'Requirement, Prototype and Project',
+              options: [{ value: 'requirement', label: 'Requirement' }, { value: 'prototype', label: 'Prototype' }, { value: 'project', label: 'Project' }] },
+            { key: 'status', label: 'Status', value: applied.status, allLabel: 'All (cancelled hidden)', options: STATUS_OPTIONS },
+            { key: 'priority', label: 'Priority', value: applied.priority, allLabel: 'All priorities', options: PRIORITY_OPTIONS.map((o) => ({ value: o.value, label: o.label })) },
+            { key: 'band', label: 'Completion progress', value: applied.band, allLabel: 'Any progress', options: BAND_OPTIONS },
+          ]}
+          onChange={(key, v) => set({ [key]: v } as Partial<Draft>)}
+          onClear={() => setApplied((d) => ({ ...EMPTY, from: d.from, to: d.to }))}
+        />
+        <div data-tour="rnd-tasks-due-range" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ width: 150 }}><DateField value={applied.from} onChange={(v) => set({ from: v })} placeholder="Due from" /></div>
+          <div style={{ width: 150 }}><DateField value={applied.to} onChange={(v) => set({ to: v })} placeholder="Due to" /></div>
+        </div>
         {(activeCount > 0 || search) && <button type="button" onClick={clear} style={secondaryBtnStyle}>Clear</button>}
       </div>
-
-      {showFilters && (
-        <FiltersSheet subtitle="Narrow the tasks, tiles and grouped views together, then press Apply." tour="rnd-tasks-filter-sheet" applyTour="rnd-tasks-apply-btn"
-          onClose={() => setShowFilters(false)} onClear={clear} onApply={apply}>
-          <div>
-            <label style={sheetLabel}>Project / requirement</label>
-            <Select data-tour="rnd-tasks-f-parent" style={sheetInput} value={draft.parent} onChange={(e) => set({ parent: e.target.value })}>
-              <option value="">All projects and requirements</option>
-              {projs.length > 0 && <optgroup label="Prototype / Research">{projs.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</optgroup>}
-              {pmProjs.length > 0 && <optgroup label="All Projects">{pmProjs.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</optgroup>}
-              {reqs.length > 0 && <optgroup label="Requirements (R&D ID)">{reqs.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</optgroup>}
-            </Select>
-          </div>
-          <div>
-            <label style={sheetLabel}>Assigned user</label>
-            <Select data-tour="rnd-tasks-f-user" style={sheetInput} value={draft.user} onChange={(e) => set({ user: e.target.value })}>
-              <option value="">Everyone</option>
-              {sortedUsers.map((u) => <option key={u.id} value={String(u.id)}>{u.name}</option>)}
-            </Select>
-          </div>
-          <div>
-            <label style={sheetLabel}>Department</label>
-            <Select data-tour="rnd-tasks-f-department" style={sheetInput} value={draft.department} onChange={(e) => set({ department: e.target.value })}>
-              <option value="">All departments</option>
-              {departments.map((d) => <option key={d} value={d}>{d}</option>)}
-            </Select>
-          </div>
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <div style={{ flex: '1 1 160px' }}>
-              <label style={sheetLabel}>Type</label>
-              <Select data-tour="rnd-tasks-f-type" style={sheetInput} value={draft.type} onChange={(e) => set({ type: e.target.value })}>
-                <option value="">Requirement, Prototype and Project</option>
-                <option value="requirement">Requirement</option>
-                <option value="prototype">Prototype</option>
-                <option value="project">Project</option>
-              </Select>
-            </div>
-            <div style={{ flex: '1 1 160px' }}>
-              <label style={sheetLabel}>Status</label>
-              <Select data-tour="rnd-tasks-f-status" style={sheetInput} value={draft.status} onChange={(e) => set({ status: e.target.value })}>
-                <option value="">All (cancelled hidden)</option>
-                {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </Select>
-            </div>
-            <div style={{ flex: '1 1 140px' }}>
-              <label style={sheetLabel}>Priority</label>
-              <Select data-tour="rnd-tasks-f-priority" style={sheetInput} value={draft.priority} onChange={(e) => set({ priority: e.target.value })}>
-                <option value="">All priorities</option>
-                {PRIORITY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </Select>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <div style={{ flex: '1 1 160px' }}><label style={sheetLabel}>Due from</label><DateField value={draft.from} onChange={(v) => set({ from: v })} placeholder="Any" /></div>
-            <div style={{ flex: '1 1 160px' }}><label style={sheetLabel}>Due to</label><DateField value={draft.to} onChange={(v) => set({ to: v })} placeholder="Any" /></div>
-          </div>
-          <div>
-            <label style={sheetLabel}>Completion progress</label>
-            <Select data-tour="rnd-tasks-f-band" style={sheetInput} value={draft.band} onChange={(e) => set({ band: e.target.value })}>
-              <option value="">Any progress</option>
-              {BAND_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </Select>
-          </div>
-        </FiltersSheet>
-      )}
 
       <RndTaskAnalyticsView rows={rows} total={total} analytics={analytics} view={view} onView={setView}
         onOpenTask={openTask} onOpenGroup={openGroup} page={page} pageSize={PAGE_SIZE} onPage={setPage} />

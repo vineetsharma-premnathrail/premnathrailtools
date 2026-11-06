@@ -1,6 +1,6 @@
 'use client'
 
-import Select from '@/components/shared/Select'
+import FilterMenu from '@/components/shared/FilterMenu'
 import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -8,8 +8,6 @@ import { rndApi } from '@/lib/api'
 import { RndProject } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import { primaryBtnStyle, secondaryBtnStyle, RowCount, inputStyle as sharedInputStyle, pillStyle } from '@/components/shared/ui'
-import { FiltersButton, FiltersSheet } from '@/components/p2p/POTrackingShared'
-import { sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import RndNav from '@/components/rnd/RndNav'
 import { recordPath } from '@/lib/recordRef'
 import { extractErrorMessages } from '@/lib/validation'
@@ -60,18 +58,8 @@ function RndProjectList() {
   const [statusFilter, setStatusFilter] = useState('')
   const [priorityFilter, setPriorityFilter] = useState('')
   const [originFilter, setOriginFilter] = useState('')
-  // The Filters popup edits a draft; Apply copies it into the live filters.
-  const [showFilters, setShowFilters] = useState(false)
-  const [draft, setDraft] = useState({ stage: '', status: '', priority: '', origin: '' })
   const activeFilterCount = [stageFilter, statusFilter, priorityFilter, originFilter].filter(Boolean).length
-  const openFilters = () => { setDraft({ stage: stageFilter, status: statusFilter, priority: priorityFilter, origin: originFilter }); setShowFilters(true) }
-  const applyFilters = () => {
-    setStageFilter(draft.stage); setStatusFilter(draft.status); setPriorityFilter(draft.priority); setOriginFilter(draft.origin); setShowFilters(false)
-  }
-  const clearFilters = () => {
-    setStageFilter(''); setStatusFilter(''); setPriorityFilter(''); setOriginFilter('')
-    setDraft({ stage: '', status: '', priority: '', origin: '' }); setShowFilters(false)
-  }
+  const clearFilters = () => { setStageFilter(''); setStatusFilter(''); setPriorityFilter(''); setOriginFilter('') }
 
   useEffect(() => {
     if (!isAuthorized) return
@@ -103,7 +91,7 @@ function RndProjectList() {
         </div>
       )}
 
-      {/* One toolbar row: create on the left, search + Filters (popup) next to it — same as the Procurement lists. */}
+      {/* One toolbar row: create on the left, search + Filter menu next to it — same as the Procurement lists. */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
         {can('rnd', 'projects', 'create') && (
           <button
@@ -123,43 +111,24 @@ function RndProjectList() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <FiltersButton count={activeFilterCount} onOpen={openFilters} tour="rnd-proj-filter-btn" />
+        <FilterMenu
+          tourId="rnd-proj-filter-btn"
+          fields={[
+            { key: 'stage', label: 'Stage', value: stageFilter, allLabel: 'All stages', options: Object.entries(STAGE_LABELS).map(([k, v]) => ({ value: k, label: v })) },
+            { key: 'status', label: 'Status', value: statusFilter, allLabel: 'All statuses', options: Object.entries(STATUS_LABELS).map(([k, v]) => ({ value: k, label: v })) },
+            { key: 'priority', label: 'Priority', value: priorityFilter, allLabel: 'All priorities', options: PRIORITY_OPTIONS.map((o) => ({ value: o.value, label: o.label })) },
+            { key: 'origin', label: 'Origin', value: originFilter, allLabel: 'All origins', options: Object.entries(ORIGIN_NAMES).map(([k, v]) => ({ value: k, label: v })) },
+          ]}
+          onChange={(key, v) => {
+            if (key === 'stage') setStageFilter(v)
+            else if (key === 'status') setStatusFilter(v)
+            else if (key === 'priority') setPriorityFilter(v)
+            else setOriginFilter(v)
+          }}
+          onClear={clearFilters}
+        />
         {activeFilterCount > 0 && <button type="button" onClick={clearFilters} style={secondaryBtnStyle}>Clear</button>}
       </div>
-
-      {showFilters && (
-        <FiltersSheet subtitle="Narrow the R&D project list, then press Apply." tour="rnd-proj-filter-sheet" applyTour="rnd-proj-apply-btn"
-          onClose={() => setShowFilters(false)} onClear={clearFilters} onApply={applyFilters}>
-          <div>
-            <label style={sheetLabel}>Stage</label>
-            <Select data-tour="rnd-proj-stage-filter" style={sheetInput} value={draft.stage} onChange={(e) => setDraft((d) => ({ ...d, stage: e.target.value }))}>
-              <option value="">All stages</option>
-              {Object.entries(STAGE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </Select>
-          </div>
-          <div>
-            <label style={sheetLabel}>Status</label>
-            <Select data-tour="rnd-proj-status-filter" style={sheetInput} value={draft.status} onChange={(e) => setDraft((d) => ({ ...d, status: e.target.value }))}>
-              <option value="">All statuses</option>
-              {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </Select>
-          </div>
-          <div>
-            <label style={sheetLabel}>Priority</label>
-            <Select data-tour="rnd-proj-priority-filter" style={sheetInput} value={draft.priority} onChange={(e) => setDraft((d) => ({ ...d, priority: e.target.value }))}>
-              <option value="">All priorities</option>
-              {PRIORITY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </Select>
-          </div>
-          <div>
-            <label style={sheetLabel}>Origin</label>
-            <Select data-tour="rnd-proj-origin-filter" style={sheetInput} value={draft.origin} onChange={(e) => setDraft((d) => ({ ...d, origin: e.target.value }))}>
-              <option value="">All origins</option>
-              {Object.entries(ORIGIN_NAMES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </Select>
-          </div>
-        </FiltersSheet>
-      )}
 
       <div style={{
         borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,

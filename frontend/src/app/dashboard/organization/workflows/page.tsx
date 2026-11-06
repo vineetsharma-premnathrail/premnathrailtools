@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import Select from '@/components/shared/Select'
+import FilterMenu from '@/components/shared/FilterMenu'
 import { useRequireOrgTab } from '@/app/dashboard/organization/_lib/useRequireOrgTab'
 import { approvalsApi } from '@/lib/api'
 import { ApprovalTransactionType } from '@/types'
@@ -60,11 +60,11 @@ export default function WorkflowsPage() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-          <Select aria-label="Show" style={{ ...inputStyle, width: 190 }} value={show} onChange={(e) => setShow(e.target.value as 'all' | 'customised' | 'off')}>
-            <option value="all">Show: all</option>
-            <option value="customised">Show: customised</option>
-            <option value="off">Show: approval off</option>
-          </Select>
+          <FilterMenu
+            fields={[{ key: 'show', label: 'Show', value: show, defaultValue: 'all', allLabel: 'All', options: [{ value: 'customised', label: 'Customised' }, { value: 'off', label: 'Approval off' }] }]}
+            onChange={(_k, v) => setShow(v as 'all' | 'customised' | 'off')}
+            onClear={() => setShow('all')}
+          />
           <input style={{ ...inputStyle, width: 260 }} placeholder="Search…" value={query} onChange={(e) => setQuery(e.target.value)} />
         </div>
       </div>

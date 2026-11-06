@@ -24,6 +24,14 @@ from app.tests.test_quality_phase2 import _grn_lot, _inspect_and_decide
 
 
 @pytest.fixture(autouse=True)
+def _quality_rules_on(db):
+    """First-article control and automatic NCRs are Quality settings that default to OFF (2026-11-06); these tests cover them."""
+    from app.modules.quality.models.masters import QualitySetting
+    db.add_all([QualitySetting(key="first_article_on_new_vendor", value="on"), QualitySetting(key="ncr_auto_raise", value="on")])
+    db.commit()
+
+
+@pytest.fixture(autouse=True)
 def _no_rate_limit(monkeypatch):
     import app.middleware.owasp as owasp
     monkeypatch.setitem(owasp.RATE_CONFIG["write"], "limit", 100000)
@@ -312,14 +320,14 @@ def test_low_rating_puts_vendor_on_watch_with_tightened_sampling_and_vendor_capa
     b = _grn_lot(db, item, loc, "Okay Castings", eng, qty=10)
     lot_b = record_all(client, client.get(f"{Q}/inspection-lots/{b.id}", headers=hdr(eng)).json(), eng, fail_first=True)
     r = client.post(f"{Q}/inspection-lots/{lot_b['id']}/decision",
-                    json={"decision": "partial", "accepted_qty": 8, "rejected_qty": 2}, headers=hdr(head))
+                    json={"decision": "partial", "accepted_qty": 8, "rejected_qty": 2, "deviation_reference": "DEV-3"}, headers=hdr(head))
     assert r.status_code == 200, r.text
 
     r = client.post(f"{Q}/supplier-quality/ratings/run", json={"period": _period()}, headers=hdr(eng))
     assert r.status_code == 403
     cards = client.post(f"{Q}/supplier-quality/ratings/run", json={"period": _period()}, headers=hdr(head)).json()
     card = next(c for c in cards if c["vendor_key"] == "okay castings")
-    assert card["quality_score"] == 90 and card["ncr_major"] == 1 and card["rating_band"] == "on_watch"
+    assert card["quality_score"] == 90 and card["ncr_major"] == 2 and card["rating_band"] == "on_watch"
     avl = sq.get_avl(db, item.id, "Okay Castings")
     db.refresh(avl)
     assert avl.status == "on_watch" and avl.sampling_state == "tightened"

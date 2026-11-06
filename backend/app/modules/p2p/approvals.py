@@ -24,13 +24,18 @@ Approvers decide through the central /approvals endpoints (ApprovalPanel) or
 the module's compatibility endpoints (/p2p/requests/{id}/approve, /approve-po,
 /reject), which just call engine.decide.
 
-In-flight items at cut-over: a requisition or PO that entered approval before
-the move has no engine request (engine.latest_request is None) and finishes on
-the old code path in routes/p2p_requests.py (tables p2p_request_approvals /
-p2p_request_po_approvers, which stay readable as history). Every NEW submission
-— whatever the requisition's old approval_scheme (settings / matrix / legacy
-heads) — goes through the engine and marks the requisition
-approval_scheme = "engine".
+Every submission goes through the engine and marks the requisition
+approval_scheme = "engine". The old pre-workflow approval code is gone
+(2026-11-06): a requisition or PO that was still waiting on it (no engine
+request) is moved into the engine the first time someone tries to approve or
+reject it (routes/p2p_requests.py), and the tables p2p_request_approvals /
+p2p_request_po_approvers stay readable as history.
+
+What the admin's stage conditions can test:
+    PR: Estimated value (amount: lines x Item Master price), Some lines have no price,
+        project type / purpose / category / priority / requirement type, Requester's department.
+    PO: the PO value (amount), Quantity above requisition, Vendor is not the lowest quote (L1)
+        on a line, Single / limited quotation, vendor, plus the requisition's fields above.
 """
 from __future__ import annotations
 
@@ -90,7 +95,7 @@ def _fire(db: Session, event: str, title: str, message: str, pr: P2PRequest, act
 
 # ── Context the admin's stage conditions can test ────────────────────────
 
-_PR_CONTEXT_FIELDS = {
+_COMMON_CONTEXT_FIELDS = {
     "project_type": {"label": "Project type", "type": "choice", "choices": list(P2P_PROJECT_TYPES),
                      "choice_labels": {"existing": "Existing project", "new": "New project"}},
     "purpose": {"label": "Purpose", "type": "choice", "choices": list(P2P_PURPOSES), "choice_labels": dict(P2P_PURPOSES)},
@@ -107,11 +112,24 @@ _PR_CONTEXT_FIELDS = {
                  "choice_labels": dict(PRIORITY_LABELS)},
     "requirement_type": {"label": "Requirement type", "type": "choice", "choices": list(P2P_REQUIREMENT_TYPES),
                          "choice_labels": {t: t for t in P2P_REQUIREMENT_TYPES}},
-    "department": {"label": "Requester's department", "type": "text"},
+    # A pick-list of the Departments in Organization › Department (the value is the department id;
+    # approval_engine.register_choice_source("departments")). The requester's department NAME is still
+    # kept in the context as "department" so a stage saved before this change keeps evaluating, but it
+    # is no longer offered to admins.
+    "department_id": {"label": "Requester's department", "type": "choice", "choices_from": "departments"},
+}
+_PR_CONTEXT_FIELDS = {
+    **_COMMON_CONTEXT_FIELDS,
+    # Requisitions carry no prices: the value is the estimate below (quantity x the best known rate).
+    "amount": {"label": "Estimated value (₹, from Item Master prices)", "type": "number"},
+    "has_unpriced_lines": {"label": "Some lines have no price in Item Master", "type": "bool"},
 }
 _PO_CONTEXT_FIELDS = {
-    **_PR_CONTEXT_FIELDS,
+    **_COMMON_CONTEXT_FIELDS,
     "vendor_name": {"label": "Vendor", "type": "text"},
+    "qty_above_requisition": {"label": "Quantity above requisition", "type": "bool"},
+    "non_l1_award": {"label": "Vendor is not the lowest quote (L1) on a line", "type": "bool"},
+    "single_quotation": {"label": "Single / limited quotation", "type": "bool"},
 }
 
 
@@ -129,16 +147,28 @@ def _condition_category(pr: P2PRequest) -> str | None:
     return (rules or {}).get("category") or pr.category_code
 
 
+def _requester_department_id(db: Session, pr: P2PRequest) -> int | None:
+    """The requester's Department (by id, else by name at their plant) — what the
+    'Requester's department' condition compares with. None when they have none."""
+    from app.modules.organization.services.department_membership import user_department
+
+    requester = db.get(User, pr.requested_by_id) if pr.requested_by_id else None
+    dept = user_department(db, requester)
+    return dept.id if dept is not None else None
+
+
 def _pr_context(pr: P2PRequest) -> dict:
+    from sqlalchemy.orm import object_session
+
+    db = object_session(pr)
     ctx = {
         "project_type": pr.project_type, "purpose": pr.purpose, "category_code": _condition_category(pr), "priority": pr.priority,
         "requirement_type": pr.requirement_type, "department": pr.department, "project_manager_id": None,
+        "department_id": _requester_department_id(db, pr) if db is not None else None,
     }
     if pr.order_project_id:
-        from sqlalchemy.orm import object_session
-
         from app.modules.projects.models.project import PmProject
-        op = object_session(pr).get(PmProject, pr.order_project_id)
+        op = db.get(PmProject, pr.order_project_id)
         if op is not None:
             ctx["project_manager_id"] = op.project_manager_id
             ctx["order_project_ref"] = op.project_code
@@ -369,6 +399,136 @@ def migrate_p2p_approval_workflows(bind) -> None:
         session.close()
 
 
+# ── What the approver is told about value and risk ───────────────────────
+
+def _unit_estimate(db: Session, store_item_id: int | None, cache: dict) -> float:
+    """Best known unit rate of an Item Master item, 0 when none: the rate of the last
+    approved PO for it, else its moving average cost, else its standard cost."""
+    if not store_item_id:
+        return 0.0
+    if store_item_id not in cache:
+        from app.modules.p2p.info_records import price_history
+        from app.modules.store.models.item import StoreItem
+
+        # price_history keeps released POs only, after reading a window of the newest lines — a wide window
+        # so a run of POs still in approval does not hide the last released rate.
+        history = price_history(db, store_item_id, limit=20)
+        rate = float((history[0] if history else {}).get("unit_price") or 0)
+        if rate <= 0:
+            item = db.get(StoreItem, store_item_id)
+            rate = float((item.moving_average_cost if item is not None else 0) or 0) or float((item.standard_cost if item is not None else 0) or 0)
+        cache[store_item_id] = max(rate, 0.0)
+    return cache[store_item_id]
+
+
+def estimate_pr_value(db: Session, pr: P2PRequest) -> tuple[float, bool]:
+    """(estimated value of the requisition, whether some line has no known price).
+    Value = sum of quantity x unit estimate over the lines; a line with no price in
+    Item Master (and no earlier PO) adds nothing and sets the flag, so a stage on
+    'Some lines have no price' can catch what the amount cannot see."""
+    cache: dict = {}
+    total, unpriced = 0.0, False
+    for line in pr.items:
+        qty = float(line.quantity or 0)
+        if qty <= 0:
+            continue
+        rate = _unit_estimate(db, line.store_item_id, cache)
+        if rate <= 0:
+            unpriced = True
+            continue
+        total += qty * rate
+    return round(total, 2), unpriced
+
+
+def _inr_text(v: float) -> str:
+    """Rupees with Indian digit grouping, e.g. 123456 -> '1,23,456'."""
+    whole = f"{int(round(v)):d}"
+    if len(whole) <= 3:
+        return whole
+    head, tail = whole[:-3], whole[-3:]
+    parts = []
+    while len(head) > 2:
+        parts.insert(0, head[-2:])
+        head = head[:-2]
+    if head:
+        parts.insert(0, head)
+    return ",".join(parts + [tail])
+
+
+def _same_vendor(po: P2PPurchaseOrder, quote_vendor: dict) -> bool:
+    if po.vendor_id and quote_vendor.get("vendor_id"):
+        return po.vendor_id == quote_vendor["vendor_id"]
+    return (po.vendor_name or "").strip().lower() == (quote_vendor.get("vendor_name") or "").strip().lower()
+
+
+def non_l1_lines(db: Session, pr: P2PRequest, po: P2PPurchaseOrder) -> int:
+    """How many lines of the PO go to a vendor who is not the lowest (L1) quote for that line in
+    the RFQ comparison. A line whose RFQ has no eligible quote, or a PO with no RFQ, is not counted
+    (there is no L1 to compare with)."""
+    from app.modules.p2p.models.rfq import RFQ
+    from app.modules.p2p.quotation_compare import comparison
+
+    rfq = db.get(RFQ, po.rfq_id) if po.rfq_id else None
+    if rfq is None:
+        return 0
+    data = comparison(db, rfq, pr)
+    vendors = {v["vendor_quotation_id"]: v for v in data["vendors"]}
+    rows = {r["pr_item_id"]: r for r in data["lines"]}
+    n = 0
+    for item in po.items:
+        row = rows.get(item.pr_item_id) if item.pr_item_id else None
+        l1 = vendors.get(row["l1_vendor_quotation_id"]) if row and row["l1_vendor_quotation_id"] else None
+        if l1 is not None and not _same_vendor(po, l1):
+            n += 1
+    return n
+
+
+def is_single_quotation(db: Session, po: P2PPurchaseOrder) -> bool:
+    """True when the PO was not bought on a real competition: no RFQ on record, the RFQ was flagged single /
+    limited (it carries a reason), or some PO line had fewer distinct vendors with an ELIGIBLE quote (not
+    disqualified, rejected or expired) than Procurement › Settings › 'Minimum vendors per RFQ' asks for."""
+    from app.modules.p2p.models.rfq import RFQ
+    from app.modules.p2p.models.vendor_quotation import VendorQuotation
+    from app.modules.p2p.quotation_compare import quote_ineligible_reason
+    from app.modules.p2p.settings import get_setting
+
+    rfq = db.get(RFQ, po.rfq_id) if po.rfq_id else None
+    if rfq is None:
+        return True
+    if rfq.is_single_quotation or (rfq.single_quotation_reason or "").strip():
+        return True
+    minimum = int(get_setting(db, "rfq_min_vendors") or 1)
+    eligible_by_line: dict[int, set] = {}
+    for vq in db.query(VendorQuotation).filter(VendorQuotation.rfq_id == rfq.id).all():
+        if quote_ineligible_reason(vq, rfq) is not None:
+            continue
+        vendor = f"id:{vq.vendor_id}" if vq.vendor_id else f"name:{(vq.vendor_name or '').strip().lower()}"
+        for qi in vq.items:
+            eligible_by_line.setdefault(qi.pr_item_id, set()).add(vendor)
+    lines = [i.pr_item_id for i in po.items if i.pr_item_id]
+    return any(len(eligible_by_line.get(line, ())) < minimum for line in lines) if lines else len(eligible_by_line) < minimum
+
+
+def po_risk_flags(db: Session, pr: P2PRequest, po: P2PPurchaseOrder) -> dict:
+    """The risk facts a PO approval is judged on: lines above the requisition, lines with a vendor
+    that is not L1, single / limited quotation. Each check runs in its own savepoint, and a check that
+    fails counts as a risk (the approver then looks), never as 'no risk'."""
+    from app.modules.p2p.pre_po import qty_raised_lines
+
+    def _checked(fn, default):
+        try:
+            with db.begin_nested():
+                return fn()
+        except Exception:
+            logger.exception("Risk check failed for PO %s", po.po_number)
+            return default
+
+    raised = _checked(lambda: qty_raised_lines(db, po), len(po.items) or 1)
+    not_l1 = _checked(lambda: non_l1_lines(db, pr, po), len(po.items) or 1)
+    single = _checked(lambda: is_single_quotation(db, po), True)
+    return {"qty_raised_lines": raised, "non_l1_lines": not_l1, "single_quotation": single}
+
+
 # ── Submit ───────────────────────────────────────────────────────────────
 
 def submit_pr(db: Session, pr: P2PRequest, requester: User) -> ApprovalRequest:
@@ -379,15 +539,26 @@ def submit_pr(db: Session, pr: P2PRequest, requester: User) -> ApprovalRequest:
     pr.approval_scheme = ENGINE_SCHEME
     pr.status = "submitted"
     db.flush()
+    value, unpriced = estimate_pr_value(db, pr)
     title = f"Purchase requisition {pr.p2p_number}" + (f" — {pr.project_label}" if pr.project_label else "")
+    if value > 0:
+        title += f" — est. ₹{_inr_text(value)}" + (" (some lines unpriced)" if unpriced else "")
     req = engine.submit(
         db, PR_KEY, entity_id=pr.id, requester=requester, title=title, reference=pr.p2p_number,
-        amount=None, context=_pr_context(pr), branch_id=getattr(requester, "branch_id", None),
+        # No price at all -> no amount (not "₹0"): a stage on the amount then does not apply by accident.
+        amount=value if value > 0 else None, context={**_pr_context(pr), "has_unpriced_lines": unpriced},
+        branch_id=getattr(requester, "branch_id", None),
     )
     # Role event for the people who follow requisitions; the engine already told the approvers.
     from app.modules.p2p import notify as p2p_notify
     p2p_notify.pr_submitted(db, _AfterDecisionTasks(), pr, requester, req)
     return req
+
+
+def po_risk_context(po: P2PPurchaseOrder, risk: dict) -> dict:
+    """The PO fields of the approval context (see _PO_CONTEXT_FIELDS)."""
+    return {"vendor_name": po.vendor_name, "qty_above_requisition": bool(risk["qty_raised_lines"]),
+            "non_l1_award": bool(risk["non_l1_lines"]), "single_quotation": bool(risk["single_quotation"])}
 
 
 def submit_po(db: Session, pr: P2PRequest, po: P2PPurchaseOrder, submitter: User) -> ApprovalRequest:
@@ -401,13 +572,16 @@ def submit_po(db: Session, pr: P2PRequest, po: P2PPurchaseOrder, submitter: User
     po.status = "issued"
     db.flush()
     title = f"Purchase order {po.po_number}" + (f" — {po.vendor_name}" if po.vendor_name else "") + f" ({pr.p2p_number})"
-    from app.modules.p2p.pre_po import qty_raised_lines
-    raised = qty_raised_lines(db, po)
-    if raised:
-        title += f" — qty raised above requisition on {raised} line(s)"
+    risk = po_risk_flags(db, pr, po)
+    if risk["qty_raised_lines"]:
+        title += f" — qty raised above requisition on {risk['qty_raised_lines']} line(s)"
+    if risk["non_l1_lines"]:
+        title += f" — vendor not L1 on {risk['non_l1_lines']} line(s)"
+    if risk["single_quotation"]:
+        title += " — single quotation"
     req = engine.submit(
         db, PO_KEY, entity_id=po.id, requester=submitter, title=title, reference=po.po_number,
-        amount=po.total_value, context={**_pr_context(pr), "vendor_name": po.vendor_name, "qty_above_requisition": bool(raised)},
+        amount=po.total_value, context={**_pr_context(pr), **po_risk_context(po, risk)},
         branch_id=getattr(submitter, "branch_id", None),
     )
     # Header status = roll-up of every PO (this one now waits for approval). Run after the

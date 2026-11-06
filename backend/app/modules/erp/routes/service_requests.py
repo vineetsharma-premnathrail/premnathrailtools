@@ -36,7 +36,7 @@ from app.modules.erp.schemas.service_request import (
 from app.modules.erp import billing as sr_billing, spares as sr_spares, warranty as sr_warranty
 from app.modules.erp import sensitive as sr_sensitive
 from app.modules.p2p.models.p2p_request import (
-    P2PRequest, resolve_auto_buyer_id, P2P_CATEGORIES, P2P_REQUIREMENT_TYPES,
+    P2PRequest, default_buyer_id, resolve_line_buyer_id, P2P_CATEGORIES, P2P_REQUIREMENT_TYPES,
 )
 from app.modules.p2p.models.p2p_request_item import P2PRequestItem
 from app.modules.p2p.item_link import item_snapshot, purchasable_item
@@ -1627,7 +1627,11 @@ def _create_p2p_request_for_sr(
     This is now the sole creation path for a PR raised out of an SR's
     Materials tab — there is no separate `purchase_requisitions` row."""
     category_code = payload.category_code or "OTH"
-    auto_buyer_id = resolve_auto_buyer_id(db, category_code)
+    # Each line goes to the buyer of its Item Master item's category (then its item
+    # type's buyer, then the default buyer); the requisition's main buyer is the
+    # buyer of the first line, else the default buyer.
+    line_buyers = [resolve_line_buyer_id(db, master.item_type, master.category, master.id) for _extra, master in line_extras]
+    auto_buyer_id = next((b for b in line_buyers if b), None) or default_buyer_id(db)
     # Service PRs skip the PR approval stage entirely (2026-10-01): the
     # requisition is created already 'approved' and goes straight to Purchase.
 
@@ -1662,6 +1666,7 @@ def _create_p2p_request_for_sr(
             quantity=mat.quantity,
             project_inhouse=extra.project_inhouse,
             ship_to=extra.ship_to,
+            buyer_id=line_buyers[idx],
         )
         db.add(item_row)
         mat.pr_id = request.id

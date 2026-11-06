@@ -59,8 +59,14 @@ def _to_response(db: Session, rtv: P2PVendorReturn) -> P2PVendorReturnResponse:
 
 
 def _has_quality_lot(db: Session, line: P2PGoodsReceiptItem) -> str | None:
+    """Lot number when this line's rejected stock is held under an NCR (it then goes back
+    through the NCR's disposition). A lot rejected without an NCR (Quality settings ›
+    Inspection rules › NCR auto-raise off) is returned straight from Blocked stock here."""
     from app.modules.quality.models.inspection_lot import QualityInspectionLot
-    row = db.query(QualityInspectionLot.lot_number).filter(QualityInspectionLot.grn_item_id == line.id).first()
+    from app.modules.quality.models.ncr import QualityNcr
+    row = (db.query(QualityInspectionLot.lot_number)
+           .join(QualityNcr, QualityNcr.lot_id == QualityInspectionLot.id)
+           .filter(QualityInspectionLot.grn_item_id == line.id, QualityNcr.is_deleted.is_(False)).first())
     return row[0] if row else None
 
 
@@ -258,7 +264,8 @@ async def create_vendor_return(payload: P2PVendorReturnCreate, db: Session = Dep
     # stock since the GRN inspection — they leave it now (SAP 122 from blocked).
     from app.modules.p2p.grn_posting import return_rejected_to_vendor
     for line, source, qty in planned:
-        if source != "rejected" or line.receipt_posting != "quality":
+        # "lot" = received into Quality stock under an inspection lot; its rejected part sits in Blocked too.
+        if source != "rejected" or line.receipt_posting not in ("quality", "lot"):
             continue
         try:
             return_rejected_to_vendor(db, grn, line, qty, user.id, rtv.rtv_number, return_date,

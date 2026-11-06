@@ -25,6 +25,7 @@ from app.modules.quality.schemas.masters import (
 )
 from app.modules.quality.services import access
 from app.modules.quality.services.sampling import ensure_sampling_tables, aql_plan
+from app.modules.quality.services.standard_checklist import STANDARD_CODE_PREFIX, STANDARD_FORMAT_NO
 from app.modules.quality.services.settings import ensure_master_lists
 
 router = APIRouter(prefix="/quality/masters", tags=["Quality"], dependencies=[Depends(require_app_access("quality"))])
@@ -103,6 +104,9 @@ def _validate_char(data: dict) -> None:
 async def create_characteristic(payload: QualityCharacteristicCreate, db: Session = Depends(get_db), user: User = Depends(_CAN_CREATE)):
     data = payload.model_dump()
     data["code"] = _norm_code(data["code"])
+    if data["code"].startswith(STANDARD_CODE_PREFIX):
+        raise HTTPException(status_code=409, detail=f"Codes starting with {STANDARD_CODE_PREFIX} belong to the standard incoming checklist "
+                                                    f"({STANDARD_FORMAT_NO}) — choose another code.")
     _validate_char(data)
     _dup(db, QualityCharacteristic, data["code"], "Characteristic")
     ch = QualityCharacteristic(**data, created_by_id=user.id)
@@ -118,6 +122,9 @@ async def update_characteristic(char_id: int, payload: QualityCharacteristicUpda
     if not ch:
         raise HTTPException(status_code=404, detail=f"Characteristic #{char_id} not found")
     data = payload.model_dump(exclude_unset=True)
+    if ch.code.startswith(STANDARD_CODE_PREFIX) and (("name" in data and data["name"] != ch.name) or data.get("is_active") is False):
+        raise HTTPException(status_code=409, detail=f"'{ch.code}' is a parameter of the standard incoming checklist ({STANDARD_FORMAT_NO}) — "
+                                                    "it can't be renamed or retired. You can still change its specification (description), method and unit.")
     _validate_char(data)
     for k, v in data.items():
         setattr(ch, k, v)

@@ -1,8 +1,9 @@
 'use client'
 
 // Store › Inward › Before PO: goods that arrived before their purchase order.
-// Recorded here, held in store (no stock yet), and listed for Procurement,
-// who makes the PO. The GRN against the approved PO posts the stock.
+// Recorded here, the goods go into the store's stock at once (Free, or Quality for
+// items needing a quality check), and the receipt is listed for Procurement, who makes
+// the PO. The GRN against the approved PO settles it without adding stock again.
 
 import { useEffect, useState } from 'react'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -71,15 +72,15 @@ export default function StoreBeforePoPage() {
         <div>
           <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>Store & Inventory Module</p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Before PO</h1>
-          <p style={{ fontSize: 13, color: TEXT.muted, margin: '4px 0 0' }}>Material that arrived before its purchase order. Procurement makes the PO from these receipts.</p>
+          <p style={{ fontSize: 13, color: TEXT.muted, margin: '4px 0 0' }}>Material that arrived before its purchase order — already in stock. Procurement makes the PO from these receipts.</p>
         </div>
         {canCreate
           ? <button type="button" data-tour="store-bpo-new-btn" onClick={() => setShowForm(true)} style={primaryBtnStyle}>+ Before PO receipt</button>
-          : <span style={{ fontSize: 12, color: TEXT.muted }}>Recording a receipt needs Create permission on GRN.</span>}
+          : <span style={{ fontSize: 12, color: TEXT.muted }}>Recording a receipt (it adds stock) needs Create permission on GRN.</span>}
       </div>
 
       <div role="note" data-tour="store-bpo-banner" style={{ padding: '10px 14px', marginBottom: 14, borderRadius: 10, background: 'rgba(234,88,12,0.08)', border: '1px solid rgba(234,88,12,0.25)', color: '#9a3412', fontSize: 13 }}>
-        Goods recorded here are held in store and are NOT in stock yet. Stock is added by the GRN once Procurement&apos;s PO is approved.
+        Goods go into stock as soon as a receipt is saved — Free stock, or Quality stock for items that need a quality check — so they can be issued straight away. The GRN against Procurement&apos;s PO later settles the receipt; stock is not added a second time.
       </div>
 
       <div data-tour="store-bpo-stats" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
@@ -119,7 +120,12 @@ export default function StoreBeforePoPage() {
                   {!r.delivery_challan_number && !r.vendor_invoice_number && '—'}
                 </td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{r.po_number || '—'}</td>
-                <td style={tdStyle}><Pill label={PRE_PO_STATUS_LABEL[r.status] || r.status} hex={PRE_PO_STATUS_HEX[r.status] || '#64748b'} /></td>
+                <td style={tdStyle}>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    <Pill label={PRE_PO_STATUS_LABEL[r.status] || r.status} hex={PRE_PO_STATUS_HEX[r.status] || '#64748b'} />
+                    {r.stock_posted && r.status !== 'cancelled' && <Pill label="In stock" hex="#16a34a" />}
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>

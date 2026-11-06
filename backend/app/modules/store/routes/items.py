@@ -65,9 +65,30 @@ def item_search_order(search: str | None):
     return [rank, *code_order]
 
 
-def _to_response(item: StoreItem, db: Session, detail: bool = False, user: User | None = None) -> StoreItemResponse:
-    warehouse = db.query(StoreLocation).filter(StoreLocation.id == item.preferred_warehouse_id).first() if item.preferred_warehouse_id else None
-    val = db.get(StoreItemValuation, item.id)
+def _prefetch(db: Session, items: list[StoreItem]) -> dict:
+    """One query per lookup for a whole list (was one valuation + one store query per item,
+    ~2,400 round trips for the Item Master — slow enough on the hosted DB to hit the 10 s timeout)."""
+    ids = [i.id for i in items]
+    wh_ids = {i.preferred_warehouse_id for i in items if i.preferred_warehouse_id}
+    vendor_ids = {i.preferred_vendor_id for i in items if i.preferred_vendor_id}
+    gl_ids = {g for i in items for g in (i.purchase_gl_account_id, i.sales_gl_account_id) if g}
+    return {
+        "wh": {l.id: l for l in db.query(StoreLocation).filter(StoreLocation.id.in_(wh_ids)).all()} if wh_ids else {},
+        "val": {v.item_id: v for v in db.query(StoreItemValuation).filter(StoreItemValuation.item_id.in_(ids)).all()} if ids else {},
+        # Loaded into the session so db.get() below is served from the identity map.
+        "vendors": db.query(Vendor).filter(Vendor.id.in_(vendor_ids)).all() if vendor_ids else [],
+        "gls": db.query(GLAccount).filter(GLAccount.id.in_(gl_ids)).all() if gl_ids else [],
+    }
+
+
+def _to_response(item: StoreItem, db: Session, detail: bool = False, user: User | None = None,
+                 pre: dict | None = None) -> StoreItemResponse:
+    if pre is not None:
+        warehouse = pre["wh"].get(item.preferred_warehouse_id) if item.preferred_warehouse_id else None
+        val = pre["val"].get(item.id)
+    else:
+        warehouse = db.query(StoreLocation).filter(StoreLocation.id == item.preferred_warehouse_id).first() if item.preferred_warehouse_id else None
+        val = db.get(StoreItemValuation, item.id)
     vendor = db.get(Vendor, item.preferred_vendor_id) if item.preferred_vendor_id else None
     update = {"preferred_warehouse_name": warehouse.name if warehouse else None, "has_photo": bool(item.photo_path),
               "last_receipt_rate": val.last_receipt_rate if val else None,
@@ -208,7 +229,7 @@ def _clean_planning_fields(db: Session, data: dict, item_id: int | None = None) 
 
 
 @router.get("", response_model=list[StoreItemResponse])
-async def list_items(
+def list_items(
     category: str | None = Query(None),
     subcategory: str | None = Query(None),
     item_type: str | None = Query(None),
@@ -231,7 +252,8 @@ async def list_items(
         query = query.filter(StoreItem.status == status)
     query = apply_item_search(query, search)
     items = query.order_by(*item_search_order(search)).all()
-    return [_to_response(i, db, user=user) for i in items]
+    pre = _prefetch(db, items)
+    return [_to_response(i, db, user=user, pre=pre) for i in items]
 
 
 

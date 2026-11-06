@@ -1,9 +1,13 @@
 """Store > Inward > Before PO: goods that arrived before their purchase order.
 
-Recording one does NOT post stock - the goods are held in store until
-Procurement makes the PO (p2p/routes/pre_po_receipts.py) and the GRN against
-that approved PO posts stock at the PO rate, with QC. Gate: Store tab `grn`
-(view for reads, create for record/cancel), then the Store data scope."""
+Recording one PUTS THE GOODS INTO STOCK at once (2026-11-06): Free stock, or
+Quality stock + an inspection lot for an item flagged 'Quality check on
+receipt'. Procurement then makes the PO (p2p/routes/pre_po_receipts.py) and the
+GRN against that approved PO settles the quantity instead of posting it again.
+Cancelling (only while waiting for a PO) takes the stock back out. Receipts made
+before that change never posted stock and cancel as before.
+Gate: Store tab `grn` (view for reads, create for record/cancel), then the Store
+data scope."""
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
@@ -18,9 +22,10 @@ from app.db.session import get_db
 from app.modules.accounts.models.vendor import Vendor
 from app.modules.main.models.user import User
 from app.modules.p2p.pre_po import (
-    attachment_content_response, ensure_attachable, generate_receipt_number, notify_receipt_recorded, receipt_to_response,
-    save_attachment,
+    attachment_content_response, ensure_attachable, generate_receipt_number, notify_receipt_recorded, post_receipt_stock,
+    receipt_to_response, reverse_receipt_stock, save_attachment,
 )
+from app.modules.store.services.batches import is_batch_managed
 from app.modules.store.access import store_plant_column
 from app.modules.store.models.item import StoreItem
 from app.modules.store.models.location import StoreLocation
@@ -114,11 +119,13 @@ async def create_pre_po_receipt(
         raise HTTPException(status_code=409, detail=f"Vendor {vendor.name} is {vendor.status} in the vendor master, so goods can't be booked against it. "
                                                     "Ask Procurement or Finance to set it Active in Procurement > Vendors, or pick another vendor.")
     location_id = _own_store_id(db, user, payload.store_location_id)
-    if location_id:
-        location = db.get(StoreLocation, location_id)
-        if location is None or not location.is_active:
-            raise HTTPException(status_code=400, detail="That store location doesn't exist or is inactive - pick an active store location.")
-        ensure_location_allowed(db, user, location_id)
+    if not location_id:
+        raise HTTPException(status_code=422, detail="Pick the store the goods are held in - the receipt puts them into that store's stock, "
+                                                    "so it can't be saved without one.")
+    location = db.get(StoreLocation, location_id)
+    if location is None or not location.is_active:
+        raise HTTPException(status_code=400, detail="That store location doesn't exist or is inactive - pick an active store location.")
+    ensure_location_allowed(db, user, location_id)
 
     ids = [i.store_item_id for i in payload.items]
     items = {i.id: i for i in db.query(StoreItem).filter(StoreItem.id.in_(ids)).all()}
@@ -137,6 +144,12 @@ async def create_pre_po_receipt(
         problem = item_type_problem("stock", "This line", item.item_code, item.item_name, item.item_type, db)
         if problem:
             raise HTTPException(status_code=422, detail=problem)
+        if is_batch_managed(item) or item.serial_controlled:
+            kind = "batch-tracked" if is_batch_managed(item) else "serial-numbered"
+            raise HTTPException(status_code=422, detail=(
+                f"{item.item_code} {item.item_name} is {kind}, and a Before-PO receipt can't capture its "
+                f"{'heat / batch numbers and mill TC' if kind == 'batch-tracked' else 'serial numbers'}. Leave it off this receipt and record it "
+                "with a GRN once its PO exists, or ask the Store manager to receive it."))
 
     receipt = StorePrePoReceipt(
         receipt_number=generate_receipt_number(db), vendor_id=vendor.id, vendor_name=vendor.name,
@@ -149,9 +162,11 @@ async def create_pre_po_receipt(
         item = items[line.store_item_id]
         receipt.items.append(StorePrePoReceiptItem(
             store_item_id=item.id, item_name=item.item_name, unit=item.uom, quantity=line.quantity,
-            remarks=(line.remarks or "").strip() or None))
+            remarks=(line.remarks or "").strip() or None, unit_rate=line.unit_rate))
     db.add(receipt)
     db.flush()
+    # Goods go into stock now (Free, or Quality + lot); a refusal rolls the whole receipt back with the reason.
+    post_receipt_stock(db, receipt, user)
     notify_receipt_recorded(db, receipt, user)
     db.commit()
     db.refresh(receipt)
@@ -180,6 +195,8 @@ async def cancel_pre_po_receipt(
     if receipt.status != "pending_po":
         raise HTTPException(status_code=409, detail=f"Receipt {receipt.receipt_number} can only be cancelled while it is waiting for a PO: "
                                                     f"{_CANCEL_WHY.get(receipt.status, 'its status no longer allows it.')}")
+    # Goods it put into stock come back out first (refused with the reason when they were issued / are in inspection).
+    reverse_receipt_stock(db, receipt, user, payload.reason)
     receipt.status = "cancelled"
     receipt.cancelled_by_id = user.id
     receipt.cancelled_at = datetime.now(timezone.utc).replace(tzinfo=None)

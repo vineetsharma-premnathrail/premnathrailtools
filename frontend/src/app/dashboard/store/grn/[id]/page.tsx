@@ -12,7 +12,7 @@ import { secondaryBtnStyle, smallSecondaryBtnStyle, primaryBtnStyle, RowCount, P
 import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import StoreNav from '@/components/store/StoreNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
-import { useRecordId } from '@/lib/recordRef'
+import { useRecordId, recordPath } from '@/lib/recordRef'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { formatDate, formatDateTime } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
@@ -52,6 +52,22 @@ const RETURN_REASONS = [
   { value: 'other', label: 'Other' },
 ]
 
+// Read-only Quality status of a line (Quality owns the check). Fields the GRN response is expected to carry
+// per item once a lot exists; nothing is shown while they are missing.
+interface LineLot {
+  quality_lot_id?: number | null
+  quality_lot_id_ref?: string
+  quality_lot_number?: string | null
+  quality_lot_status?: string | null
+  quality_lot_decision?: string | null
+}
+const LOT_STATUS_TEXT: Record<string, string> = {
+  created: 'Waiting for Quality', in_inspection: 'In inspection', results_recorded: 'Results recorded', decision_made: 'Decided', closed: 'Closed', cancelled: 'Cancelled',
+}
+const LOT_DECISION_TEXT: Record<string, string> = {
+  accept: 'Accepted', accept_with_deviation: 'Accepted with deviation', reject: 'Rejected', partial: 'Partly rejected',
+}
+
 interface InspectionRow {
   accepted_quantity: string
   rejected_quantity: string
@@ -65,7 +81,8 @@ export default function StoreGrnDetailPage() {
   const { user, isAuthorized, isLoading } = useRequireApp('store')
   // Inspection is a Purchase/QC step (backend: POST /inspect needs the Purchase
   // module); Store-only users record the GRN but don't inspect it.
-  const { canFeature } = useCan()
+  const { can, canFeature } = useCan()
+  const seeQuality = can('quality', 'inspection_lots', 'view')
   // Store › GRN & Inspection features (server-side too): Quality inspection
   // decision › Approve decides who inspects; Reverse a GRN › Approve;
   // Return to vendor › View / Create. RTV value = Items › Stock value & rates.
@@ -395,6 +412,20 @@ export default function StoreGrnDetailPage() {
                           label={it.quality_status === 'in_quality' ? QUALITY_LOT_LABEL : QUALITY_OPTIONS.find((o) => o.value === it.quality_status)?.label || (it.quality_status === 'pending' ? 'Pending' : it.quality_status)}
                           hex={it.quality_status === 'passed' ? '#16a34a' : it.quality_status === 'failed' ? '#dc2626' : it.quality_status === 'partial' ? '#d97706' : '#64748b'} />
                       )}
+                      {(() => {
+                        const lot = it as unknown as LineLot
+                        if (!lot.quality_lot_number) return null
+                        const text = lot.quality_lot_decision
+                          ? `${LOT_DECISION_TEXT[lot.quality_lot_decision] || lot.quality_lot_decision} — Lot ${lot.quality_lot_number}`
+                          : `In quality check — Lot ${lot.quality_lot_number} · ${LOT_STATUS_TEXT[lot.quality_lot_status || ''] || lot.quality_lot_status || ''}`
+                        return (
+                          <div data-tour="store-grn-detail-lot" style={{ fontSize: 12, color: TEXT.muted, marginTop: 4 }}>
+                            {seeQuality && lot.quality_lot_id_ref
+                              ? <a href={recordPath('/dashboard/quality/lots', lot, 'quality_lot_id')} onClick={(e) => { e.preventDefault(); router.push(recordPath('/dashboard/quality/lots', lot, 'quality_lot_id')) }} style={{ color: '#FF6A2A', fontWeight: 600, textDecoration: 'none' }}>{text}</a>
+                              : text}
+                          </div>
+                        )
+                      })()}
                     </td>
                     <td style={tdStyle}>
                       {editable && r.quality_status !== 'passed' ? (
@@ -413,7 +444,7 @@ export default function StoreGrnDetailPage() {
 
         {isDraft && grn.items.some((it) => it.quality_status === 'in_quality') && (
           <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '12px 0 0' }}>
-            Lines marked &ldquo;{QUALITY_LOT_LABEL}&rdquo; are held in Quality stock; the GRN completes once Quality makes the usage decision on their inspection lots. Items without the &lsquo;Quality check on receipt&rsquo; flag are already in Free stock.
+            Lines marked &ldquo;{QUALITY_LOT_LABEL}&rdquo; are held in Quality stock; the GRN completes once Quality makes the decision on their inspection lots. Items without the &lsquo;Quality check on receipt&rsquo; flag are already in Free stock.
           </p>
         )}
         {isDraft && !canInspect && grn.items.some((it) => it.quality_status === 'pending') && (

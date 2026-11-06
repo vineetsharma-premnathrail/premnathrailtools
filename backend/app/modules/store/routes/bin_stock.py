@@ -80,6 +80,55 @@ async def export_bin_stock(
                              headers={"Content-Disposition": 'attachment; filename="stock_by_bin.xlsx"'})
 
 
+@router.get("/register-racks")
+async def inventory_register_racks(
+    location_id: int = Query(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_tab_action("store", "stock", "print")),
+):
+    """Racks of a store as the Inventory Register groups its bins (rack filter options)."""
+    from app.modules.store.services.iso_registers import natural_key, rack_of
+    ensure_location_allowed(db, user, location_id)
+    bins = {b.id: b for b in db.query(StoreBin).filter(StoreBin.location_id == location_id).all()}
+    return sorted({rack_of(b, bins) for b in bins.values()}, key=natural_key)
+
+
+@router.get("/print-inventory-register")
+async def print_inventory_register(
+    location_id: int = Query(..., description="Store whose racks are printed"),
+    month: str = Query(..., description="Month as YYYY-MM"),
+    rack: str | None = Query(None, description="Only this rack (as shown on the sheet name, e.g. 01)"),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_tab_action("store", "stock", "print")),
+):
+    """F/STR/06 Inventory Register (owner's rack-wise bin card) for one store
+    and month as Excel — one sheet per rack, item × bin with opening stock on
+    day 1, IN / OUT per day, total and balance (store/services/iso_registers.py)."""
+    from datetime import date as _date
+
+    from fastapi.responses import Response
+
+    from app.modules.store.services.iso_registers import (
+        XLSX_MEDIA_TYPE, RegisterError, build_inventory_register, stream_name,
+    )
+    try:
+        year, mon = (int(x) for x in month.split("-", 1))
+        month_start = _date(year, mon, 1)
+    except ValueError:
+        raise HTTPException(status_code=422, detail=f"Month '{month}' is not a month. Pick the month again (format YYYY-MM, e.g. 2026-10).")
+    store = db.get(StoreLocation, location_id)
+    if not store:
+        raise HTTPException(status_code=404, detail="Store not found — it may have been removed. Reload the page and pick the store again.")
+    ensure_location_allowed(db, user, location_id)
+    rack = (rack or "").strip() or None
+    try:
+        content = build_inventory_register(db, location_id=location_id, month_start=month_start, rack=rack)
+    except RegisterError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return Response(content=content, media_type=XLSX_MEDIA_TYPE, headers={
+        "Content-Disposition": f'attachment; filename="{stream_name("F-STR-06_Inventory_Register", store.code, month, rack and f"rack-{rack}")}"'})
+
+
 def _move_dict(db: Session, m: StoreBinMove) -> dict:
     item = db.get(StoreItem, m.item_id)
     loc = db.get(StoreLocation, m.location_id)

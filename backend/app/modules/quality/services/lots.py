@@ -4,7 +4,7 @@ Hooks for other modules (call inside their transaction; they flush, never commit
   needs_inspection_on_receipt(db, item, inspection_type) -> bool
   create_lot_for_grn_line(db, grn, line, item, vendor_name, user_id) -> lot
       Store/P2P GRN: posts the received qty to QUALITY stock and opens an
-      incoming lot. The lot's usage decision writes the accepted/rejected
+      incoming lot. The lot's decision writes the accepted/rejected
       split back onto the GRN line (p2p goods_receipts.apply_quality_decision).
   create_lot_for_production_output(db, work_order, item, quantity, location_id, batch_number, user_id) -> lot
       Production "Receive Output": FG to QUALITY stock + final lot.
@@ -33,7 +33,7 @@ from app.modules.quality.models.masters import QualityDefectCode
 from app.modules.quality.services import access, role_events
 from app.modules.quality.services.plans import current_plan
 from app.modules.quality.services.sampling import sampling_for_line
-from app.modules.quality.services.settings import get_setting
+from app.modules.quality.services.settings import get_setting, setting_on
 from app.modules.quality.service import generate_lot_number
 from app.modules.store.models.item import StoreItem
 from app.modules.store.services.stock_ledger import post_stock_transaction
@@ -59,15 +59,16 @@ def _now() -> datetime:
 
 
 def _stock(db: Session, lot: QualityInspectionLot, txn_type: str, qty: float, user_id: int | None, remarks: str,
-           unit_cost: float | None = None) -> None:
+           unit_cost: float | None = None, transaction_date: date | None = None) -> None:
     # unit_cost: the receipt's price (GRN → PO rate); None = current average.
     try:
         post_stock_transaction(
             db, item_id=lot.item_id, location_id=lot.location_id, transaction_type=txn_type, quantity=qty,
             batch_number=lot.batch_number, reference_type=LOT_REFERENCE_TYPE, reference_number=lot.lot_number,
-            remarks=remarks, created_by_id=user_id, unit_cost=unit_cost,
-            # Production output is valued at the work order's actual cost.
-            cost_source={"work_order": "production_actual", "job_work_receipt": "job_work"}.get(lot.source_type, "po_rate") if unit_cost else None,
+            remarks=remarks, created_by_id=user_id, unit_cost=unit_cost, transaction_date=transaction_date,
+            # Production output is valued at the work order's actual cost; a Before-PO receipt at the rate typed on it.
+            cost_source={"work_order": "production_actual", "job_work_receipt": "job_work",
+                         "pre_po_receipt": "pre_po_rate"}.get(lot.source_type, "po_rate") if unit_cost else None,
         )
     except ValueError as e:
         raise LotError(f"Stock couldn't be moved for lot {lot.lot_number}: {e}")
@@ -99,12 +100,20 @@ def attach_plan(db: Session, lot: QualityInspectionLot) -> bool:
         base = _FAI_BASE_TYPE.get(lot.source_type) or ("incoming" if lot.vendor_name else "final")
         plan = current_plan(db, lot.item_id, base) or current_plan(db, lot.item_id, "final" if base != "final" else "incoming")
         sampling_type, fixed_n = "fixed", int(get_setting(db, "fai_sample_size"))
+    if not plan and (lot.inspection_type == "incoming" or (lot.inspection_type == "first_article" and lot.source_type in ("grn", "pre_po_receipt"))):
+        # No item-specific approved plan: every incoming lot uses the standard checklist (ISO format F/STR/01).
+        from app.modules.quality.services.standard_checklist import ensure_standard_incoming_plan
+        plan = ensure_standard_incoming_plan(db)
+        if lot.inspection_type == "incoming":
+            sampling_type, fixed_n = plan.sampling_type, plan.fixed_sample_size
     if not plan:
         return False
     for r in list(lot.results):
         lot.results.remove(r)
     chars = {c.id: c for c in db.query(QualityCharacteristic).filter(
         QualityCharacteristic.id.in_([l.characteristic_id for l in plan.lines])).all()}
+    from app.modules.quality.services.standard_checklist import is_standard_plan
+    standard_plan = is_standard_plan(plan)
     max_n = 0
     for line in plan.lines:
         ch = chars[line.characteristic_id]
@@ -116,7 +125,7 @@ def attach_plan(db: Session, lot: QualityInspectionLot) -> bool:
             s = sampling_for_line(
                 db, lot_size=lot.quantity, classification=classification, sampling_type=sampling_type,
                 aql=aql, level=plan.inspection_level, severity=lot.sampling_severity,
-                fixed_sample_size=fixed_n,
+                fixed_sample_size=fixed_n, double_fixed_when_tightened=standard_plan,
             )
         except ValueError as e:
             raise LotError(f"Plan {plan.plan_number}: {e}")
@@ -163,8 +172,8 @@ def _notify_new_lot(db: Session, lot: QualityInspectionLot, actor_id: int | None
         for u in access.quality_engineers(db):
             notify_user(db, user_id=u.id, title="Inspection Plan Needed",
                         message=f"Lot {lot.lot_number} ({lot.item_name}, {QUALITY_INSPECTION_TYPE_LABELS.get(lot.inspection_type)}) "
-                                "can't be inspected: there's no approved inspection plan for this item and inspection type. "
-                                "Create and approve one in Quality → Inspection Plans.",
+                                "can't be inspected: there's no approved checklist for this item and inspection type. "
+                                "Ask a Quality head to set one up, then open the lot and press Attach checklist.",
                         notification_type="quality_plan_needed", entity_type="quality_inspection_lot", entity_id=lot.id, teams=True)
 
 
@@ -204,7 +213,7 @@ def create_lot(
         stock_in_quality=bool(location_id) and (receive_into_quality or stock_already_in_quality or take_from_free),
         sampling_severity=vendor_severity or get_setting(db, "default_sampling_severity"), skip_lot=skip_lot,
         test_certificate_required=bool(item.test_certificate_required) and (
-            inspection_type == "incoming" or (inspection_type == "first_article" and source_type == "grn")),
+            inspection_type == "incoming" or (inspection_type == "first_article" and source_type in ("grn", "pre_po_receipt"))),
         assigned_to_id=assigned_to_id, created_by_id=user_id, lot_date=lot_date or date.today(), remarks=remarks,
         order_project_id=order_project_id, order_project_element_id=order_project_element_id,
     )
@@ -213,7 +222,9 @@ def create_lot(
     if receive_into_quality and location_id:
         _stock(db, lot, "quality_in", quantity, user_id,
                f"{QUALITY_INSPECTION_TYPE_LABELS.get(inspection_type, inspection_type)} — held in Quality stock for lot {lot.lot_number}"
-               + (f" ({source_reference})" if source_reference else ""), unit_cost=unit_cost)
+               + (f" ({source_reference})" if source_reference else ""), unit_cost=unit_cost,
+               # A Before-PO receipt is dated the day the goods arrived (like its Free-stock postings).
+               transaction_date=lot.lot_date if source_type == "pre_po_receipt" else None)
     elif take_from_free and location_id:
         _stock(db, lot, "quality_hold", quantity, user_id, f"Moved from Free to Quality stock for re-inspection lot {lot.lot_number}")
     attach_plan(db, lot)
@@ -315,8 +326,8 @@ def _require_status(lot: QualityInspectionLot, allowed: tuple[str, ...], action:
 def refresh_plan(db: Session, lot: QualityInspectionLot) -> QualityInspectionLot:
     _require_status(lot, ("created",), "re-attach its plan")
     if not attach_plan(db, lot):
-        raise LotError(f"There's still no approved {QUALITY_INSPECTION_TYPE_LABELS.get(lot.inspection_type)} plan for "
-                       f"{lot.item_code or ''} {lot.item_name}. Approve one in Quality → Inspection Plans first.")
+        raise LotError(f"There's still no approved {QUALITY_INSPECTION_TYPE_LABELS.get(lot.inspection_type)} checklist for "
+                       f"{lot.item_code or ''} {lot.item_name}. Ask a Quality head to set one up, then press Attach checklist again.")
     return lot
 
 
@@ -347,9 +358,9 @@ def start(db: Session, lot: QualityInspectionLot, user: User) -> QualityInspecti
     _require_status(lot, ("created",), "start it")
     if not lot.plan_id and not attach_plan(db, lot):
         raise LotError(
-            f"Lot {lot.lot_number} has no approved inspection plan (rule 2: every inspection uses an approved current plan). "
-            f"Create and approve a {QUALITY_INSPECTION_TYPE_LABELS.get(lot.inspection_type)} plan for {lot.item_name} "
-            "in Quality → Inspection Plans, then start again.")
+            f"Lot {lot.lot_number} has no approved checklist (rule 2: every inspection uses an approved current checklist). "
+            f"There is none for {QUALITY_INSPECTION_TYPE_LABELS.get(lot.inspection_type)} of {lot.item_name} — "
+            "ask a Quality head to set one up, then press Attach checklist on the lot and start again.")
     lot.status = "in_inspection"
     lot.started_at = _now()
     if not lot.assigned_to_id:
@@ -429,9 +440,9 @@ def submit_results(db: Session, lot: QualityInspectionLot, user: User) -> Qualit
     lot.results_recorded_at = _now()
     failed = sum(1 for r in lot.results if r.result == "fail")
     role_events.fire(db, "lot_waiting_decision", record=lot, entity_type="quality_inspection_lot", actor=user,
-                     title=f"Usage decision needed: {lot.lot_number}",
+                     title=f"Decision needed: {lot.lot_number}",
                      message=f"{user.name or user.email} submitted the results of lot {lot.lot_number} ({lot.quantity:g} {lot.uom or ''} "
-                             f"of {lot.item_name}): {failed} characteristic(s) failed. Record the usage decision on the lot.")
+                             f"of {lot.item_name}): {failed} characteristic(s) failed. Record the decision on the lot.")
     return lot
 
 
@@ -456,18 +467,35 @@ def worst_failed_class(lot: QualityInspectionLot) -> str | None:
     return max(failed, key=lambda c: _CLASS_RANK.get(c, 0)) if failed else None
 
 
+def _require_deviation_authority(lot: QualityInspectionLot, user: User, deviation_reference: str | None, critical_failed: list,
+                                 what: str, critical_status: int) -> None:
+    """Controls for using a lot (or part of it) that has failed characteristics: no critical failure (rule 4),
+    a Design / customer concession reference, a Quality head, and not the person who recorded the results."""
+    if critical_failed:
+        raise LotError(f"Critical characteristic(s) {', '.join(r.characteristic_name for r in critical_failed)} failed. "
+                       "Rule 4: a lot can never be accepted with a failed critical characteristic — reject it; the NCR goes to Design / customer.",
+                       critical_status)
+    if not (deviation_reference or "").strip():
+        raise LotError(f"{what} needs the Design / customer concession reference (deviation number).", 422)
+    if not access.is_quality_head(user):
+        raise LotError(f"{what} is a 'use as is' decision — only a Quality head can make it.", 403)
+    if user.id in _recorders(lot):
+        raise LotError("You recorded this lot's results, so you can't also approve accepting it with a deviation — "
+                       "another Quality user with head authority (not the person who recorded the results) must decide (segregation of duties).", 403)
+
+
 def decide(db: Session, lot: QualityInspectionLot, *, decision: str, user: User, accepted_qty: float | None = None,
            rejected_qty: float | None = None, deviation_reference: str | None = None, remarks: str | None = None):
-    """Usage decision. Posts stock QUALITY→FREE / QUALITY→BLOCKED, writes the
+    """Lot decision. Posts stock QUALITY→FREE / QUALITY→BLOCKED, writes the
     split back to the source document, and raises the NCR (rule 5)."""
     from app.modules.quality.services import ncr as ncr_service
 
-    _require_status(lot, ("results_recorded",), "make a usage decision")
+    _require_status(lot, ("results_recorded",), "make a decision")
     if decision not in QUALITY_LOT_DECISIONS:
         raise LotError(f"Decision must be one of: {', '.join(QUALITY_LOT_DECISION_LABELS.values())}.", 422)
     if not access.can_decide_lot(user):
-        raise LotError("Only a Quality engineer or Quality head can make a usage decision — ask an admin to apply the role "
-                       "in Quality → Settings → Quality roles.", 403)
+        raise LotError("Only a Quality engineer or Quality head can make the decision — ask an admin to apply the role "
+                       "in Quality settings › Quality roles.", 403)
     failed = [r for r in lot.results if r.result == "fail"]
     critical_failed = [r for r in failed if r.classification == "critical"]
     qty = lot.quantity
@@ -480,16 +508,7 @@ def decide(db: Session, lot: QualityInspectionLot, *, decision: str, user: User,
     elif decision == "accept_with_deviation":
         if not failed:
             raise LotError("Nothing failed, so there's nothing to deviate from — choose Accept.")
-        if critical_failed:
-            raise LotError(f"Critical characteristic(s) {', '.join(r.characteristic_name for r in critical_failed)} failed. "
-                           "Rule 4: a lot can never be accepted with a failed critical characteristic — reject it; the NCR goes to Design / customer.")
-        if not (deviation_reference or "").strip():
-            raise LotError("Accept with deviation needs the Design / customer concession reference (deviation number).", 422)
-        if not access.is_quality_head(user):
-            raise LotError("Accept with deviation is a 'use as is' decision — only a Quality head can make it.", 403)
-        if user.id in _recorders(lot):
-            raise LotError("You recorded this lot's results, so you can't also approve accepting it with a deviation — "
-                           "another Quality head must decide (segregation of duties).", 403)
+        _require_deviation_authority(lot, user, deviation_reference, critical_failed, "Accept with deviation", 409)
         accepted, rejected = qty, 0.0
     elif decision == "reject":
         accepted, rejected = 0.0, qty
@@ -501,6 +520,9 @@ def decide(db: Session, lot: QualityInspectionLot, *, decision: str, user: User,
         if abs(accepted_qty + rejected_qty - qty) > 1e-9:
             raise LotError(f"Accepted ({accepted_qty:g}) + rejected ({rejected_qty:g}) must equal the lot quantity {qty:g}.", 422)
         accepted, rejected = accepted_qty, rejected_qty
+        # Part of a lot that has failures is still "use as is" for that part — same controls as Accept with deviation.
+        if failed:
+            _require_deviation_authority(lot, user, deviation_reference, critical_failed, "Accepting part of a lot that has failures", 422)
 
     if accepted > 0:
         from app.modules.quality.services.first_article import ensure_released, FaiError
@@ -542,10 +564,13 @@ def decide(db: Session, lot: QualityInspectionLot, *, decision: str, user: User,
                                       + (f" — {lot.decision_remarks}" if lot.decision_remarks else ""))
 
     ncrs = []
-    if rejected > 0:
-        ncrs.append(ncr_service.raise_from_lot(db, lot, quantity=rejected, user=user, deviation=False))
-    if decision == "accept_with_deviation":
-        ncrs.append(ncr_service.raise_from_lot(db, lot, quantity=accepted, user=user, deviation=True))
+    # Quality settings › Inspection rules › NCR: off = no NCR; the rejected quantity already sits in Blocked stock (above) and the
+    # deviation number stays on the lot.
+    if setting_on(db, "ncr_auto_raise"):
+        if rejected > 0:
+            ncrs.append(ncr_service.raise_from_lot(db, lot, quantity=rejected, user=user, deviation=False))
+        if decision == "accept_with_deviation" or (decision == "partial" and failed):
+            ncrs.append(ncr_service.raise_from_lot(db, lot, quantity=accepted, user=user, deviation=True))
     if lot.ncr_id:
         ncr_service.on_reinspection_decided(db, lot)
     from app.modules.quality.services.supplier_quality import on_lot_decided
@@ -560,7 +585,7 @@ def decide(db: Session, lot: QualityInspectionLot, *, decision: str, user: User,
             role_events.fire(db, "fai_decision_waiting", record=fai, entity_type="quality_first_article", actor=user,
                              title=f"First article waiting for a decision: {fai.fai_number}",
                              message=f"Lot {lot.lot_number} of {fai.item_name}{' from ' + fai.vendor_name if fai.vendor_name else ''} "
-                                     f"has its usage decision. Approve or reject {fai.fai_number} to release the item for regular supply.")
+                                     f"has its decision. Approve or reject {fai.fai_number} to release the item for regular supply.")
     return lot, ncrs
 
 
@@ -576,7 +601,7 @@ def cancel(db: Session, lot: QualityInspectionLot, user: User, reason: str) -> Q
     _require_status(lot, ("created", "in_inspection"), "cancel it")
     if lot.source_type != "manual" or lot.stock_in_quality:
         raise LotError("Only a manual lot with no stock behind it can be cancelled. A lot holding Quality stock must get a "
-                       "usage decision (reject it if the material shouldn't be used).")
+                       "decision (reject it if the material shouldn't be used).")
     if not (reason or "").strip():
         raise LotError("Give a reason for cancelling the lot.", 422)
     lot.status = "cancelled"

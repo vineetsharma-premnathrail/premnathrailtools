@@ -24,10 +24,10 @@ const config: TourConfig = {
     },
     {
       target: 'erp-sr-filter-btn',
-      title: 'Filters',
-      purpose: 'Opens the filter popup: Status, Priority, Service Type and Overdue Only (SRs whose Expected Close Date has passed and are not yet Closed or Cancelled). The number on the button shows how many filters are on.',
+      title: 'Filter',
+      purpose: 'Opens the Filter menu: Status, Priority, Service Type and Overdue (only SRs whose Expected Close Date has passed and are not yet Closed or Cancelled). The list updates as soon as you pick a value; the number on the button shows how many filters are on.',
       options: SR_STATUS_OPTIONS,
-      after: 'Pick what you need and press Apply Filters; Clear Filters (or the Clear button next to Filters) resets them all.',
+      after: 'Pick what you need and press Done; Clear filters (or the Clear button next to Filter) resets them all.',
       why: 'Overdue SRs are promises to customers already broken — chase them first.',
     },
     {

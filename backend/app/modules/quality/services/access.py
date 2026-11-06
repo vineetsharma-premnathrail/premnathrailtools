@@ -22,7 +22,7 @@ def _grants(*pairs: tuple[str, str]) -> list[str]:
 
 
 _INSPECTOR = _grants(
-    ("dashboard", "view"), ("my_inspections", "view,edit"), ("inspection_lots", "view,edit"),
+    ("dashboard", "view"), ("my_inspections", "view,edit"), ("inspection_lots", "view,edit,print"),
     ("ncr", "view,create"), ("inspection_plans", "view"), ("masters", "view"),
     ("in_process_inspection", "view,edit"), ("final_inspection", "view,edit"),
     ("first_article", "view,edit"), ("inspection_calls", "view"),

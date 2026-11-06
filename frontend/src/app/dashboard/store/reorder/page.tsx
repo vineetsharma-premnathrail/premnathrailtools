@@ -9,7 +9,7 @@ import { TEXT, GLASS, SHADOWS, BORDER, DANGER } from '@/lib/theme'
 import StoreNav from '@/components/store/StoreNav'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
-import Select from '@/components/shared/Select'
+import FilterMenu from '@/components/shared/FilterMenu'
 import { primaryBtnStyle, RowCount, inputStyle as sharedInputStyle } from '@/components/shared/ui'
 
 const sectionStyle: React.CSSProperties = {
@@ -100,10 +100,11 @@ export default function StoreReorderPage() {
       <MessageDialog open={!!error} variant="error" title="Reorder" message={error} onClose={() => setError('')} />
 
       <div data-tour="store-reorder-filters" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
-        <Select style={inputStyle} value={category} onChange={(e) => setCategory(e.target.value)}>
-          <option value="">All categories</option>
-          {categories.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
-        </Select>
+        <FilterMenu
+          fields={[{ key: 'category', label: 'Category', value: category, allLabel: 'All categories', options: categories.map((c) => ({ value: c.name, label: c.name })) }]}
+          onChange={(_key, v) => setCategory(v)}
+          onClear={() => setCategory('')}
+        />
         <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, color: TEXT.body }}>
           <input type="checkbox" checked={dueOnly} onChange={(e) => setDueOnly(e.target.checked)} /> Only items due for reorder
         </label>

@@ -111,11 +111,19 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _reject_placeholder_secret_in_production(self) -> "Settings":
-        if self.environment == "production" and (
-            not self.SECRET_KEY or self.SECRET_KEY == "..." or len(self.SECRET_KEY) < 32
-        ):
+        weak = not self.SECRET_KEY or self.SECRET_KEY == "..." or len(self.SECRET_KEY) < 32
+        # Fail closed: ENVIRONMENT defaults to "development", so a deploy that forgot
+        # to set it must not silently run with a forgeable key. A public (non-local)
+        # frontend URL or allowed origin means this is not a developer laptop.
+        local = ("localhost", "127.0.0.1", "[::1]")
+        public = any(
+            o and not any(h in o for h in local)
+            for o in [self.FRONTEND_URL, *self.allowed_origins_list]
+        )
+        if weak and (self.environment == "production" or public):
             raise ValueError(
-                "SECRET_KEY must be set to a strong, unique value (32+ chars) when environment=production. "
+                "SECRET_KEY must be set to a strong, unique value (32+ chars) when environment=production "
+                "or when FRONTEND_URL / ALLOWED_ORIGINS point to a non-local address (set ENVIRONMENT=production and SECRET_KEY in the host's env). "
                 "Refusing to start with a placeholder/weak key, since it would let anyone forge session tokens."
             )
         return self

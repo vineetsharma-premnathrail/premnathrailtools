@@ -34,7 +34,8 @@ const config: TourConfig = {
     },
     {
       target: 'fin-pay-status',
-      title: 'Status filter',
+      title: 'Filter',
+      purpose: 'Opens the Filter panel. Status limits the list; it applies at once.',
       options: [
         { value: 'Posted', meaning: 'In the books.' },
         { value: 'Cancelled', meaning: 'Cancelled with a reason; its journal was reversed and its bill allocations released.' },

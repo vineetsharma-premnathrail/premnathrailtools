@@ -11,6 +11,7 @@
 // Opening needs the Download right, uploading needs Upload (R&D: set by the R&D head).
 
 import Select from '@/components/shared/Select'
+import FilterMenu from '@/components/shared/FilterMenu'
 import { useEffect, useState } from 'react'
 import { rndApi } from '@/lib/api'
 import { RndMyAccess, RndWorkDocument } from '@/types'
@@ -132,10 +133,12 @@ export default function RequirementDocumentsTab({ source, recordId, access }: { 
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search file name, uploaded by, task…"
         />
-        <Select data-tour="rnd-req-doc-category-filter" aria-label="Category" style={{ ...inputStyle, width: 'auto', flex: '0 1 220px' }} value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
-          <option value="">All categories</option>
-          {[...RND_DOC_CATEGORIES, { value: 'technical_offer', label: 'Technical Offer' }].map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-        </Select>
+        <FilterMenu
+          tourId="rnd-req-doc-category-filter"
+          fields={[{ key: 'category', label: 'Category', value: categoryFilter, allLabel: 'All categories', options: [...RND_DOC_CATEGORIES, { value: 'technical_offer', label: 'Technical Offer' }].map((c) => ({ value: c.value, label: c.label })) }]}
+          onChange={(_k, v) => setCategoryFilter(v)}
+          onClear={() => setCategoryFilter('')}
+        />
         <div data-tour="rnd-req-doc-groups" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {(['all', 'crm', 'task', 'rnd'] as Group[]).map((g) => (
             <button key={g} type="button" onClick={() => setGroup(g)} style={chipBtnStyle(group === g)}>

@@ -16,7 +16,7 @@ from app.modules.erp.models.project import Project
 from app.modules.p2p.models.p2p_request import (
     P2PRequest, P2P_REQUEST_STATUSES, P2P_CATEGORIES, P2P_REQUIREMENT_TYPES, resolve_auto_buyer_id,
     LINE_CATEGORY, resolve_line_buyer_id,
-    PO_APPROVAL_ROLE_SETS, P2P_ROLE_FLAGS, P2P_ROLE_LABELS, P2P_PO_APPROVER_FLAGS, P2P_PROJECT_TYPES,
+    PO_APPROVAL_ROLE_SETS, P2P_ROLE_LABELS, P2P_PO_APPROVER_FLAGS, P2P_PROJECT_TYPES,
     P2P_EDITABLE_STATUSES, P2P_PURPOSES,
 )
 from app.modules.p2p import purpose as pr_purpose
@@ -68,42 +68,6 @@ PR_VISIBILITY_KEY = "p2p:purchase_requisitions"
 router = APIRouter(prefix="/p2p/requests", tags=["P2P"])
 BUYER_RULE_KEY = "p2p:purchase_requisitions.buyer"  # core/assignee_rules.PICKERS
 
-_PR_APPROVAL_SLOT_LABELS = (("approver_id", "Department Head"), ("project_head_id", "Project Head"), ("plant_head_id", "Plant Head"))
-# Role key -> User flag for every PO approval role: the manager-matrix roles
-# plus the legacy Purchase Head -> Director -> Partner chain that in-flight PRs
-# (project_type is NULL) still finish on.
-_PO_APPROVAL_ROLE_FLAGS = {"purchase_head": "is_purchase_head", "director": "is_director", "partner": "is_partner", **P2P_ROLE_FLAGS}
-
-
-def po_approver_users(db: Session, pr: "P2PRequest") -> list[tuple["User", str]]:
-    """Everyone a PR's PO goes to, as (user, role) — one entry per person.
-    Matrix PRs: the people picked per role on the New PR form plus every
-    Director. Legacy PRs: holders of their still-pending chain role flags."""
-    out: dict[int, tuple[User, str]] = {}
-    if pr.approval_scheme == SETTINGS_SCHEME:
-        # Level 1 (Settings PO approvers) first; the Partners only once they are all done.
-        pending_rows = [a for a in pr.po_approvers if a.approved_at is None]
-        if pending_rows:
-            for row in pending_rows:
-                u = db.query(User).filter(User.id == row.approver_id, User.is_active == True).first()  # noqa: E712
-                if u:
-                    out.setdefault(u.id, (u, row.role))
-        elif pr.partner_approved_at is None:
-            for u in active_partners(db):
-                out.setdefault(u.id, (u, "partner"))
-    elif pr.project_type in PO_APPROVAL_ROLE_SETS:
-        for row in pr.po_approvers:
-            u = db.query(User).filter(User.id == row.approver_id, User.is_active == True).first()  # noqa: E712
-            if u:
-                out.setdefault(u.id, (u, row.role))
-        for u in db.query(User).filter(User.is_active == True, User.is_director == True).all():  # noqa: E712
-            out.setdefault(u.id, (u, "director"))
-    else:
-        for role in pr.pending_po_approval_roles:
-            for u in db.query(User).filter(User.is_active == True, getattr(User, _PO_APPROVAL_ROLE_FLAGS[role]) == True).all():  # noqa: E712
-                out.setdefault(u.id, (u, role))
-    return list(out.values())
-
 
 async def _send_p2p_pr_approval_emails_background(pr_id: int) -> None:
     """Best-effort email to each assigned PR approver, run after the PR has
@@ -118,13 +82,8 @@ async def _send_p2p_pr_approval_emails_background(pr_id: int) -> None:
         ).filter(P2PRequest.id == pr_id).first()
         if not pr:
             return
-        if pr.approvals:
-            slots = [(a.approver_id, P2P_ROLE_LABELS.get(a.role, a.role)) for a in pr.approvals]
-        elif pr.approval_scheme == ENGINE_SCHEME:
-            # The approval engine's current stage (Organization › Approval Workflows).
-            slots = [(u.id, stage) for u, stage in p2p_approvals.pending_approvers(db, p2p_approvals.pr_request(db, pr.id))]
-        else:
-            slots = [(getattr(pr, field), role_label) for field, role_label in _PR_APPROVAL_SLOT_LABELS]
+        # The approval engine's current stage (Organization › Approval Workflows).
+        slots = [(u.id, stage) for u, stage in p2p_approvals.pending_approvers(db, p2p_approvals.pr_request(db, pr.id))]
         for approver_id, role_label in slots:
             if not approver_id:
                 continue
@@ -139,8 +98,8 @@ async def _send_p2p_pr_approval_emails_background(pr_id: int) -> None:
 
 
 async def _send_p2p_po_approval_emails_background(pr_id: int, po_id: int | None = None) -> None:
-    """Best-effort email to every user holding a still-pending PO approval
-    role (purchase head / director / Partner), run after the PO has already been
+    """Best-effort email to every approver of the PO's current approval stage
+    (approval engine), run after the PO has already been
     committed. Opens its own DB session for the same reason as above.
     `po_id` names the PO that was just sent for approval: a requisition can have
     several POs (one per vendor / buyer), so "the latest PO of the PR" would mail
@@ -157,12 +116,9 @@ async def _send_p2p_po_approval_emails_background(pr_id: int, po_id: int | None 
         po = po_q.order_by(P2PPurchaseOrder.id.desc()).first()
         if not po:
             return
-        if pr.approval_scheme == ENGINE_SCHEME:
-            people = p2p_approvals.pending_approvers(db, engine.latest_request(db, p2p_approvals.PO_ENTITY, po.id))
-        else:
-            people = po_approver_users(db, pr)
+        people = p2p_approvals.pending_approvers(db, engine.latest_request(db, p2p_approvals.PO_ENTITY, po.id))
         for approver, role in people:
-            await send_p2p_po_approval_email(db, pr, po, approver, P2P_ROLE_LABELS.get(role, role))
+            await send_p2p_po_approval_email(db, pr, po, approver, role)
         db.commit()
     except Exception:
         db.rollback()
@@ -462,113 +418,123 @@ def _check_view_access(pr: P2PRequest, user: User) -> None:
     raise HTTPException(status_code=403, detail="You may only view your own P2P requests, or ones you are an approver of.")
 
 
-def _check_approve_access(pr: P2PRequest, user: User) -> list[str] | None:
-    """Every approval slot `user` is acting as (None means the legacy
-    no-heads-assigned purchase-team-wide path — the caller distinguishes it
-    by assigned_approver_ids). An admin has no say just for being admin
-    (owner decision 2026-11-04): only named approvers decide. Returns all
-    still-pending roles assigned to this user, not just the first one, so a
-    user holding multiple approver roles on the same PR clears every one of
-    their slots in a single click.
+def _check_reject_approved_access(pr: P2PRequest, user: User) -> None:
+    """Who may turn down an APPROVED requisition before any PO is raised: the purchase team,
+    with the 'Reject' grant on Purchase Requisitions. Nobody else, and an admin only by holding that
+    grant like anyone else (being admin approves or rejects nothing, owner decision 2026-11-04)."""
+    if not _is_purchase_team(user):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Only the purchase team can reject {pr.p2p_number} now that it is approved. Ask a buyer, or ask an admin to give you "
+                   "the Purchase module and the 'Reject' permission on Procurement › Purchase Requisitions.",
+        )
+    _ensure_pr_action(user, "reject")
 
-    Per the "user self select kar sake" requirement (2026-09-30), a requester
-    who named THEMSELVES in a slot may sign that slot — the business accepted
-    waiving the PR-level four-eyes control. That consent only covers slots
-    they were explicitly named in: on a PR with no assigned approvers at all
-    (legacy fallback) the requester still can't wave their own PR through."""
-    assigned = pr.assigned_approver_ids
-    if not assigned:
-        if pr.requested_by_id is not None and pr.requested_by_id == user.id:
-            raise HTTPException(
-                status_code=403,
-                detail="You raised this requisition and no approvers are assigned to it, so you can't approve it yourself.",
-            )
-        if not _is_purchase_team(user):
-            raise HTTPException(
-                status_code=403,
-                detail="No approver is named on this PR, so only the purchase team can decide it, and an admin cannot approve just by being admin. "
-                       "Add a PR approver in Procurement › Settings › PR approvers, or ask an admin to reassign the approval step.",
-            )
-        # No named approvers to route to — the decision falls to the purchase
-        # team, so the matrix 'Approve' grant is what authorises it.
-        _ensure_pr_action(user, "approve")
+
+# Old approval route (before Approval Workflows, 2026-10-08). The route code is gone; an item that was
+# still waiting on it is sent into the workflow the first time somebody tries to decide it.
+_OLD_ROUTE_PR_MSG = ("This requisition was waiting on the old approval route; it has now been sent to the approval workflow — "
+                     "approve it from My Approvals.")
+_OLD_ROUTE_PO_MSG = ("This PO was waiting on the old approval route; it has now been sent to the approval workflow — "
+                     "approve it from My Approvals.")
+
+
+def _move_failed(number: str, exc: HTTPException) -> HTTPException:
+    """The workflow refused an item that was on the old route (e.g. a stage has nobody to approve): say
+    what it was, and keep the engine's own reason and fix."""
+    return HTTPException(
+        status_code=exc.status_code,
+        detail=f"{number} was waiting on the old approval route and could not be moved into the approval workflow yet. {exc.detail} "
+               "Fix that in Organization › Approval Workflows (or the people it names), then try again.")
+
+
+def _may_open_legacy(db: Session, pr: P2PRequest, user: User, *, po: bool) -> bool:
+    """Who may trigger the move of an old-route item into the workflow: an admin, someone holding Approve
+    on the tab (Purchase requisitions / Purchase orders), or a person named on the old route's rows / slots
+    (for a PO also the old Director / Partner / Purchase Head flags)."""
+    from app.core.permission_registry import is_admin_user
+
+    if is_admin_user(user):
+        return True
+    if can_perform(user, "p2p", "purchase_orders" if po else "purchase_requisitions", "approve"):
+        return True
+    if po:
+        return (any(a.approver_id == user.id for a in pr.po_approvers)
+                or any(getattr(user, flag, False) for flag in ("is_partner", "is_director", "is_purchase_head")))
+    return user.id in set(pr.assigned_approver_ids.values()) | {a.approver_id for a in pr.approvals}
+
+
+def _refuse_legacy_open(what: str, tab: str) -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail=f"This {what} is still on the old approval route — ask Procurement (someone with Approve on {tab}) to open it once; "
+               "it then moves to the approval workflow.")
+
+
+def _original_user(db: Session, user_id: int | None, number: str, role: str) -> User:
+    """The person an old-route item is submitted as. Never the person who clicked: a missing or
+    inactive original must not turn the clicker into the requester."""
+    u = db.get(User, user_id) if user_id else None
+    if u is None or not u.is_active:
+        who = (f"{u.name or u.email} is no longer active" if u is not None
+               else f"#{user_id} no longer exists" if user_id else "is not recorded")
+        raise HTTPException(
+            status_code=409,
+            detail=f"{number} was waiting on the old approval route but cannot move into the approval workflow: its {role} {who}. "
+                   "Ask an admin to cancel it, or to reassign it to an active person, then raise it again.")
+    return u
+
+
+def _move_pr_into_engine(db: Session, pr: P2PRequest, user: User, action: str = "approve") -> str:
+    """A 'submitted' requisition with no approval request (call with the requisition locked): submit it to the
+    workflow as its original requester, audit it, commit. Returns the message the caller answers with (409).
+    It never decides anything: a Reject click that finds it approved at once says so and rejects nothing."""
+    if not _may_open_legacy(db, pr, user, po=False):
+        raise _refuse_legacy_open("requisition", "Purchase requisitions")
+    requester = _original_user(db, pr.requested_by_id, pr.p2p_number, "requester")
+    try:
+        p2p_approvals.submit_pr(db, pr, requester)
+    except HTTPException as exc:
+        raise _move_failed(pr.p2p_number, exc)
+    _write_audit(db, pr.id, "moved_to_workflow", user, old_status="submitted", new_status=pr.status,
+                 summary=f"{pr.p2p_number} was waiting on the old approval route; moved to Approval Workflows when "
+                         f"{user.name or user.email} opened it. Approvals given on the old route stay in its history; the workflow decides again.")
+    db.commit()
+    if pr.status == "approved":
+        not_done = " Your rejection was not applied — the requisition is approved." if action == "reject" else ""
+        return (f"{pr.p2p_number} was waiting on the old approval route; it has been sent to the approval workflow, where no stage "
+                f"applies, so it is now approved.{not_done} Reload the page.")
+    return _OLD_ROUTE_PR_MSG
+
+
+def _legacy_pos_in_flight(db: Session, pr: P2PRequest) -> list[P2PPurchaseOrder]:
+    """Live POs of the requisition sent for approval on the old route: 'issued', never given an approval
+    request, and not released (a PO approved before Approval Workflows, or one uploaded from Tally, is released)."""
+    return [po for po in po_split.live_pos(db, pr.id)
+            if po.status == "issued" and po_split.po_approval_status(db, po) is None and not po_split.po_is_released(db, po)]
+
+
+def _move_pos_into_engine_or_none(db: Session, pr: P2PRequest, user: User) -> str | None:
+    """Move every PO of the requisition that is still on the old approval route into the workflow
+    (submitted as its buyer), audit each, commit. Returns the message to answer with (409), or None
+    when there was nothing to move. Never decides anything."""
+    legacy = _legacy_pos_in_flight(db, pr)
+    if not legacy:
         return None
-
-    # Collect every role this user is assigned to that is still pending.
-    pending = set(pr.pending_approval_roles)
-    roles = [
-        role for role, assigned_id in assigned.items()
-        if assigned_id == user.id and role in pending
-    ]
-    if roles:
-        return roles
-
-    # Admins get no override: only a named approver can approve.
-    # Otherwise, user is not authorized to approve this PR.
-    raise HTTPException(status_code=403, detail="You are not an assigned approver for this PR, or you have already approved it.")
-
-
-def _check_reject_access(pr: P2PRequest, user: User) -> str:
-    """Who is rejecting, for `rejected_by_role` — any assigned head (approved
-    or not) may reject; falls back to purchase-team-wide when no heads are
-    assigned at all. Admins have no say by role."""
-    assigned = pr.assigned_approver_ids
-    if not assigned:
-        if not _is_purchase_team(user):
-            raise HTTPException(status_code=403, detail="Purchase module access required to approve or reject this PR.")
-        # No named approvers — a purchase-team-wide decision needs the 'Reject' grant.
-        _ensure_pr_action(user, "reject")
-        return "purchase_team"
-    for role, assigned_id in assigned.items():
-        if assigned_id == user.id:
-            return role
-    raise HTTPException(status_code=403, detail="Only an assigned approver of this PR can reject it. Being an admin does not allow it; ask an admin to reassign the approval step if the approver is away.")
-
-
-def _check_po_reject_access(pr: P2PRequest, user: User) -> str:
-    """Who is rejecting a PO-raised request — any holder of one of this PR's
-    PO approval roles. Admins have no say by role."""
-    if pr.approval_scheme == SETTINGS_SCHEME:
-        row = next((a for a in pr.po_approvers if a.approver_id == user.id), None)
-        if row:
-            return row.role
-        if user.is_partner:
-            return "partner"
-        raise HTTPException(status_code=403, detail="Only this PO's approvers (Procurement → Settings), or a Partner can reject this PO. Being an admin does not allow it; ask an admin to reassign the approval step if they are away.")
-    if pr.project_type in PO_APPROVAL_ROLE_SETS:
-        # Matrix PRs: the PO goes to the people picked on this PR plus every
-        # Director — role flags are irrelevant (picked approvers needn't hold
-        # them, and an unpicked flag-holder has no say on this PO).
-        picked_role = next((a.role for a in pr.po_approvers if a.approver_id == user.id), None)
-        if picked_role:
-            return picked_role
-        if user.is_director:
-            return "director"
-        names = ", ".join(f"{a.approver_name} ({P2P_ROLE_LABELS.get(a.role, a.role)})" for a in pr.po_approvers)
-        who = f" — {names}" if names else ""
-        raise HTTPException(status_code=403, detail=f"Only the PO approvers picked on this requisition{who}, or a Director can reject this PO. Being an admin does not allow it; ask an admin to reassign the approval step if they are away.")
-    role_set = ("purchase_head", "director", "partner")
-    for role in role_set:
-        if getattr(user, _PO_APPROVAL_ROLE_FLAGS[role], False):
-            return role
-    labels = ", ".join(P2P_ROLE_LABELS.get(r, r) for r in role_set)
-    raise HTTPException(status_code=403, detail=f"Only one of {labels} can reject this PO. Being an admin does not allow it; ask an admin to reassign the approval step if they are away.")
-
-
-def _check_po_approve_access(pr: P2PRequest, user: User) -> list[str]:
-    """Every PO approval slot `user` is acting as. Returns all still-pending
-    PO roles assigned to this user, not just the first one, so a user holding
-    multiple PO approver roles (purchase_head/director/md) clears every one
-    of their slots in a single click."""
-    role_flags = {
-        "purchase_head": user.is_purchase_head,
-        "director": user.is_director,
-        "partner": user.is_partner,
-    }
-    roles = [role for role, enabled in role_flags.items() if enabled and role in pr.pending_po_approval_roles]
-    if roles:
-        return roles
-    raise HTTPException(status_code=403, detail="You do not have a pending PO approval role for this request.")
+    if not _may_open_legacy(db, pr, user, po=True):
+        raise _refuse_legacy_open("PO", "Purchase orders")
+    for po in legacy:
+        rfq = db.get(RFQ, po.rfq_id) if po.rfq_id else None
+        buyer = _original_user(db, (rfq.buyer_id if rfq else None) or po.created_by_id, po.po_number, "buyer")
+        try:
+            p2p_approvals.submit_po(db, pr, po, buyer)
+        except HTTPException as exc:
+            raise _move_failed(po.po_number, exc)
+        _write_audit(db, pr.id, "moved_to_workflow", user,
+                     summary=f"PO '{po.po_number}' of {pr.p2p_number} was waiting on the old approval route; moved to Approval Workflows when "
+                             f"{user.name or user.email} opened it. Approvals given on the old route stay in its history; the workflow decides again.")
+    db.commit()
+    return _OLD_ROUTE_PO_MSG
 
 
 @router.get("/meta")
@@ -654,7 +620,9 @@ async def create_p2p_request(
     # its buyer (_sync_pr_lines / _assign_line_buyers). A category sent by an
     # internal caller still picks the buyer of the whole requisition, as before.
     category_code = payload.category_code or LINE_CATEGORY
-    auto_buyer_id = resolve_auto_buyer_id(db, category_code)
+    # A line-item requisition has no header buyer: every line has its own (category buyer ->
+    # item-type buyer -> Default buyer), so the header must not claim the whole PR for one buyer.
+    auto_buyer_id = None if category_code == LINE_CATEGORY else resolve_auto_buyer_id(db, category_code)
 
     pr = P2PRequest(
         p2p_number=generate_p2p_number(db, category_code),
@@ -841,8 +809,9 @@ def _sync_pr_lines(db: Session, pr: P2PRequest, lines: list[tuple], *, draft: bo
             row = P2PRequestItem(p2p_request_id=pr.id)
             pr.items.append(row)
         if pr.category_code == LINE_CATEGORY and (row.buyer_id is None or row.store_item_id != master.id):
-            # A new line, or its item changed: the buyer of the item's type.
-            row.buyer_id = resolve_line_buyer_id(db, master.item_type)
+            # A new line, or its item changed: the buyer of the item's category,
+            # else of its type, else the default buyer.
+            row.buyer_id = resolve_line_buyer_id(db, master.item_type, master.category, item_id=master.id)
         for field, value in item_snapshot(master).items():
             setattr(row, field, value)
         # Make comes from the Item Master only — a different brand is a
@@ -1315,7 +1284,8 @@ async def approve_p2p_request(
     # Named-approver routing decides who approves; the matrix only needs
     # 'View' on Purchase Requisitions (see the RBAC note at the top).
     _ensure_pr_view(user)
-    pr = _get_pr_or_404(db, pr_id, user=user)
+    # Locked: two clicks at once must not both move an old-route requisition into the workflow.
+    pr = _get_pr_or_404(db, pr_id, for_update=True, user=user)
     if pr.status != "submitted":
         raise HTTPException(status_code=409, detail=f"Only a submitted PR can be approved (current status: {pr.status})")
 
@@ -1328,61 +1298,8 @@ async def approve_p2p_request(
         db.refresh(pr)
         return _to_response(db, pr, user=user)
 
-    # ── In-flight PR from before the engine (no approval request): old path.
-    # An approval comment is mandatory (2026-09-30) — it's the approver's
-    # recorded reasoning on the requisition's approval trail. Rejections keep their own separate reason field.
-    comment = (payload.comment or "").strip()
-    if not comment:
-        raise HTTPException(status_code=400, detail="Add a comment before approving — it is recorded on the requisition's approval trail.")
-    payload.comment = comment
-
-    roles = _check_approve_access(pr, user)
-    now = datetime.now(timezone.utc)
-    comment_note = f" Comment: {payload.comment}"
-
-    def _stamp(role: str) -> None:
-        if pr.approvals:
-            row = next(a for a in pr.approvals if a.role == role)
-            row.approved_at = now
-            if payload.comment:
-                row.comment = payload.comment
-        else:
-            setattr(pr, f"{role}_approved_at", now)
-            if payload.comment:
-                setattr(pr, f"{role}_comment", payload.comment)
-
-    if roles is not None:
-        for role in roles:
-            _stamp(role)
-        role_labels = " & ".join(P2P_ROLE_LABELS.get(role, role) for role in roles)
-        _write_audit(db, pr.id, "approved", user,
-                     summary=f"{user.name or user.email} approved P2P request {pr.p2p_number} as {role_labels}.{comment_note}")
-
-    if not pr.pending_approval_roles:
-        old_status = pr.status
-        pr.status = "approved"
-        pr.approved_by_id = user.id
-        pr.approved_at = now
-        _write_audit(db, pr.id, "approved", user, summary=f"{user.name or user.email} approved P2P request {pr.p2p_number}.",
-                     old_status=old_status, new_status="approved")
-        # Stock may have moved since creation — re-check and auto-route:
-        # out-of-stock lines go to procurement (the RFQ covers exactly
-        # them), available lines wait for the buyer to issue from stock.
-        _route_lines_on_approval(db, pr, user)
-        if pr.requested_by_id:
-            notify_user(
-                db, user_id=pr.requested_by_id,
-                title="P2P Request Approved",
-                message=f"Your PR '{pr.p2p_number}' was approved by {user.name or user.email}.",
-                notification_type="p2p_request_approved", entity_type="p2p_request", entity_id=pr.id,
-            )
-        fire_rule(db, background_tasks, "p2p", "pr_approved", "Purchase Requisition Approved",
-                  f"PR '{pr.p2p_number}' got its final approval from {user.name or user.email}.", "p2p_request", pr.id, user,
-                  _pr_details(pr, user))
-
-    db.commit()
-    db.refresh(pr)
-    return _to_response(db, pr, user=user)
+    # Still on the old approval route (no approval request): send it into the workflow instead.
+    raise HTTPException(status_code=409, detail=_move_pr_into_engine(db, pr, user))
 
 
 def _pick_pending_po(db: Session, pr: P2PRequest, po_id: int | None, verb: str):
@@ -1424,168 +1341,19 @@ async def approve_po(
     if pr.status != "po_raised":
         raise HTTPException(status_code=409, detail=f"Only a PO raised request can be approved (current status: {pr.status})")
 
-    # PO sent for approval through the engine: just decide it there. Several POs can
-    # wait at once: payload.po_id picks the one (409 if it is ambiguous).
+    # A PO still on the old approval route goes into the workflow first (answers 409 with where to approve it).
+    moved = _move_pos_into_engine_or_none(db, pr, user)
+    if moved:
+        raise HTTPException(status_code=409, detail=moved)
+    # Several POs can wait at once: payload.po_id picks the one (409 if it is ambiguous).
     picked = _pick_pending_po(db, pr, payload.po_id, "approve")
     po, req = picked if picked is not None else p2p_approvals.po_request(db, pr.id)
-    if req is not None and pr.approval_scheme == ENGINE_SCHEME:
-        engine.decide(db, req.id, user, "approve", payload.comment)
-        db.commit()
-        db.refresh(pr)
-        return _to_response(db, pr, user=user)
-
-    # ── In-flight PO from before the engine (no approval request): old path.
-    # Same rule as PR approval: the approver's comment is mandatory.
-    comment = (payload.comment or "").strip()
-    if not comment:
-        raise HTTPException(status_code=400, detail="Add a comment before approving — it is recorded on the requisition's approval trail.")
-    payload.comment = comment
-
-    now = datetime.now(timezone.utc)
-
-    if pr.approval_scheme == SETTINGS_SCHEME:
-        _approve_po_settings_scheme(db, pr, user, payload.comment, now, background_tasks)
-    elif pr.project_type in PO_APPROVAL_ROLE_SETS:
-        # Manager matrix: ALL roles must approve (production_manager,
-        # purchase_manager, project_manager, director). Named roles are
-        # picked persons; director is any ONE of the directors.
-        my_rows = [a for a in pr.po_approvers if a.approver_id == user.id]
-        is_director = user.is_director
-
-        if not my_rows and not is_director:
-            names = ", ".join(f"{a.approver_name} ({P2P_ROLE_LABELS.get(a.role, a.role)})" for a in pr.po_approvers)
-            who = f" ({names})" if names else ""
-            raise HTTPException(status_code=403, detail=f"Only the PO approvers picked on this requisition{who} or a Director can approve this PO.")
-
-        # A user picked in several roles clears every one of their pending
-        # slots in one click (same as PR approval). Already-stamped slots are
-        # never re-stamped, so a second click can't overwrite the first
-        # approver's name/comment.
-        pending_rows = [a for a in my_rows if a.approved_at is None]
-        pending_roles = pr.pending_po_approval_roles
-        if pending_rows:
-            for approver_row in pending_rows:
-                approver_row.approved_at = now
-                approver_row.approved_by_id = user.id
-                approver_row.approved_by_name = user.name or user.email
-                approver_row.comment = payload.comment
-            role_label = " & ".join(P2P_ROLE_LABELS.get(a.role, a.role) for a in pending_rows)
-        elif not (is_director and "director" in pending_roles):
-            done = [P2P_ROLE_LABELS.get(a.role, a.role) for a in my_rows]
-            if is_director and pr.director_po_approved_by_id == user.id:
-                done.append("Director")
-            waiting = ", ".join(P2P_ROLE_LABELS.get(r, r) for r in pending_roles) or "nobody"
-            if done:
-                detail = f"You have already approved this PO as {' & '.join(done)}; it is waiting on {waiting}."
-            else:
-                detail = (f"The Director approval on this PO was already given by "
-                          f"{pr.director_po_approved_by_name or 'another Director'}; it is waiting on {waiting}.")
-            raise HTTPException(status_code=409, detail=detail)
-        else:
-            # The all-roles rule needs an independent Director: someone who
-            # already approved this PO in a picked role (e.g. a Purchase
-            # Manager who also holds is_director) can't fill the Director
-            # slot with a second click — one person never covers two roles.
-            my_stamped = [P2P_ROLE_LABELS.get(a.role, a.role) for a in pr.po_approvers if a.approved_by_id == user.id]
-            if my_stamped:
-                raise HTTPException(
-                    status_code=409,
-                    detail=(f"You approved this PO as {' & '.join(my_stamped)}; another Director must give the "
-                            f"Director approval — one person can't fill two approval roles on the same PO."),
-                )
-            pr.director_po_approved_at = now
-            pr.director_po_approved_by_id = user.id
-            pr.director_po_approved_by_name = user.name or user.email
-            pr.director_po_comment = payload.comment
-            role_label = "Director"
-
-        _write_audit(db, pr.id, "po_role_approved", user,
-                     summary=f"{user.name or user.email} approved PO for {pr.p2p_number} as {role_label}.")
-
-        # Check if ALL roles are now approved
-        if not pr.pending_po_approval_roles:
-            pr.status = "po_approved"
-            _write_audit(db, pr.id, "po_fully_approved", user,
-                         summary=f"PO for {pr.p2p_number} received all required approvals (final approval by {user.name or user.email} as {role_label}).",
-                         old_status="po_raised", new_status="po_approved")
-            if pr.requested_by_id:
-                notify_user(
-                    db, user_id=pr.requested_by_id,
-                    title="Purchase Order Fully Approved",
-                    message=f"The PO for your PR '{pr.p2p_number}' has received all required approvals and is now active.",
-                    notification_type="p2p_po_approved", entity_type="p2p_request", entity_id=pr.id,
-                )
-    else:
-        # Legacy chain (pre-matrix PRs): every one of Purchase Head, Director
-        # and Partner must stamp their own slot.
-        roles = _check_po_approve_access(pr, user)
-        for role in roles:
-            setattr(pr, f"{role}_approved_at", now)
-            setattr(pr, f"{role}_approved_by_name", user.name or user.email)
-            if payload.comment:
-                setattr(pr, f"{role}_comment", payload.comment)
-        role_labels = " & ".join(P2P_ROLE_LABELS.get(role, role) for role in roles)
-        _write_audit(db, pr.id, "po_approved", user,
-                     summary=f"{user.name or user.email} approved PO for {pr.p2p_number} as {role_labels}.")
-
-        if not pr.pending_po_approval_roles:
-            pr.status = "po_approved"
-            _write_audit(db, pr.id, "po_fully_approved", user,
-                         summary=f"PO for {pr.p2p_number} received all required approvals.",
-                         old_status="po_raised", new_status="po_approved")
-
+    if req is None:
+        raise HTTPException(status_code=409, detail=f"No PO of {pr.p2p_number} is waiting for approval. Reload the requisition to see its current state.")
+    engine.decide(db, req.id, user, "approve", payload.comment)
     db.commit()
     db.refresh(pr)
     return _to_response(db, pr, user=user)
-
-
-def _approve_po_settings_scheme(db: Session, pr: P2PRequest, user: User, comment: str, now: datetime,
-                                background_tasks: BackgroundTasks) -> None:
-    """Level 1: every Settings PO approver stamps their own row. Level 2 (only
-    after level 1 is complete): any ONE Partner gives the final approval —
-    someone who already approved at level 1 can't also be that Partner."""
-    my_pending = [a for a in pr.po_approvers if a.approver_id == user.id and a.approved_at is None]
-    level1_pending = [a for a in pr.po_approvers if a.approved_at is None]
-    if my_pending:
-        for row in my_pending:
-            row.approved_at = now
-            row.approved_by_id = user.id
-            row.approved_by_name = user.name or user.email
-            row.comment = comment
-        _write_audit(db, pr.id, "po_role_approved", user, summary=f"{user.name or user.email} approved the PO for {pr.p2p_number} (PO approver).")
-        if not [a for a in pr.po_approvers if a.approved_at is None]:
-            for partner in active_partners(db):
-                if partner.id != user.id:
-                    notify_user(db, partner.id, "Purchase Order Awaiting Final Approval",
-                                f"The PO for PR '{pr.p2p_number}' is approved by the PO approvers and needs one Partner's final approval.",
-                                notification_type="p2p_po_approval_pending", entity_type="p2p_request", entity_id=pr.id, teams=True)
-        return
-    if not user.is_partner:
-        waiting = ", ".join(a.approver_name or f"user #{a.approver_id}" for a in level1_pending)
-        if any(a.approver_id == user.id for a in pr.po_approvers):
-            raise HTTPException(status_code=409, detail=f"You have already approved this PO; it is waiting on {waiting or 'a Partner'}.")
-        raise HTTPException(status_code=403, detail="Only this PO's approvers (Procurement → Settings) or a Partner can approve it.")
-    if level1_pending:
-        waiting = ", ".join(a.approver_name or f"user #{a.approver_id}" for a in level1_pending)
-        raise HTTPException(status_code=409, detail=f"The PO approvers must approve first — still waiting on {waiting}. The Partner approval comes after them.")
-    if pr.partner_approved_at is not None:
-        raise HTTPException(status_code=409, detail=f"The Partner approval was already given by {pr.partner_approved_by_name or 'another Partner'}.")
-    if any(a.approved_by_id == user.id for a in pr.po_approvers):
-        raise HTTPException(status_code=409, detail="You approved this PO as a PO approver; another Partner must give the final approval — "
-                                                    "one person can't fill both levels.")
-    pr.partner_approved_at = now
-    pr.partner_approved_by_name = user.name or user.email
-    pr.partner_comment = comment
-    pr.status = "po_approved"
-    _write_audit(db, pr.id, "po_fully_approved", user, summary=f"{user.name or user.email} (Partner) gave the final approval for the PO of {pr.p2p_number}.",
-                 old_status="po_raised", new_status="po_approved")
-    if pr.requested_by_id:
-        notify_user(db, pr.requested_by_id, "Purchase Order Fully Approved",
-                    f"The PO for your PR '{pr.p2p_number}' was approved by {user.name or user.email} (Partner) and is now active.",
-                    notification_type="p2p_po_approved", entity_type="p2p_request", entity_id=pr.id)
-    fire_rule(db, background_tasks, "p2p", "po_approved", "Purchase Order Approved",
-              f"The PO for PR '{pr.p2p_number}' got its final approval from {user.name or user.email} (Partner).",
-              "p2p_request", pr.id, user, _pr_details(pr, user))
 
 
 def _pr_details(pr: P2PRequest, user: User) -> list[tuple[str, str]]:
@@ -1624,7 +1392,8 @@ async def reject_p2p_request(
     db: Session = Depends(get_db),
     user: User = Depends(_requester_or_purchase),
 ):
-    pr = _get_pr_or_404(db, pr_id, user=user)
+    # Locked: two clicks at once must not both move an old-route requisition / PO into the workflow.
+    pr = _get_pr_or_404(db, pr_id, for_update=True, user=user)
     if pr.status not in ("submitted", "approved", "po_raised"):
         raise HTTPException(status_code=409, detail=f"Cannot reject a PR with status '{pr.status}'")
     # Routing decides who may reject; the matrix needs 'View' on the tab the
@@ -1639,9 +1408,17 @@ async def reject_p2p_request(
     live = None
     if pr.status == "submitted":
         live = p2p_approvals.pr_request(db, pr.id)
-    elif pr.status == "po_raised" and pr.approval_scheme == ENGINE_SCHEME:
+        if live is None:  # still on the old approval route: send it into the workflow instead
+            raise HTTPException(status_code=409, detail=_move_pr_into_engine(db, pr, user, "reject"))
+    elif pr.status == "po_raised":
+        moved = _move_pos_into_engine_or_none(db, pr, user)
+        if moved:
+            raise HTTPException(status_code=409, detail=moved)
         picked = _pick_pending_po(db, pr, payload.po_id, "reject")
         live = (picked if picked is not None else p2p_approvals.po_request(db, pr.id))[1]
+        if live is None:
+            raise HTTPException(status_code=409, detail=f"No PO of {pr.p2p_number} is waiting for approval, so there is nothing to reject. "
+                                                        "Reload the requisition to see its current state.")
     if live is not None:
         if not (payload.reason or "").strip():
             raise HTTPException(status_code=422, detail="Give the reason for rejecting — the requester needs it to understand what to change.")
@@ -1650,22 +1427,21 @@ async def reject_p2p_request(
         db.refresh(pr)
         return _to_response(db, pr, user=user)
 
-    # ── Old path: in-flight items from before the engine, and an approved PR
-    # the purchase team / an assigned head turns down before any PO.
-    role = _check_po_reject_access(pr, user) if pr.status == "po_raised" else _check_reject_access(pr, user)
-
+    # ── An APPROVED requisition the purchase team turns down before any PO is raised.
+    _check_reject_approved_access(pr, user)
+    if not (payload.reason or "").strip():
+        raise HTTPException(status_code=422, detail="Give the reason for rejecting — the requester needs it to understand what to change.")
+    if po_split.live_pos(db, pr.id):
+        raise HTTPException(status_code=409, detail=f"{pr.p2p_number} already has a PO. Cancel or reject the PO first; a requisition with a PO "
+                                                    "can't be rejected.")
     old_status = pr.status
     pr.status = "rejected"
     pr.rejected_reason = payload.reason
-    pr.rejected_by_role = role
+    pr.rejected_by_role = "purchase_team"
     pr.rejected_by_name = user.name or user.email
-    reason_note = f" Reason: {payload.reason}" if payload.reason else ""
+    reason_note = f" Reason: {payload.reason}"
     _write_audit(db, pr.id, "rejected", user, summary=f"{user.name or user.email} rejected P2P request {pr.p2p_number}.{reason_note}",
                  old_status=old_status, new_status="rejected")
-    if old_status == "po_raised":
-        # Rejecting at PO approval kills the PO too — otherwise it stays
-        # 'issued' in PO Tracking forever against a terminal PR (C-43).
-        _cancel_linked_pos(db, pr, user, f"the PO was rejected at approval.{reason_note}")
 
     if pr.requested_by_id:
         notify_user(
@@ -1675,7 +1451,7 @@ async def reject_p2p_request(
             notification_type="p2p_request_rejected", entity_type="p2p_request", entity_id=pr.id,
         )
     fire_rule(db, background_tasks, "p2p", "pr_rejected", "Purchase Requisition Rejected",
-              f"PR '{pr.p2p_number}' was rejected by {user.name or user.email}{' at PO approval' if old_status == 'po_raised' else ''}.{reason_note}",
+              f"PR '{pr.p2p_number}' was rejected by {user.name or user.email}.{reason_note}",
               "p2p_request", pr.id, user, _pr_details(pr, user))
 
     db.commit()

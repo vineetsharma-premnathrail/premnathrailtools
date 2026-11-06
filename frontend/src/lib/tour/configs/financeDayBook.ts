@@ -23,8 +23,8 @@ const config: TourConfig = {
     },
     {
       target: 'fin-daybook-type',
-      title: 'Voucher Type',
-      purpose: 'Limit to one kind of voucher (Journal, Payment, Receipt, Contra, Purchase, Sales, Debit/Credit Note, Opening) or All.',
+      title: 'Filter',
+      purpose: 'Opens the Filter panel. Voucher Type limits the Day Book to one kind of voucher (Journal, Payment, Receipt, Contra, Purchase, Sales, Debit/Credit Note, Opening) or All.',
     },
     {
       target: 'fin-daybook-show',

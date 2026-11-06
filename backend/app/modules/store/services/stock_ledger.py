@@ -1,3 +1,4 @@
+import math
 from datetime import date
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -149,8 +150,8 @@ def post_stock_transaction(
     is on) refuses an unpriced receipt of an item with no average and no
     standard cost instead of posting it unvalued. Multi-line documents must
     post in valuation.ledger_sort_key() order."""
-    if quantity <= 0:
-        raise ValueError("Stock transaction quantity must be greater than zero")
+    if not math.isfinite(quantity) or quantity <= 0:
+        raise ValueError("Stock transaction quantity must be a finite number greater than zero")
     # MM posting period (MMPV/OMSY): never into a period Finance has closed.
     from app.modules.store.services.posting_period import assert_stock_postable
     assert_stock_postable(db, transaction_date or date.today())

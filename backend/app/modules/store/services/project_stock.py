@@ -484,6 +484,60 @@ def _grn_lines_for_txn(db: Session, txn) -> list:
     return []
 
 
+def _hold_line(db: Session, ln, take: float, *, item_id: int, location_id: int, user_id: int | None, grn_no: str,
+               log_ref: str | None = None) -> bool:
+    """Hold `take` of the GRN line's material for its project unit (or the whole project when it has no
+    units). False when the element is gone (cancelled by an amendment) - the stock then stays free."""
+    from app.modules.projects.so_projects import resolve_element
+    if _grn_line_element(ln):
+        try:
+            _p, el = resolve_element(db, _grn_line_element(ln))
+        except HTTPException as e:  # element cancelled by an amendment — the stock stays free
+            logger.info("GRN %s line %s not held for its project: %s", log_ref or grn_no, ln.id, e.detail)
+            return False
+        reserve_for_element(
+            db, item_id=item_id, location_id=location_id, qty=take, element_id=el.id, user_id=user_id,
+            source_type=GRN_SOURCE, source_id=ln.id, source_reference=grn_no,
+            remarks=f"Bought out for {element_label(db, el.id)} — held automatically from GRN {grn_no}",
+        )
+    else:  # a project without units: held for the project itself
+        pid = _grn_line_project(db, ln)
+        reserve_for_element(
+            db, item_id=item_id, location_id=location_id, qty=take, element_id=None, project_id=pid,
+            user_id=user_id, source_type=GRN_SOURCE, source_id=ln.id, source_reference=grn_no,
+            remarks=f"Bought out for {scope_label(db, pid, None)} — held automatically from GRN {grn_no}",
+        )
+    return True
+
+
+def hold_settled_for_project(db: Session, ln, qty: float, *, location_id: int, user_id: int | None, grn_no: str) -> float:
+    """A GRN line settled `qty` that a Before-PO receipt had already put into Free stock (no posting, so no
+    stock-ledger hook): hold it for the line's project exactly like a plain receipt would, within the line's
+    received quantity. Raises ValueError when that stock is no longer free (already issued / held). Returns the
+    quantity held (0 for a line not bought for a project)."""
+    if qty <= EPS or not (_grn_line_element(ln) or _grn_line_project(db, ln)):
+        return 0.0
+    cap = float(ln.received_quantity or 0) - float(ln.returned_quantity or 0)
+    so_far = float(db.query(func.coalesce(func.sum(StoreStockReservation.original_qty), 0.0)).filter(
+        StoreStockReservation.source_type == GRN_SOURCE, StoreStockReservation.source_id == ln.id).scalar() or 0)
+    take = round(min(qty, cap - so_far), _QTY)
+    if take <= EPS:
+        return 0.0
+    return take if _hold_line(db, ln, take, item_id=ln.store_item_id, location_id=location_id, user_id=user_id, grn_no=grn_no) else 0.0
+
+
+def release_line_holds(db: Session, line_id: int, grn_no: str) -> float:
+    """GRN reversal: release every active project hold the GRN line created (for the part that was settled by
+    a Before-PO receipt no stock goes out, so the pre-posting hook never sees it)."""
+    holds = (db.query(StoreStockReservation)
+             .filter(StoreStockReservation.source_type == GRN_SOURCE, StoreStockReservation.source_id == line_id,
+                     StoreStockReservation.status == "active").with_for_update().all())
+    freed = 0.0
+    for res in holds:
+        freed += _take(db, res, float(res.quantity or 0), emptied_status="cancelled", note=f"Released — GRN {grn_no} reversed")
+    return freed
+
+
 def on_free_stock_in(db: Session, txn) -> None:
     """Stock-ledger posting hook: when material of a project PO line reaches
     Free stock (GRN inspection release, inspection-lot release, older direct
@@ -494,7 +548,6 @@ def on_free_stock_in(db: Session, txn) -> None:
     lines = [ln for ln in _grn_lines_for_txn(db, txn) if _grn_line_element(ln) or _grn_line_project(db, ln)]
     if not lines:
         return
-    from app.modules.projects.so_projects import resolve_element
     left = float(txn.quantity or 0)
     for ln in lines:
         if left <= EPS:
@@ -506,24 +559,9 @@ def on_free_stock_in(db: Session, txn) -> None:
         if take <= EPS:
             continue
         grn_no = ln.goods_receipt.grn_number if ln.goods_receipt is not None else txn.reference_number
-        if _grn_line_element(ln):
-            try:
-                _p, el = resolve_element(db, _grn_line_element(ln))
-            except HTTPException as e:  # element cancelled by an amendment — the stock stays free
-                logger.info("GRN %s line %s not held for its project: %s", txn.reference_number, ln.id, e.detail)
-                continue
-            reserve_for_element(
-                db, item_id=txn.item_id, location_id=txn.location_id, qty=take, element_id=el.id, user_id=txn.created_by_id,
-                source_type=GRN_SOURCE, source_id=ln.id, source_reference=grn_no,
-                remarks=f"Bought out for {element_label(db, el.id)} — held automatically from GRN {grn_no}",
-            )
-        else:  # a project without units: held for the project itself
-            pid = _grn_line_project(db, ln)
-            reserve_for_element(
-                db, item_id=txn.item_id, location_id=txn.location_id, qty=take, element_id=None, project_id=pid,
-                user_id=txn.created_by_id, source_type=GRN_SOURCE, source_id=ln.id, source_reference=grn_no,
-                remarks=f"Bought out for {scope_label(db, pid, None)} — held automatically from GRN {grn_no}",
-            )
+        if not _hold_line(db, ln, take, item_id=txn.item_id, location_id=txn.location_id, user_id=txn.created_by_id,
+                          grn_no=grn_no, log_ref=txn.reference_number):
+            continue
         left -= take
 
 

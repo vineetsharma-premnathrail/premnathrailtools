@@ -44,8 +44,8 @@ const config: TourConfig = {
       after: 'Pick "This role — all holders" to go back to editing the role itself.',
     },
     { target: 'org-role-tab-users', title: 'Users tab', purpose: 'Who holds this role — add people by name or email, remove them, then Save Users.' },
-    { target: 'org-role-copy', title: 'Copy', purpose: 'Makes an editable copy under a new name — the quickest way to build a role close to an existing one or a built-in preset.' },
-    { target: 'org-role-delete', title: 'Delete', purpose: 'Removes a custom role. A role still held by users cannot be deleted — remove it from them first, or untick Active.' },
+    { target: 'org-role-copy', title: 'Copy', purpose: 'Makes an editable copy under a new name — the quickest way to build a role close to an existing one.' },
+    { target: 'org-role-delete', title: 'Delete', purpose: 'Removes a role. A role still held by users cannot be deleted — remove it from them first, or untick Active.' },
   ],
 }
 

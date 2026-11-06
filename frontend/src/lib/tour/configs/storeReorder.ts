@@ -7,7 +7,7 @@ const config: TourConfig = {
     {
       target: 'store-reorder-filters',
       title: 'Filters',
-      purpose: 'Narrow the list to one category, or untick "Only items due" to see every item that has a reorder level or minimum stock.',
+      purpose: 'The Filter button narrows the list to one category. The checkbox: untick "Only items due" to see every item that has a reorder level or minimum stock.',
     },
     {
       target: 'store-reorder-table',

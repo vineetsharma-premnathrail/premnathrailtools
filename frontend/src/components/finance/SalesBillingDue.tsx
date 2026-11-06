@@ -15,13 +15,13 @@ import { extractErrorMessages } from '@/lib/validation'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import DateField from '@/components/erp/DateField'
 import {
-  inputStyle, linkBtnStyle, thStyle, tdStyle, numTd, numTh,
+  linkBtnStyle, thStyle, tdStyle, numTd, numTh,
   inr, dmy, todayIso, ErrorBanner, TableWrap, EmptyRow,
 } from '@/components/finance/financeUi'
 import { RowCount, pillStyle } from '@/components/shared/ui'
 import { ProofPicker, PickedProof, uploadPickedProof } from '@/components/finance/FinanceAttachments'
 import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
-import Select from '@/components/shared/Select'
+import FilterMenu from '@/components/shared/FilterMenu'
 
 const STATUS_LABELS: Record<string, string> = {
   not_due: 'Not due', due: 'Due', invoice_requested: 'Invoice requested', invoiced: 'Invoiced', settled: 'Settled', proforma_issued: 'Proforma issued',
@@ -86,11 +86,12 @@ export default function SalesBillingDueTab({ soId }: { soId?: number | null }) {
       {!raise && <ErrorBanner error={error} />}
       {notice && <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.2)', color: '#15803d', fontSize: 13 }}>{notice}</div>}
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
-        <div style={{ flex: '0 1 200px' }}>
-          <Select data-tour="fin-billing-due-filter" style={inputStyle} value={show} onChange={(e) => setShow(e.target.value)}>
-            {SHOW_OPTIONS.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </Select>
-        </div>
+        <FilterMenu
+          tourId="fin-billing-due-filter"
+          fields={[{ key: 'show', label: 'Show', value: show, defaultValue: 'due', allLabel: SHOW_OPTIONS[0][1], options: SHOW_OPTIONS.slice(1).map(([k, v]) => ({ value: k, label: v })) }]}
+          onChange={(_k, v) => setShow(v)}
+          onClear={() => setShow('due')}
+        />
         <div style={{ fontSize: 13, color: TEXT.secondary }}>Billable now: <b>{inr(total)}</b> incl. GST</div>
       </div>
       <TableWrap minWidth={1100}>

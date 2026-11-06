@@ -1,6 +1,6 @@
 'use client'
 
-import Select from '@/components/shared/Select'
+import FilterMenu from '@/components/shared/FilterMenu'
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -205,16 +205,15 @@ function ProjectListViewInner({ showProjects, showMachines }: { showProjects: bo
 
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
         <input data-tour="pm-all-search" style={{ ...inputStyle, maxWidth: 300 }} placeholder="Search project number, name, client, model or site…" aria-label="Search projects" value={search} onChange={(e) => setSearch(e.target.value)} />
-        {showProjects && (
-          <Select data-tour="pm-all-status-filter" style={{ ...inputStyle, maxWidth: 200 }} value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Filter by status">
-            <option value="">All statuses</option>
-            {Object.entries(PROJECT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </Select>
-        )}
-        <Select data-tour="pm-all-stage-filter" style={{ ...inputStyle, maxWidth: 220 }} value={stage} onChange={(e) => { setStage(e.target.value); setScope('') }} aria-label="Filter by stage">
-          <option value="">All stages</option>
-          {LIFECYCLE_ORDER.map((k) => <option key={k} value={k}>{LIFECYCLE_LABELS[k]}</option>)}
-        </Select>
+        <FilterMenu
+          tourId="pm-all-filter-btn"
+          fields={[
+            ...(showProjects ? [{ key: 'status', label: 'Status', value: status, allLabel: 'All statuses', options: Object.entries(PROJECT_LABELS).map(([k, v]) => ({ value: k, label: v })) }] : []),
+            { key: 'stage', label: 'Stage', value: stage, allLabel: 'All stages', options: LIFECYCLE_ORDER.map((k) => ({ value: k, label: LIFECYCLE_LABELS[k] })) },
+          ]}
+          onChange={(key, v) => { if (key === 'status') setStatus(v); else { setStage(v); setScope('') } }}
+          onClear={() => { setStatus(''); setStage('') }}
+        />
         <div style={{ flex: 1 }} />
         {canExport && <button type="button" data-tour="pm-past-export-btn" onClick={() => setShowExport(true)} style={secondaryBtnStyle}>Export</button>}
         {canImport && <button type="button" data-tour="pm-past-import-btn" onClick={() => setShowImport(true)} style={secondaryBtnStyle}>Import</button>}

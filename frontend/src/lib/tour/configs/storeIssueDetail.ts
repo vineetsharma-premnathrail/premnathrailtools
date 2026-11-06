@@ -5,6 +5,12 @@ const config: TourConfig = {
   pageTitle: 'Material Issue Detail',
   steps: [
     {
+      target: 'issue-detail-print-slip-btn',
+      title: 'Print Slip',
+      purpose: 'Downloads this issue as the Store Requisition Slip (format F/STR/04) in Excel, in the same layout as the printed paper format: every item line with quantity required, quantity issued, unit and the store / bin it came from.',
+      after: 'Print it and get it signed by the department head and the authorised signatory.',
+    },
+    {
       target: 'issue-detail-back-btn',
       title: '← Back',
       purpose: 'Returns to the Material Issues list.',

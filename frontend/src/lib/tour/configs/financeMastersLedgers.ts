@@ -19,17 +19,8 @@ const config: TourConfig = {
     },
     {
       target: 'fin-ledgers-group-filter',
-      title: 'Group filter',
-      purpose: 'Shows only ledgers in the chosen group and all its sub-groups.',
-    },
-    {
-      target: 'fin-ledgers-status-filter',
-      title: 'Status filter',
-      options: [
-        { value: 'All', meaning: 'Every ledger.' },
-        { value: 'Active', meaning: 'Ledgers that can be used on new vouchers.' },
-        { value: 'Inactive', meaning: 'Retired ledgers kept for history.' },
-      ],
+      title: 'Filter',
+      purpose: 'Opens the Filter panel. Group shows only ledgers in the chosen group and all its sub-groups; Status is All, Active (can be used on new vouchers) or Inactive (retired, kept for history).',
     },
     {
       target: 'fin-ledgers-table',

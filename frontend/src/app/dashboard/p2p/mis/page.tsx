@@ -13,9 +13,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import DateField from '@/components/erp/DateField'
 import { formatDate } from '@/lib/format'
 import { secondaryBtnStyle, RowCount, StatChip } from '@/components/shared/ui'
-import Select from '@/components/shared/Select'
-import { Funnel } from '@phosphor-icons/react'
-import { FormSheet, SheetIcon, SHEET, sheetBtn, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
+import FilterMenu from '@/components/shared/FilterMenu'
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend)
 
@@ -61,13 +59,7 @@ export default function P2PMisPage() {
   const [exporting, setExporting] = useState(false)
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
-  const [showFilters, setShowFilters] = useState(false)
-  const [draft, setDraft] = useState<{ period: Period; from: string; to: string }>({ period: 'weekly', from: '', to: '' })
-  const draftIncomplete = draft.period === 'custom' && (!draft.from || !draft.to)
-  const draftInvalid = draft.period === 'custom' && !!draft.from && !!draft.to && draft.from > draft.to
-  const openFilters = () => { setDraft({ period, from: dateFrom, to: dateTo }); setShowFilters(true) }
-  const applyFilters = () => { setPeriod(draft.period); setDateFrom(draft.from); setDateTo(draft.to); setShowFilters(false) }
-  const clearFilters = () => { setPeriod('weekly'); setDateFrom(''); setDateTo(''); setShowFilters(false) }
+  const clearFilters = () => { setPeriod('weekly'); setDateFrom(''); setDateTo('') }
   const activeFilterCount = period !== 'weekly' ? 1 : 0
 
   const customIncomplete = period === 'custom' && (!dateFrom || !dateTo)
@@ -140,12 +132,18 @@ export default function P2PMisPage() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
         {summary && <span style={{ fontSize: 12.5, color: TEXT.muted }}>{fmtDate(summary.date_from)} – {fmtDate(summary.date_to)}</span>}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          <button type="button" onClick={openFilters} data-tour="p2p-mis-filter-btn" aria-label="Filters" title="Filters"
-            style={{ ...secondaryBtnStyle, display: 'inline-flex', alignItems: 'center', gap: 6, ...(activeFilterCount ? { borderColor: '#ea580c', color: '#c2410c' } : {}) }}>
-            <Funnel size={16} weight={activeFilterCount ? 'fill' : 'regular'} />
-            Filters
-            {activeFilterCount > 0 && <span style={{ minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, background: '#ea580c', color: '#fff', fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{activeFilterCount}</span>}
-          </button>
+          {period === 'custom' && (
+            <div data-tour="mis-custom-range" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div role="group" aria-label="From date"><DateField value={dateFrom} onChange={setDateFrom} placeholder="From" style={{ width: 130 }} /></div>
+              <div role="group" aria-label="To date"><DateField value={dateTo} onChange={setDateTo} placeholder="To" style={{ width: 130 }} /></div>
+            </div>
+          )}
+          <FilterMenu
+            tourId="p2p-mis-filter-btn"
+            fields={[{ key: 'period', label: 'Period', value: period, defaultValue: 'weekly', allLabel: 'Weekly', options: PERIODS.filter((x) => x.key !== 'weekly').map((x) => ({ value: x.key, label: x.label })) }]}
+            onChange={(_k, v) => setPeriod(v as Period)}
+            onClear={clearFilters}
+          />
           {activeFilterCount > 0 && <button type="button" onClick={clearFilters} style={secondaryBtnStyle} data-tour="p2p-mis-clear-btn">Clear</button>}
           {can('p2p', 'mis', 'export') && <button
             data-tour="p2p-mis-export-btn"
@@ -158,43 +156,9 @@ export default function P2PMisPage() {
         </div>
       </div>
 
-      {showFilters && (
-        <FormSheet icon="search" title="Filters" subtitle="Choose the period the report covers, then press Apply." width={560} busy={false} onClose={() => setShowFilters(false)} tour="p2p-mis-filter-sheet"
-          footer={<>
-            <button type="button" onClick={clearFilters} style={sheetBtn('secondary', SHEET.INK)}>Clear Filters</button>
-            <button type="button" onClick={applyFilters} style={sheetBtn('primary', SHEET.BLUE)} data-tour="p2p-mis-apply-btn"><SheetIcon name="check" size={16} />Apply Filters</button>
-          </>}>
-          <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div data-tour="p2p-mis-period-tabs">
-              <label style={sheetLabel}>Period</label>
-              <Select value={draft.period} onChange={(e) => setDraft((d) => ({ ...d, period: e.target.value as Period }))} style={sheetInput}>
-                {PERIODS.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
-              </Select>
-            </div>
-            {draft.period === 'custom' && (
-              <div data-tour="mis-custom-range" style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-                <div style={{ flex: '1 1 180px' }}>
-                  <label style={sheetLabel}>From</label>
-                  <DateField value={draft.from} onChange={(v) => setDraft((d) => ({ ...d, from: v }))} />
-                </div>
-                <div style={{ flex: '1 1 180px' }}>
-                  <label style={sheetLabel}>To</label>
-                  <DateField value={draft.to} onChange={(v) => setDraft((d) => ({ ...d, to: v }))} />
-                </div>
-                {(draftInvalid || draftIncomplete) && (
-                  <p style={{ flexBasis: '100%', fontSize: 12.5, color: draftInvalid ? '#b91c1c' : TEXT.muted, margin: 0 }}>
-                    {draftInvalid ? 'The From date must be on or before the To date.' : 'Pick both dates to load the report.'}
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-        </FormSheet>
-      )}
-
       {(customInvalid || customIncomplete) && (
         <p style={{ fontSize: 12.5, color: customInvalid ? '#b91c1c' : TEXT.muted, margin: '0 0 16px' }}>
-          {customInvalid ? 'The From date must be on or before the To date. Open Filters to fix it.' : 'Pick both dates in Filters to load the report.'}
+          {customInvalid ? 'The From date must be on or before the To date. Change the dates above.' : 'Pick both the From and To dates to load the report.'}
         </p>
       )}
 

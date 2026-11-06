@@ -22,7 +22,7 @@ import { isUrgent, priorityLabel } from '@/lib/priority'
 import P2PNav from '@/components/p2p/P2PNav'
 import ReassignLineDialog from '@/components/p2p/ReassignLineDialog'
 import ShortCloseLineDialog from '@/components/p2p/ShortCloseLineDialog'
-import SearchableSelect from '@/components/erp/SearchableSelect'
+import FilterMenu from '@/components/shared/FilterMenu'
 import { Pill, RowCount, TableScroll, chipBtnStyle, inputStyle, pageBtnStyle, secondaryBtnStyle, smallSecondaryBtnStyle, thStyle, tdStyle, numThStyle, numTdStyle } from '@/components/shared/ui'
 
 const PAGE = 100
@@ -223,13 +223,16 @@ export default function MyLinesPage() {
           title="Open lines whose requisition is past its required date">Overdue</button>
         {(urgentOnly || overdueOnly) && <span style={{ fontSize: 12, color: TEXT.muted }}>Stage counts above are for {[urgentOnly && 'urgent', overdueOnly && 'overdue'].filter(Boolean).join(' and ')} lines only.</span>}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          {isHead && (
-            <div style={{ width: 240, maxWidth: '100%' }} data-tour="my-lines-buyer">
-              <SearchableSelect ariaLabel="Buyer" value={buyer} onChange={(v) => { setBuyer(v); setSkip(0) }} options={buyerOptions} placeholder="All buyers" />
-            </div>
-          )}
           <input value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search lines" data-tour="my-lines-search"
             placeholder="PR no., item code or name, project..." style={{ ...inputStyle, width: 280, maxWidth: '100%' }} />
+          {isHead && (
+            <FilterMenu
+              tourId="my-lines-buyer"
+              fields={[{ key: 'buyer', label: 'Buyer', value: buyer, allLabel: 'All buyers', options: buyerOptions.filter((o) => o.value !== '') }]}
+              onChange={(_k, v) => { setBuyer(v); setSkip(0) }}
+              onClear={() => { setBuyer(''); setSkip(0) }}
+            />
+          )}
           {filtered && <button type="button" onClick={reset} style={secondaryBtnStyle}>Clear</button>}
         </div>
       </div>

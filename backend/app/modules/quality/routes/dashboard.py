@@ -32,6 +32,7 @@ async def get_dashboard(db: Session = Depends(get_db), user: User = Depends(requ
 
     open_lots = q(QualityInspectionLot).filter(QualityInspectionLot.status.in_(QUALITY_LOT_OPEN_STATUSES))
     lots_waiting = open_lots.count()
+    lots_in_inspection = open_lots.filter(QualityInspectionLot.status == "in_inspection").count()
     lots_overdue = open_lots.filter(QualityInspectionLot.lot_date < today - timedelta(days=waiting_days)).count()
 
     live_ncrs = q(QualityNcr).filter(QualityNcr.is_deleted == False, QualityNcr.status.notin_(("closed", "cancelled")))  # noqa: E712
@@ -79,7 +80,7 @@ async def get_dashboard(db: Session = Depends(get_db), user: User = Depends(requ
 
     return QualityDashboardResponse(kpis=QualityDashboardKpis(
         vendors_on_watch=vendors_on_watch, vendors_blocked=vendors_blocked, vendor_blocks_pending=blocks_pending,
-        lots_waiting=lots_waiting, lots_overdue=lots_overdue, lot_waiting_days=waiting_days,
+        lots_waiting=lots_waiting, lots_in_inspection=lots_in_inspection, lots_overdue=lots_overdue, lot_waiting_days=waiting_days,
         open_ncrs=sum(by_sev.values()), critical_ncrs=by_sev.get("critical", 0), major_ncrs=by_sev.get("major", 0),
         minor_ncrs=by_sev.get("minor", 0), ncrs_awaiting_approval=awaiting, open_capas=open_capas,
         overdue_capas=overdue_capas, open_complaints=open_complaints, gate_inspections_pending=gate_pending,

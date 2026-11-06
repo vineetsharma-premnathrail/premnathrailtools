@@ -34,6 +34,7 @@ import { STATUS_LABELS, STATUS_HEX, VOUCHER_LABELS, POSTING_LABELS, VOUCHER_PATH
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import FinanceAttachments, { ProofClip, ProofPicker, PickedProof, uploadPickedProof, useProofCounts, useProofRules } from '@/components/finance/FinanceAttachments'
 import Select from '@/components/shared/Select'
+import FilterMenu from '@/components/shared/FilterMenu'
 
 const TABS = ['Journal Vouchers', 'Day Book', 'Ledger Statement', 'Period Close'] as const
 type Tab = (typeof TABS)[number]
@@ -216,24 +217,18 @@ function JournalVouchers({ masters, userId, canReverse }: { masters: Masters; us
       </div>
 
       <div data-tour="fin-jv-filters" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 14, alignItems: 'flex-end' }}>
-        <Field label="Status" style={{ flex: '0 1 140px' }} tour="fin-jv-status">
-          <Select style={inputStyle} value={filters.status} onChange={(e) => setF({ status: e.target.value })}>
-            <option value="">All</option>
-            {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </Select>
-        </Field>
-        <Field label="Voucher Type" style={{ flex: '0 1 150px' }} tour="fin-jv-voucher-type">
-          <Select style={inputStyle} value={filters.voucher_type} onChange={(e) => setF({ voucher_type: e.target.value })}>
-            <option value="">All</option>
-            {Object.entries(VOUCHER_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </Select>
-        </Field>
-        <Field label="Posting Type" style={{ flex: '0 1 160px' }} tour="fin-jv-posting-type">
-          <Select style={inputStyle} value={filters.posting_type} onChange={(e) => setF({ posting_type: e.target.value })}>
-            <option value="">All</option>
-            {Object.entries(POSTING_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </Select>
-        </Field>
+        <div style={{ marginBottom: 2 }}>
+          <FilterMenu
+            tourId="fin-jv-status"
+            fields={[
+              { key: 'status', label: 'Status', value: filters.status, options: Object.entries(STATUS_LABELS).map(([k, v]) => ({ value: k, label: v })) },
+              { key: 'voucher_type', label: 'Voucher Type', value: filters.voucher_type, options: Object.entries(VOUCHER_LABELS).map(([k, v]) => ({ value: k, label: v })) },
+              { key: 'posting_type', label: 'Posting Type', value: filters.posting_type, options: Object.entries(POSTING_LABELS).map(([k, v]) => ({ value: k, label: v })) },
+            ]}
+            onChange={(key, v) => setF({ [key]: v } as Partial<typeof filters>)}
+            onClear={() => setF({ status: '', voucher_type: '', posting_type: '' })}
+          />
+        </div>
         <Field label="From" style={{ flex: '0 1 150px' }} tour="fin-jv-from"><DateField value={filters.from_date} onChange={(v) => setF({ from_date: v })} /></Field>
         <Field label="To" style={{ flex: '0 1 150px' }} tour="fin-jv-to"><DateField value={filters.to_date} onChange={(v) => setF({ to_date: v })} /></Field>
         {Object.values(filters).some(Boolean) && (
@@ -716,12 +711,14 @@ function DayBookTab() {
       <div data-tour="fin-daybook-filters" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 14, alignItems: 'flex-end' }}>
         <Field label="From" style={{ flex: '0 1 150px' }} tour="fin-daybook-from"><DateField value={from} onChange={setFrom} /></Field>
         <Field label="To" style={{ flex: '0 1 150px' }} tour="fin-daybook-to"><DateField value={to} onChange={setTo} /></Field>
-        <Field label="Voucher Type" style={{ flex: '0 1 150px' }} tour="fin-daybook-type">
-          <Select style={inputStyle} value={voucherType} onChange={(e) => setVoucherType(e.target.value)}>
-            <option value="">All</option>
-            {Object.entries(VOUCHER_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </Select>
-        </Field>
+        <div style={{ marginBottom: 2 }}>
+          <FilterMenu
+            tourId="fin-daybook-type"
+            fields={[{ key: 'voucher_type', label: 'Voucher Type', value: voucherType, options: Object.entries(VOUCHER_LABELS).map(([k, v]) => ({ value: k, label: v })) }]}
+            onChange={(_k, v) => setVoucherType(v)}
+            onClear={() => setVoucherType('')}
+          />
+        </div>
         <button type="button" data-tour="fin-daybook-show" style={{ ...primaryBtnStyle }} onClick={load} disabled={loading}>{loading ? 'Loading…' : 'Show'}</button>
       </div>
 

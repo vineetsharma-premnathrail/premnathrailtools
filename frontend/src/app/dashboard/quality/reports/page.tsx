@@ -24,7 +24,7 @@ const NCR_SOURCES: Record<string, string> = {
 export default function QualityReportsPage() {
   const { isAuthorized, isLoading } = useRequireApp('quality')
   const yearStart = `${new Date().getFullYear()}-01-01`
-  const [f, setF] = useState({ basis: 'ncr', date_from: yearStart, date_to: '', item_id: '', vendor: '', source: '' })
+  const [f, setF] = useState({ basis: 'lot_results', date_from: yearStart, date_to: '', item_id: '', vendor: '', source: '' })
   const [items, setItems] = useState<ItemOpt[]>([])
   const [rows, setRows] = useState<QualityParetoRow[]>([])
   const [total, setTotal] = useState(0)
@@ -66,7 +66,7 @@ export default function QualityReportsPage() {
           <div style={{ flex: '0 1 220px' }}>
             <Field label="Count">
               <Select style={inputStyle} value={f.basis} onChange={(e) => setF({ ...f, basis: e.target.value, source: '' })}>
-                <option value="ncr">NCRs</option><option value="lot_results">Failed characteristics on lots</option>
+                <option value="lot_results">Failed characteristics on lots</option>
               </Select>
             </Field>
           </div>

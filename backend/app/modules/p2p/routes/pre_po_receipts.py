@@ -101,7 +101,8 @@ async def create_requisition_for_pre_po_receipt(
     store_items = {i.id: i for i in db.query(StoreItem).filter(StoreItem.id.in_([l.store_item_id for l in receipt.items])).all()}
     today = date.today()
     requester = db.get(User, receipt.created_by_id) if receipt.created_by_id else None
-    note = f"Created from Before-PO receipt {receipt.receipt_number} (goods already received on {receipt.received_date:%d-%b-%Y})"
+    note = (f"Created from Before-PO receipt {receipt.receipt_number} (goods already received on {receipt.received_date:%d-%b-%Y}"
+            + (" and in stock - the GRN on the PO settles them, it does not add them again)" if receipt.stock_posted else ")"))
 
     pr = P2PRequest(
         p2p_number=generate_p2p_number(db, _CATEGORY), category_code=_CATEGORY, purpose=_PURPOSE,

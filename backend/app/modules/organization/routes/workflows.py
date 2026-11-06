@@ -66,12 +66,13 @@ class ReassignPayload(BaseModel):
     reason: str = Field(max_length=500)
 
 
-def _type_out(tt: engine.TransactionType) -> dict:
+def _type_out(db: Session, tt: engine.TransactionType) -> dict:
     m = MODULES[tt.module_key]
     return {
         "key": tt.key, "module_key": tt.module_key, "module_label": m["label"], "subtab_key": tt.subtab_key,
         "subtab_label": m["subtabs"][tt.subtab_key], "label": tt.label, "description": tt.description,
-        "context_fields": tt.context_fields,
+        # Lists read from data (e.g. the requester's department) are filled in now.
+        "context_fields": engine.resolved_context_fields(db, tt),
         "default_stages": [s.__dict__ for s in tt.default_stages],
     }
 
@@ -136,7 +137,7 @@ async def list_workflows(db: Session = Depends(get_db), _user: User = Depends(_c
         wf = stored.get(key)
         stages = wf.stages if wf else None
         out.append({
-            **_type_out(tt),
+            **_type_out(db, tt),
             "is_active": wf.is_active if wf else True,
             # A row also exists for a type that was only opened or submitted once
             # (created from the defaults); it is customised only once someone saved it.
@@ -152,7 +153,7 @@ async def get_workflow(key: str, db: Session = Depends(get_db), _user: User = De
     tt = engine.get_type(key)
     wf = engine.ensure_workflow(db, key)
     db.commit()
-    return {"type": _type_out(tt), "workflow": engine.workflow_out(wf)}
+    return {"type": _type_out(db, tt), "workflow": engine.workflow_out(wf)}
 
 
 @router.put("/{key}")
@@ -172,7 +173,7 @@ async def save_workflow(key: str, payload: WorkflowPayload, background_tasks: Ba
     wf = engine.save_workflow(db, key, data, actor)
     _tell_changed(db, background_tasks, key, actor, "saved with new settings" if wf.is_active else "switched off (no approval needed)")
     db.commit()
-    return {"type": _type_out(engine.get_type(key)), "workflow": engine.workflow_out(wf)}
+    return {"type": _type_out(db, engine.get_type(key)), "workflow": engine.workflow_out(wf)}
 
 
 @router.post("/{key}/reset")
@@ -185,7 +186,7 @@ async def reset_workflow(key: str, background_tasks: BackgroundTasks, db: Sessio
     wf = engine.reset_workflow(db, key, actor)
     _tell_changed(db, background_tasks, key, actor, "reset to the module default")
     db.commit()
-    return {"type": _type_out(engine.get_type(key)), "workflow": engine.workflow_out(wf)}
+    return {"type": _type_out(db, engine.get_type(key)), "workflow": engine.workflow_out(wf)}
 
 
 @router.post("/{key}/preview")

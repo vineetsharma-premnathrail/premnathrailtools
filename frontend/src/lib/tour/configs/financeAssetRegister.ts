@@ -23,7 +23,8 @@ const config: TourConfig = {
     },
     {
       target: 'fin-fa-status-filter',
-      title: 'Show',
+      title: 'Filter',
+      purpose: 'Opens the Filter panel. "Show" picks which assets the register lists; it applies at once.',
       options: [
         { value: 'Active', meaning: 'Assets in use and still being depreciated.' },
         { value: 'Disposed', meaning: 'Sold or scrapped — kept for history with disposal date and proceeds.' },

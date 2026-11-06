@@ -1,7 +1,8 @@
 'use client'
 
-// Detail popup of one Before PO receipt: lines, linked PR / PO, and Cancel
-// (with a reason) while Procurement has not made the PO yet.
+// Detail popup of one Before PO receipt: lines (rate, where the stock went, how much
+// a GRN has settled), linked PR / PO, and Cancel (with a reason, takes the stock back
+// out) while Procurement has not made the PO yet.
 
 import { useState } from 'react'
 import Link from 'next/link'
@@ -33,6 +34,12 @@ export default function BeforePOReceiptDetail({ receipt, canCancel, onClose, onC
   const [cancelling, setCancelling] = useState(false)
   const pending = receipt.status === 'pending_po'
   const prLink = receipt.p2p_number && receipt.p2p_request_id_ref ? recordPath('/dashboard/p2p', receipt, 'p2p_request_id') : null
+  const posted = !!receipt.stock_posted
+  const anyRate = receipt.items.some((i) => i.unit_rate !== null && i.unit_rate !== undefined)
+  const heads = ['Code', 'Item', 'Quantity', ...(anyRate ? ['Rate'] : []), ...(posted ? ['Stock', 'Settled by GRN'] : []), 'Remarks']
+  const stockText = (i: PrePoReceipt['items'][number]) =>
+    i.receipt_posting === 'quality' ? `Quality${i.inspection_lot_number ? ` — ${i.inspection_lot_number}` : ''}` : i.receipt_posting === 'free' ? 'Free stock' : '—'
+  const qty = (n: number) => n.toLocaleString('en-IN', { maximumFractionDigits: 3 })
 
   return (
     <>
@@ -43,7 +50,10 @@ export default function BeforePOReceiptDetail({ receipt, canCancel, onClose, onC
           <button type="button" onClick={onClose} style={sheetBtn('secondary', SHEET.INK)}>Close</button>
         </>}>
         <div style={{ padding: '20px 24px' }}>
-          <div style={{ marginBottom: 14 }}><Pill label={PRE_PO_STATUS_LABEL[receipt.status] || receipt.status} hex={PRE_PO_STATUS_HEX[receipt.status] || '#64748b'} /></div>
+          <div style={{ marginBottom: 14, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <Pill label={PRE_PO_STATUS_LABEL[receipt.status] || receipt.status} hex={PRE_PO_STATUS_HEX[receipt.status] || '#64748b'} />
+            {posted && receipt.status !== 'cancelled' && <span data-tour="store-bpo-in-stock"><Pill label="In stock" hex="#16a34a" /></span>}
+          </div>
           {receipt.status === 'cancelled' && receipt.cancel_reason && (
             <p style={{ fontSize: 13, color: '#b91c1c', margin: '0 0 14px' }}>Cancelled — {receipt.cancel_reason}</p>
           )}
@@ -62,14 +72,17 @@ export default function BeforePOReceiptDetail({ receipt, canCancel, onClose, onC
           </SheetSection>
           <SheetSection icon="list" title="Items received">
             <div style={{ overflow: 'auto', border: `1px solid ${SHEET.LINE}`, borderRadius: 10 }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 480 }}>
-                <thead><tr>{['Code', 'Item', 'Quantity', 'Remarks'].map((h, hi) => <th key={h} style={h === 'Quantity' ? { ...th, textAlign: 'right' } : th}>{h}{hi === 0 && <RowCount count={receipt.items.length} />}</th>)}</tr></thead>
+              <table data-tour="store-bpo-detail-items" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 480 }}>
+                <thead><tr>{heads.map((h, hi) => <th key={h} style={h === 'Quantity' || h === 'Rate' || h === 'Settled by GRN' ? { ...th, textAlign: 'right' } : th}>{h}{hi === 0 && <RowCount count={receipt.items.length} />}</th>)}</tr></thead>
                 <tbody>
                   {receipt.items.map((i) => (
                     <tr key={i.id}>
                       <td style={{ ...td, whiteSpace: 'nowrap' }}>{i.item_code || '—'}</td>
                       <td style={td}>{i.item_name}</td>
-                      <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>{i.quantity.toLocaleString('en-IN', { maximumFractionDigits: 3 })} {i.unit || ''}</td>
+                      <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>{qty(i.quantity)} {i.unit || ''}</td>
+                      {anyRate && <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>{i.unit_rate !== null && i.unit_rate !== undefined ? `₹${i.unit_rate.toLocaleString('en-IN', { maximumFractionDigits: 2 })}` : '—'}</td>}
+                      {posted && <td style={{ ...td, whiteSpace: 'nowrap' }}>{stockText(i)}</td>}
+                      {posted && <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>{qty(i.settled_qty ?? 0)} of {qty(i.quantity)}</td>}
                       <td style={td}>{i.remarks || '—'}</td>
                     </tr>
                   ))}
@@ -83,7 +96,9 @@ export default function BeforePOReceiptDetail({ receipt, canCancel, onClose, onC
         </div>
       </FormSheet>
       <ReasonSheet open={cancelling} title={`Cancel ${receipt.receipt_number}?`} requireValue confirmLabel="Cancel receipt" cancelLabel="Keep it"
-        message="The receipt leaves Procurement's Before PO list. Give the reason, e.g. goods returned to the vendor."
+        message={posted
+          ? "The receipt leaves Procurement's Before PO list and its stock is taken back out of the store. This is refused if any of it was already issued — return it to the store first — or if a quality lot has no decision yet. Give the reason, e.g. goods returned to the vendor."
+          : "The receipt leaves Procurement's Before PO list. Give the reason, e.g. goods returned to the vendor."}
         placeholder="Why is this receipt being cancelled?"
         onCancel={() => setCancelling(false)}
         onConfirm={async (reason) => { const r = await prePoStoreApi.cancel(receipt.id, reason); setCancelling(false); onChanged(r) }} />

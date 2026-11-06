@@ -179,7 +179,9 @@ async def get_permission_registry(
 ):
     """The full module/tab/action catalog the Permission Matrix UI renders —
     single source of truth so the frontend doesn't hardcode it."""
-    return {"modules": PERMISSION_MODULES, "actions": PERMISSION_ACTIONS, "action_labels": ACTION_LABELS}
+    # Same grouping as the Role editor (not-live tabs listed under their own heading, never removed).
+    from app.core.permission_registry import editor_modules
+    return {"modules": editor_modules(), "actions": PERMISSION_ACTIONS, "action_labels": ACTION_LABELS}
 
 
 @router.get("/{user_id}", response_model=UserResponse)

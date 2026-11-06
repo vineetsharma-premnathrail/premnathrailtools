@@ -15,10 +15,10 @@ function LotsInner() {
   const params = useSearchParams()
   return (
     <>
-      <PageHeader title="Inspection Lots">
+      <PageHeader title="Incoming Inspection">
         {can('quality', 'inspection_lots', 'create') && (<button type="button" onClick={() => router.push('/dashboard/quality/lots/new')} style={primaryBtnStyle}>+ Manual Lot</button>)}
       </PageHeader>
-      <LotList initialType={params.get('type') || ''} />
+      <LotList initialType={params.get('type') ?? (params.get('view') ? '' : 'incoming')} initialView={params.get('view') || ''} />
     </>
   )
 }

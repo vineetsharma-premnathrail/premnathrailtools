@@ -10,6 +10,7 @@ A party voucher may settle several invoices at once (allocations); whatever
 isn't allocated stays on the party as an advance and can be allocated later.
 Vouchers are never edited — a wrong one is cancelled, which reverses its
 journal and releases its allocations."""
+import math
 from datetime import date
 from sqlalchemy.orm import Session, selectinload
 
@@ -234,8 +235,8 @@ def create_voucher(
     fx_cur, fx_rate, fx_amount, amount = _fx.voucher_currency(db, payment_type=payment_type, currency=currency,
                                                                exchange_rate=exchange_rate, amount_fc=amount_fc,
                                                                amount=amount, on=payment_date)
-    if amount <= 0:
-        raise ValueError("Amount must be greater than zero.")
+    if not math.isfinite(amount) or amount <= 0:
+        raise ValueError("Amount must be a finite number greater than zero.")
     if payment_mode == "cheque" and not cheque_number:
         raise ValueError("Enter the cheque number for a cheque payment.")
 

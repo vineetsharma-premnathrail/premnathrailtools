@@ -20,7 +20,8 @@ interface ItemOpt { id: number; item_code: string; item_name: string; uom?: stri
 
 // Incoming lots come only from GRNs; final lots from production output.
 // First articles are raised from Quality → First Article (they open the FAI record).
-const MANUAL_TYPES = ['stock_reinspection', 'sales_return', 'in_process', 'job_work', 'final', 'third_party']
+// Only these can exist while Quality is live for incoming inspection only (qualityLive.ts).
+const MANUAL_TYPES = ['stock_reinspection', 'sales_return']
 
 const row: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 12, ...sheetGap }
 function F({ label, flex = '1 1 200px', children }: { label: React.ReactNode; flex?: string; children: React.ReactNode }) {
@@ -124,7 +125,7 @@ export default function NewManualLotPage() {
           <SheetSection icon="building" title="Stock">
             <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: SHEET.BODY, cursor: 'pointer' }}>
               <input type="checkbox" style={{ marginTop: 2 }} checked={form.take_from_free} onChange={(e) => setForm({ ...form, take_from_free: e.target.checked })} />
-              Hold stock — move this quantity from Free to Quality stock until the usage decision (it can&apos;t be issued meanwhile)
+              Hold stock — move this quantity from Free to Quality stock until the decision (it can&apos;t be issued meanwhile)
             </label>
             {form.take_from_free && (
               <>

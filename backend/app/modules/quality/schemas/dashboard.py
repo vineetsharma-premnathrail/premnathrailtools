@@ -3,6 +3,7 @@ from pydantic import BaseModel
 
 class QualityDashboardKpis(BaseModel):
     lots_waiting: int = 0
+    lots_in_inspection: int = 0
     lots_overdue: int = 0
     lot_waiting_days: int = 2
     open_ncrs: int = 0

@@ -18,14 +18,14 @@ const config: TourConfig = {
     },
     {
       target: 'p2p-mis-filter-btn',
-      title: 'Filters',
-      purpose: 'Opens the Filters popup where you choose the period the report covers, then press Apply Filters. The exact date range is shown at the left of this row. Clear resets to the current week.',
+      title: 'Filter',
+      purpose: 'Opens the Filter panel where you choose the period the report covers; it applies at once. The exact date range is shown at the left of this row. "Clear filters" resets to the current week.',
       options: [
         { value: 'Daily', meaning: 'Today only.' },
         { value: 'Weekly', meaning: 'The current week (default).' },
         { value: 'Monthly', meaning: 'The current month.' },
         { value: 'Yearly', meaning: 'The current year.' },
-        { value: 'Custom', meaning: 'Pick your own From and To dates. Both are needed, and From must be on or before To.' },
+        { value: 'Custom', meaning: 'From and To date boxes appear next to the Filter button. Both are needed, and From must be on or before To.' },
       ],
     },
     {

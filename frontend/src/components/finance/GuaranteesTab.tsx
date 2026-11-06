@@ -18,9 +18,10 @@ import { TreasuryModal as Modal } from '@/components/finance/BankStatementPanel'
 import { SheetColumns, SheetSection, SheetIconName, sheetInput, SheetError } from '@/components/shared/FormSheet'
 import { SField, SRow, SheetFooter, sw, sg } from '@/components/finance/financeSheet'
 import Select from '@/components/shared/Select'
+import FilterMenu from '@/components/shared/FilterMenu'
 import {
-  inputStyle, primaryBtnStyle, secondaryBtnStyle, linkBtnStyle,
-  thStyle, tdStyle, numTd, numTh, inr, dmy, todayIso, Field, ErrorBanner, InfoBanner, StatusPill, TableWrap, EmptyRow, StatCard,
+  primaryBtnStyle, secondaryBtnStyle, linkBtnStyle,
+  thStyle, tdStyle, numTd, numTh, inr, dmy, todayIso, ErrorBanner, InfoBanner, StatusPill, TableWrap, EmptyRow, StatCard,
   ApprovalBadge, ledgerOptions,
 } from '@/components/finance/financeUi'
 import { RowCount, DetailGroup, DetailRow } from '@/components/shared/ui'
@@ -96,11 +97,13 @@ export default function GuaranteesTab({ initialId }: { initialId?: number | null
         <StatCard label="Expiring ≤ 30 Days" value={String(expiring)} tone={expiring ? '#d97706' : undefined} onClick={() => toggleCard('expiring')} active={cardFilter === 'expiring'} />
       </div>
       <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 12 }}>
-        <Field label="Direction" style={{ flex: '0 1 170px' }}>
-          <Select style={inputStyle} value={direction} onChange={(e) => setDirection(e.target.value)}>
-            <option value="">Issued & received</option><option value="issued">Issued by us</option><option value="received">Received by us</option>
-          </Select>
-        </Field>
+        <div style={{ marginBottom: 2 }}>
+          <FilterMenu
+            fields={[{ key: 'direction', label: 'Direction', value: direction, allLabel: 'Issued & received', options: [{ value: 'issued', label: 'Issued by us' }, { value: 'received', label: 'Received by us' }] }]}
+            onChange={(_k, v) => setDirection(v)}
+            onClear={() => setDirection('')}
+          />
+        </div>
         <label style={{ fontSize: 12.5, color: TEXT.secondary, display: 'flex', gap: 6, alignItems: 'center', paddingBottom: 10 }}>
           <input type="checkbox" checked={openOnly} onChange={(e) => setOpenOnly(e.target.checked)} /> Open only
         </label>

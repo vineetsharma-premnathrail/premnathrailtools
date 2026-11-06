@@ -12,7 +12,7 @@ import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import StockEntryDialog from '@/components/store/StockEntryDialog'
 import { useCan } from '@/lib/permissions'
-import Select from '@/components/shared/Select'
+import FilterMenu from '@/components/shared/FilterMenu'
 
 // The stock ledger — every posting from Record Stock Entry, issues, returns,
 // transfers, adjustments, GRNs and quarantine clears. Read-only.
@@ -50,6 +50,8 @@ const PAGE_SIZE = 200
 const REF_TYPE_LABELS: Record<string, string> = {
   p2p_request: 'PR', grn: 'GRN', material_issue: 'Issue', material_return: 'Return', quarantine: 'Quarantine',
   stock_adjustment: 'Adjustment', stock_transfer: 'Transfer', stock_entry: 'Entry', maintenance_work_order: 'Work Order',
+  pre_po_receipt: 'Before PO', pre_po_receipt_cancelled: 'Before PO cancelled', grn_settlement: 'GRN rate correction',
+  grn_settlement_unvalued: 'GRN rate correction', grn_settlement_reversed: 'GRN rate correction undone',
 }
 
 // Mirrors backend stock_ledger._INBOUND_TYPES / _OUTBOUND_TYPES (on-hand effect).
@@ -208,26 +210,26 @@ export default function StoreMovementsPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <Select data-tour="movements-store-filter" style={{ ...inputStyle, flex: '1 1 150px', width: 'auto' }} value={filterLocation} onChange={(e) => setFilterLocation(e.target.value)}>
-          <option value="">All stores</option>
-          {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-        </Select>
-        <Select data-tour="movements-category-filter" style={{ ...inputStyle, flex: '1 1 150px', width: 'auto' }} value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
-          <option value="">All categories</option>
-          {categories.map((c) => <option key={c} value={c}>{c}</option>)}
-        </Select>
+        <FilterMenu
+          tourId="movements-store-filter"
+          fields={[
+            { key: 'store', label: 'Store', value: filterLocation, allLabel: 'All stores', options: locations.map((l) => ({ value: String(l.id), label: l.name })) },
+            { key: 'category', label: 'Category', value: filterCategory, allLabel: 'All categories', options: categories.map((c) => ({ value: c, label: c })) },
+            { key: 'type', label: 'Movement type', value: filterType, allLabel: 'All movement types', options: Object.entries(TXN_TYPE_LABELS).map(([k, v]) => ({ value: k, label: v })) },
+            { key: 'user', label: 'User', value: userId, allLabel: 'All users', options: users.map((u) => ({ value: String(u.id), label: u.label })) },
+          ]}
+          onChange={(key, v) => {
+            if (key === 'store') setFilterLocation(v)
+            else if (key === 'category') setFilterCategory(v)
+            else if (key === 'type') setFilterType(v)
+            else setUserId(v)
+          }}
+          onClear={() => { setFilterLocation(''); setFilterCategory(''); setFilterType(''); setUserId('') }}
+        />
         <input data-tour="movements-date-from" type="date" title="From date" style={{ ...inputStyle, flex: '0 1 150px', width: 'auto' }} value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
         <input data-tour="movements-date-to" type="date" title="To date" style={{ ...inputStyle, flex: '0 1 150px', width: 'auto' }} value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-        <Select data-tour="movements-type-filter" style={{ ...inputStyle, flex: '1 1 160px', width: 'auto' }} value={filterType} onChange={(e) => setFilterType(e.target.value)}>
-          <option value="">All movement types</option>
-          {Object.entries(TXN_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </Select>
         <input data-tour="movements-ref-filter" style={{ ...inputStyle, flex: '1 1 160px', width: 'auto' }} placeholder="Document / reference no." value={refNo} onChange={(e) => setRefNo(e.target.value)} />
         <input style={{ ...inputStyle, flex: '1 1 150px', width: 'auto' }} placeholder="Vendor" value={vendor} onChange={(e) => setVendor(e.target.value)} />
-        <Select style={{ ...inputStyle, flex: '1 1 150px', width: 'auto' }} value={userId} onChange={(e) => setUserId(e.target.value)}>
-          <option value="">All users</option>
-          {users.map((u) => <option key={u.id} value={u.id}>{u.label}</option>)}
-        </Select>
         {hasFilters && <button onClick={clearFilters} style={secondaryBtnStyle}>Clear</button>}
         {can('store', 'movements', 'export') && (
           <button data-tour="movements-export-btn" onClick={exportExcel} disabled={exporting} style={secondaryBtnStyle}>{exporting ? 'Exporting…' : 'Export Excel'}</button>

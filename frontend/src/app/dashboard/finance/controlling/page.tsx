@@ -23,6 +23,7 @@ import { FormSheet, SheetSection, SheetIcon, SheetIconName, SHEET, Req, sheetBtn
 import ReasonSheet from '@/components/shared/ReasonSheet'
 import { SField, SRow, SheetFooter, sw, sg } from '@/components/finance/financeSheet'
 import Select from '@/components/shared/Select'
+import FilterMenu from '@/components/shared/FilterMenu'
 import {
   financeCoApi, CoPlanVersion, CoPlanGrid, CoPlanGridRow, CoPlanVsActual, CoActivityRate, CoCycle, CoSegment,
   CoCycleRunResult, CoAllocationRun, CoCostingSheetRow, CoOverheadResult, CoOverheadRun,
@@ -365,6 +366,8 @@ function PlanVsActualTab() {
   }, [versionId, fromP, toP, cc])
   useEffect(() => { run() }, [run])
 
+  const defaultVersion = versions.find((x) => x.is_primary) || versions[0]
+  const defaultVersionId = String(defaultVersion?.id ?? '')
   const startYear = Number(fy.slice(0, 4))
   const months = Array.from({ length: 12 }, (_, i) => { const m = ((3 + i) % 12) + 1; const y = m >= 4 ? startYear : startYear + 1; return `${y}-${String(m).padStart(2, '0')}` })
   const RED = '#dc2626'
@@ -372,17 +375,26 @@ function PlanVsActualTab() {
     <div>
       <InfoBanner>Variance = actual − plan. On a cost, a positive variance is an overspend (red); on income it is a shortfall. Actuals are posted journal lines carrying the cost centre, including CO allocations.</InfoBanner>
       <ErrorBanner error={error} />
-      <div style={{ ...sectionStyle, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-        <Field label="Financial year" style={{ flex: '0 1 130px' }}><Select value={fy} onChange={(e) => { setFy(e.target.value); setFromP(''); setToP('') }} style={inputStyle}>{fyOptions().map((f) => <option key={f} value={f}>{f}</option>)}</Select></Field>
-        <Field label="Plan version" style={{ flex: '1 1 220px', maxWidth: 300 }}>
-          <Select value={versionId} onChange={(e) => setVersionId(e.target.value)} style={inputStyle}>
-            {versions.length === 0 && <option value="">No versions for {fy}</option>}
-            {versions.map((v) => <option key={v.id} value={v.id}>{v.code} — {v.name}{v.is_primary ? ' (primary)' : ''}</option>)}
-          </Select>
-        </Field>
-        <Field label="From month" style={{ flex: '0 1 130px' }}><Select value={fromP} onChange={(e) => setFromP(e.target.value)} style={inputStyle}><option value="">FY start</option>{months.map((m) => <option key={m} value={m}>{m}</option>)}</Select></Field>
-        <Field label="To month" style={{ flex: '0 1 130px' }}><Select value={toP} onChange={(e) => setToP(e.target.value)} style={inputStyle}><option value="">FY end</option>{months.map((m) => <option key={m} value={m}>{m}</option>)}</Select></Field>
-        <Field label="Cost centre (with sub-centres)" style={{ flex: '1 1 240px', maxWidth: 320 }}><SearchableSelect value={cc} onChange={setCc} options={[{ value: '', label: 'All cost centres' }, ...ccOptions]} placeholder="All cost centres" /></Field>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
+        <FilterMenu
+          tourId="co-pva-filter"
+          fields={[
+            { key: 'fy', label: 'Financial year', value: fy, defaultValue: currentFy(), allLabel: currentFy(), options: fyOptions().filter((f) => f !== currentFy()).map((f) => ({ value: f, label: f })) },
+            { key: 'version', label: 'Plan version', value: versionId, defaultValue: defaultVersionId, allLabel: defaultVersion ? `${defaultVersion.code} — ${defaultVersion.name}${defaultVersion.is_primary ? ' (primary)' : ''}` : `No versions for ${fy}`, options: versions.filter((v) => String(v.id) !== defaultVersionId).map((v) => ({ value: String(v.id), label: `${v.code} — ${v.name}${v.is_primary ? ' (primary)' : ''}` })) },
+            { key: 'from', label: 'From month', value: fromP, allLabel: 'FY start', options: months.map((m) => ({ value: m, label: m })) },
+            { key: 'to', label: 'To month', value: toP, allLabel: 'FY end', options: months.map((m) => ({ value: m, label: m })) },
+            { key: 'cc', label: 'Cost centre (with sub-centres)', value: cc, allLabel: 'All cost centres', options: ccOptions },
+          ]}
+          onChange={(key, v) => {
+            if (key === 'fy') { setFy(v); setFromP(''); setToP('') }
+            else if (key === 'version') setVersionId(v)
+            else if (key === 'from') setFromP(v)
+            else if (key === 'to') setToP(v)
+            else setCc(v)
+          }}
+          onClear={() => { setFy(currentFy()); setVersionId(defaultVersionId); setFromP(''); setToP(''); setCc('') }}
+        />
+        <span style={{ fontSize: 12.5, color: '#78716c' }}>FY {fy}{versions.find((v) => String(v.id) === versionId) ? ` · ${versions.find((v) => String(v.id) === versionId)!.code}` : ''}</span>
       </div>
       {data && <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
         <StatCard label="Plan" value={`₹ ${inr(data.total_plan)}`} />

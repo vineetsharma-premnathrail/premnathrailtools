@@ -22,14 +22,15 @@ import { useFormDraft } from '@/lib/formDraft'
 import SalesBillingDueTab from '@/components/finance/SalesBillingDue'
 import FinanceAttachments, { ProofPicker, PickedProof, uploadPickedProof, useProofCounts, ProofClip } from '@/components/finance/FinanceAttachments'
 import {
-  inputStyle, labelStyle, primaryBtnStyle, linkBtnStyle, dangerLinkStyle,
-  thStyle, tdStyle, numTd, numTh, inr, dmy, todayIso, Field, ErrorBanner, InfoBanner, StatusPill, SubTabs, useFinanceSubTabs, PageHeader,
+  labelStyle, primaryBtnStyle, linkBtnStyle, dangerLinkStyle,
+  thStyle, tdStyle, numTd, numTh, inr, dmy, todayIso, ErrorBanner, InfoBanner, StatusPill, SubTabs, useFinanceSubTabs, PageHeader,
   TableWrap, EmptyRow, TaxLinesEditor, EditableTaxLine, newTaxLine, toLinePayload, previewTax, ApprovalBadge, submitAfterSave, RecordFacts,
 } from '@/components/finance/financeUi'
 import { RowCount, pillStyle, DetailGroup, DetailRow } from '@/components/shared/ui'
 import { recordHref } from '@/lib/recordRef'
 import { useDocCurrency } from '@/components/finance/DocCurrencyFields'
 import Select from '@/components/shared/Select'
+import FilterMenu from '@/components/shared/FilterMenu'
 
 type Errors = string | string[]
 
@@ -266,20 +267,18 @@ function InvoicesTab(ctx: Ctx) {
       )}
 
       <div data-tour="fin-sinv-list" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 14, alignItems: 'flex-end' }}>
-        <Field label="Status" style={{ flex: '0 1 150px' }} tour="fin-sinv-status">
-          <Select style={inputStyle} value={fStatus} onChange={(e) => setFStatus(e.target.value)}>
-            <option value="">All</option><option value="pending">Draft</option><option value="posted">Issued</option><option value="cancelled">Cancelled</option>
-          </Select>
-        </Field>
-        <Field label="Collection" style={{ flex: '0 1 160px' }} tour="fin-sinv-collection">
-          <Select style={inputStyle} value={fCollection} onChange={(e) => setFCollection(e.target.value)}>
-            <option value="">All</option><option value="pending">Uncollected</option><option value="partial">Part received</option>
-            <option value="overdue">Overdue</option><option value="collected">Received</option>
-          </Select>
-        </Field>
-        <Field label="Customer" style={{ flex: '1 1 260px', maxWidth: 360 }} tour="fin-sinv-customer-filter">
-          <SearchableSelect value={fCustomer} onChange={setFCustomer} options={customerOptions} placeholder="All customers" />
-        </Field>
+        <div style={{ marginBottom: 2 }}>
+          <FilterMenu
+            tourId="fin-sinv-status"
+            fields={[
+              { key: 'status', label: 'Status', value: fStatus, allLabel: 'All', options: [{ value: 'pending', label: 'Draft' }, { value: 'posted', label: 'Issued' }, { value: 'cancelled', label: 'Cancelled' }] },
+              { key: 'collection', label: 'Collection', value: fCollection, allLabel: 'All', options: [{ value: 'pending', label: 'Uncollected' }, { value: 'partial', label: 'Part received' }, { value: 'overdue', label: 'Overdue' }, { value: 'collected', label: 'Received' }] },
+              { key: 'customer', label: 'Customer', value: fCustomer, allLabel: 'All customers', options: customerOptions.filter((o) => o.value !== '') },
+            ]}
+            onChange={(key, v) => { if (key === 'status') setFStatus(v); else if (key === 'collection') setFCollection(v); else setFCustomer(v) }}
+            onClear={() => { setFStatus(''); setFCollection(''); setFCustomer('') }}
+          />
+        </div>
       </div>
 
       <TableWrap minWidth={1450} tour="fin-sinv-table">

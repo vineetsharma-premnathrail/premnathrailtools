@@ -9,6 +9,7 @@ import pytest
 from sqlalchemy.orm import object_session
 
 from app.auth.jwt_handler import create_access_token
+from app.modules.main.models.audit_log import AuditLog
 from app.modules.main.models.module_setting import ModuleSetting
 from app.modules.main.models.role import Role
 from app.modules.main.models.user import User
@@ -175,9 +176,9 @@ def test_po_reject_cancels_po_and_return_reopens_the_draft(client, db, team):
     assert po.id != db.query(P2PPurchaseOrder).filter_by(p2p_request_id=pr2["id"]).one().id
 
 
-# ── In-flight items keep the old path ───────────────────────────────────────
+# ── In-flight items on the old route move into the workflow ─────────────────
 
-def test_inflight_settings_scheme_pr_finishes_on_the_old_path(client, db, team):
+def test_inflight_settings_scheme_pr_is_moved_into_the_workflow(client, db, team):
     pr = P2PRequest(p2p_number="P2P-RAW-2026-0901", category_code="RAW", project_type="existing", approval_scheme="settings",
                     request_date=date.today(), requested_by_id=team["requester"].id, status="submitted", project_label="Old")
     db.add(pr)
@@ -187,9 +188,17 @@ def test_inflight_settings_scheme_pr_finishes_on_the_old_path(client, db, team):
     db.commit()
     assert engine.latest_request(db, "p2p_request", pr.id) is None
     r = client.post(f"{BASE}/{pr.id}/approve", json={"comment": "old path"}, headers=_h(team["a1"]))
-    assert r.status_code == 200, r.text
-    assert r.json()["status"] == "approved" and r.json()["approvals"][0]["approved_at"]
-    assert engine.latest_request(db, "p2p_request", pr.id) is None
+    assert r.status_code == 409, r.text
+    assert "old approval route" in r.json()["detail"] and "My Approvals" in r.json()["detail"]
+    db.expire_all()
+    req = engine.latest_request(db, "p2p_request", pr.id)
+    assert req is not None and req.status == "pending" and req.requester_id == team["requester"].id
+    assert db.get(P2PRequest, pr.id).approval_scheme == "engine" and db.get(P2PRequest, pr.id).status == "submitted"
+    assert db.query(AuditLog).filter_by(entity_type="p2p_request", entity_id=pr.id, action="moved_to_workflow").count() == 1
+    # Now it is an ordinary engine request: the workflow's approvers decide it.
+    for who in ("a1", "a2"):
+        assert client.post(f"{BASE}/{pr.id}/approve", json={"comment": "ok"}, headers=_h(team[who])).status_code == 200
+    assert client.get(f"{BASE}/{pr.id}", headers=_h(team["requester"])).json()["status"] == "approved"
 
 
 # ── Seeding from the old Procurement › Settings ─────────────────────────────

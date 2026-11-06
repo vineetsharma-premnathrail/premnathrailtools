@@ -90,10 +90,10 @@ const modules = [
   {
     title: 'Quality',
     app: 'quality' as const,
-    description: 'Standards, checklists, inspection plans, and incoming/in-process/final inspections.',
+    description: 'Incoming inspection of purchased items — check, accept or reject before stock can be issued.',
     icon: QualityIcon,
     href: '/dashboard/quality',
-    features: ['Standards', 'Checklists', 'Inspections'],
+    features: ['Incoming Inspection', 'My Inspections', 'Reports'],
     barColor: 'linear-gradient(90deg,#0d9488,#14b8a6)',
     iconBg: 'rgba(13,148,136,0.12)',
     iconColor: '#0d9488',
@@ -194,8 +194,8 @@ const modules = [
 ]
 
 // Card order + live/upcoming split — keep in step with the sidebar (Sidebar.tsx `upcoming: true`).
-const LIVE_APPS = ['erp', 'rnd', 'crm', 'p2p', 'store', 'projects', 'accounts']
-const UPCOMING_APPS = ['production', 'maintenance', 'electrical', 'hydraulic', 'hr', 'quality', 'design']
+const LIVE_APPS = ['erp', 'rnd', 'crm', 'p2p', 'store', 'quality', 'projects', 'accounts']
+const UPCOMING_APPS = ['production', 'maintenance', 'electrical', 'hydraulic', 'hr', 'design']
 
 const HrIcon = <IdentificationCard size={20} />
 

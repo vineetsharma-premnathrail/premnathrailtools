@@ -82,59 +82,37 @@ P2P_CATEGORIES: dict[str, str] = {
     LINE_CATEGORY: "By line item",
 }
 
-# Buyer auto-assigned at PR creation based on category — replaces manually
-# picking a buyer from the Purchase Processing panel. Keyed by email, not a
-# hardcoded user id: auto-increment ids get renumbered by any database
-# restore or Azure re-sync (this broke PR creation in production with
-# "Assigned buyer points to a record that no longer exists" the moment a
-# restore changed every user's id), while email is stable. Re-map here if
-# buyers change. Resolved to the current id via resolve_auto_buyer_id().
-P2P_CATEGORY_AUTO_BUYERS: dict[str, str] = {
-    "MKT": "suraj.panwar@premnathrail.com",
-    "PNH": "suraj.panwar@premnathrail.com",
-    "RAW": "suraj.panwar@premnathrail.com",
-    "ELE": "manish.kumar@premnathrail.com",
-    "HWC": "mahender.singh@premnathrail.com",
-    "JOB": "gaurav.katiyar@premnathrail.com",
-}
+# Who buys what is Procurement > Settings > Buyer responsibility (Item Master
+# category -> buyer, p2p/buyer_responsibility.py); the old coded buyer e-mails are gone.
 
 
-def resolve_auto_buyer_id(db, category_code: str) -> int | None:
-    """The buyer a new requisition of this category goes to: the one picked in
-    Procurement › Settings › Buyer for each requisition category (2026-10-23),
-    else the standard buyer above (looked up by email). None — no buyer
-    auto-assigned, the PR still creates fine — when neither is an active user,
-    rather than letting a stale id 500 the whole PR creation."""
+def _active_user_id(db, user_id) -> int | None:
     from app.modules.main.models.user import User  # local import avoids a cross-module cycle at startup
-    from app.modules.p2p.settings import get_setting
-    picked = (get_setting(db, f"buyer_{(category_code or '').lower()}")
-              if category_code in P2P_CATEGORIES and category_code != LINE_CATEGORY else None)
-    if picked:
-        buyer = db.query(User).filter(User.id == int(picked), User.is_active.is_(True)).first()
-        if buyer:
-            return buyer.id
-    return standard_buyer_id(db, category_code)
-
-
-def standard_buyer_id(db, category_code: str, *, active_only: bool = False) -> int | None:
-    """Current user id of the category's standard buyer (looked up by email),
-    or None when the category has none or the user is missing. The one place
-    that does this lookup."""
-    from app.modules.main.models.user import User  # local import avoids a cross-module cycle at startup
-    email = P2P_CATEGORY_AUTO_BUYERS.get(category_code)
-    if not email:
+    if not user_id:
         return None
-    q = db.query(User).filter(User.email == email)
-    if active_only:
-        q = q.filter(User.is_active.is_(True))
-    buyer = q.first()
+    buyer = db.query(User).filter(User.id == int(user_id), User.is_active.is_(True)).first()
     return buyer.id if buyer else None
 
 
-# Buyer of a line by its Item Master item type (2026-10-27). The standard buyer
-# of each type is the standard buyer of the category it is usually bought
-# under (P2P_CATEGORY_AUTO_BUYERS); Procurement › Settings › Buyer for each item
-# type overrides it. Types Store added beyond these use the "other" setting.
+def default_buyer_id(db) -> int | None:
+    """The "Default buyer" of Procurement > Settings (lines whose category and
+    item type have no buyer go to this person), when still an active user."""
+    from app.modules.p2p.settings import get_setting
+    return _active_user_id(db, get_setting(db, "default_buyer"))
+
+
+def resolve_auto_buyer_id(db, category_code: str | None = None) -> int | None:
+    """The buyer a requisition with no line-level buyer goes to: the default
+    buyer, or None (the PR still creates fine). category_code is accepted and
+    deliberately ignored: it is kept only so old callers keep working, because
+    the per-category buyer setting no longer exists (the buyer of a line comes
+    from resolve_line_buyer_id)."""
+    return default_buyer_id(db)
+
+
+# Buyer of a line by its Item Master item type (2026-10-27). Procurement >
+# Settings > Buyer for each item type; blank = fall through to the default
+# buyer. Types Store added beyond these use the "other" setting.
 P2P_ITEM_TYPE_BUYER_TYPES: dict[str, str] = {
     "material": "Material",
     "consumable": "Consumable",
@@ -143,25 +121,30 @@ P2P_ITEM_TYPE_BUYER_TYPES: dict[str, str] = {
     "asset": "Asset",
     "other": "Any other item type",
 }
-P2P_ITEM_TYPE_STANDARD_CATEGORY: dict[str, str] = {
-    "material": "RAW", "consumable": "HWC", "tool_equipment": "HWC", "service": "JOB",
-}
 
 
-def resolve_line_buyer_id(db, item_type: str | None) -> int | None:
-    """The buyer a requisition line of this item type goes to: the one picked
-    in Procurement › Settings, else the type's standard buyer. None when
-    neither is an active user (the requisition's assigned buyer then applies)."""
-    from app.modules.main.models.user import User  # local import avoids a cross-module cycle at startup
+def resolve_line_buyer_id(db, item_type: str | None, category: str | None = None, item_id: int | None = None) -> int | None:
+    """The buyer a requisition line goes to (2026-11-06), first that applies:
+    1. the buyer of the item's Item Master category (Settings > Buyer
+       responsibility) - the category comes from item_id's item, else from the
+       `category` text;
+    2. the buyer picked for the item type (Settings > Buyer for each item type);
+    3. the Default buyer setting;
+    4. None (the requisition's assigned buyer then applies).
+    Only active users are ever returned. Old callers pass the item type alone."""
+    from app.modules.p2p.buyer_responsibility import category_buyer_id
     from app.modules.p2p.settings import get_setting
+    if item_id and not item_type:
+        from app.modules.store.models.item import StoreItem  # local import avoids a cross-module cycle at startup
+        item = db.get(StoreItem, item_id)
+        item_type = item.item_type if item is not None else None
+    if category or item_id:
+        found = category_buyer_id(db, category=category, item_type=item_type, item_id=item_id)
+        if found:
+            return found
     key = item_type if item_type in P2P_ITEM_TYPE_BUYER_TYPES else "other"
-    picked = get_setting(db, f"buyer_type_{key}")
-    if picked:
-        buyer = db.query(User).filter(User.id == int(picked), User.is_active.is_(True)).first()
-        if buyer:
-            return buyer.id
-    category = P2P_ITEM_TYPE_STANDARD_CATEGORY.get(key)
-    return standard_buyer_id(db, category, active_only=True) if category else None
+    typed = _active_user_id(db, get_setting(db, f"buyer_type_{key}"))
+    return typed or default_buyer_id(db)
 
 # Purpose of a requisition (2026-10-23) — the first question on the PR form.
 # It decides what the purchase must be charged to (p2p/purpose.py):
@@ -205,17 +188,6 @@ PR_APPROVAL_ROLE_SETS: dict[str, tuple[str, ...]] = {
 PO_APPROVAL_ROLE_SETS: dict[str, tuple[str, ...]] = {
     "existing": ("production_manager", "purchase_manager", "project_manager", "director"),
     "new": ("rnd_manager", "purchase_manager", "production_manager", "director"),
-}
-
-# Role key -> User boolean flag that marks a holder of the role.
-P2P_ROLE_FLAGS: dict[str, str] = {
-    "design_manager": "is_design_manager",
-    "rnd_manager": "is_rnd_manager",
-    "production_manager": "is_production_manager",
-    "project_manager": "is_project_manager",
-    "store_manager": "is_store_manager",
-    "purchase_manager": "is_purchase_manager",
-    "director": "is_director",
 }
 
 # Every User flag that makes someone a PO approver on SOME PR: the union of

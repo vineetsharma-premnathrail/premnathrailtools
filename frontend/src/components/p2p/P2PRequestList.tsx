@@ -13,9 +13,8 @@ import { userPoRoles } from '@/lib/p2pRoles'
 import { formatDate } from '@/lib/format'
 import { recordPath } from '@/lib/recordRef'
 import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/ProjectUnitPicker'
-import Select from '@/components/shared/Select'
 import { RowCount, pillStyle, smallSecondaryBtnStyle, smallDangerBtnStyle, inputStyle, secondaryBtnStyle } from '@/components/shared/ui'
-import { Funnel } from '@phosphor-icons/react'
+import FilterMenu from '@/components/shared/FilterMenu'
 import Checkbox from '@/components/Checkbox'
 import { priorityLabel } from '@/lib/priority'
 import { useVisibility } from '@/lib/visibility'
@@ -129,9 +128,7 @@ export default function P2PRequestList({ statuses, emptyLabel, context, queue, o
   const [sortAsc, setSortAsc] = useState(true)
   // Project filter (server-side): a whole project or one vehicle / lot.
   const [opFilter, setOpFilter] = useState<OrderProjectValue | null>(null)
-  const [filterOpen, setFilterOpen] = useState(false)
   const [mineOnly, setMineOnly] = useState(false)
-  const [draft, setDraft] = useState<{ status: string; category: string; buyer: string; op: OrderProjectValue | null; mine: boolean }>({ status: '', category: '', buyer: '', op: null, mine: false })
   const detailHref = (pr: object) => (context ? `${recordPath('/dashboard/p2p', pr)}?from=${context}` : recordPath('/dashboard/p2p', pr))
 
   const load = async () => {
@@ -191,9 +188,7 @@ export default function P2PRequestList({ statuses, emptyLabel, context, queue, o
   const filtersActive = !!(categoryFilter || buyerFilter || statusFilter || q || opFilter || mineOnly)
   // Filters-popup count (search is outside the popup and not counted).
   const activeFilterCount = [categoryFilter, buyerFilter, statusFilter].filter(Boolean).length + (opFilter ? 1 : 0) + (mineOnly ? 1 : 0)
-  const clearPopupFilters = () => { setCategoryFilter(''); setBuyerFilter(''); setStatusFilter(''); setOpFilter(null); setMineOnly(false); setFilterOpen(false) }
-  const openFilters = () => { setDraft({ status: statusFilter, category: categoryFilter, buyer: buyerFilter, op: opFilter, mine: mineOnly }); setFilterOpen(true) }
-  const applyFilters = () => { setStatusFilter(draft.status); setCategoryFilter(draft.category); setBuyerFilter(draft.buyer); setOpFilter(draft.op); setMineOnly(draft.mine); setFilterOpen(false) }
+  const clearPopupFilters = () => { setCategoryFilter(''); setBuyerFilter(''); setStatusFilter(''); setOpFilter(null); setMineOnly(false) }
   const statTotal = visibleAnyStatus.length
   const statPending = visibleAnyStatus.filter((pr) => pr.status === 'submitted').length
   const statProgress = visibleAnyStatus.filter((pr) => IN_PROGRESS.includes(pr.status)).length
@@ -305,59 +300,35 @@ export default function P2PRequestList({ statuses, emptyLabel, context, queue, o
           {toolbarLeft}
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             <input aria-label="Search requisitions" data-tour="p2p-list-search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search PR no., project, requester…" style={{ ...inputStyle, width: 280, maxWidth: '100%' }} />
-            <button type="button" onClick={openFilters} data-tour="p2p-filter-btn" aria-label="Filters" title="Filters"
-              style={{ ...secondaryBtnStyle, display: 'inline-flex', alignItems: 'center', gap: 6, ...(activeFilterCount ? { borderColor: '#ea580c', color: '#c2410c' } : {}) }}>
-              <Funnel size={16} weight={activeFilterCount ? 'fill' : 'regular'} />
-              Filters
-              {activeFilterCount > 0 && <span style={{ minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, background: '#ea580c', color: '#fff', fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{activeFilterCount}</span>}
-            </button>
+            <FilterMenu
+              tourId="p2p-filter-btn"
+              fields={[
+                { key: 'status', label: 'Status', value: statusFilter, allLabel: 'All statuses', options: [
+                  ...Object.entries(STATUS_GROUPS).map(([k, g]) => ({ value: `group:${k}`, label: g.label })),
+                  ...statusOptions.map(([code, label]) => ({ value: code, label })),
+                ] },
+                { key: 'category', label: 'Category', value: categoryFilter, allLabel: 'All categories', options: categoryOptions.map(([code, label]) => ({ value: code, label })) },
+                { key: 'buyer', label: 'Buyer', value: buyerFilter, allLabel: 'All buyers', options: [...buyerOptions.map(([id, name]) => ({ value: id, label: name })), { value: 'none', label: 'No buyer assigned' }] },
+              ]}
+              onChange={(key, v) => { if (key === 'status') setStatusFilter(v); else if (key === 'category') setCategoryFilter(v); else setBuyerFilter(v) }}
+              onClear={clearPopupFilters}
+              extraActive={(opFilter ? 1 : 0) + (mineOnly ? 1 : 0)}
+            >
+              {mineToggle && (
+                <label data-tour="p2p-mine-toggle" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: '#57534e', cursor: 'pointer' }}>
+                  <Checkbox checked={mineOnly} onChange={(e) => setMineOnly(e.target.checked)} />
+                  Raised by me
+                </label>
+              )}
+              <div aria-label="Filter by project" style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, fontWeight: 600, color: '#57534e' }}>
+                Project
+                <OrderProjectPicker value={opFilter} onChange={(v) => setOpFilter(v)} requireElement={false} placeholder="All projects" />
+              </div>
+            </FilterMenu>
             {activeFilterCount > 0 && <button type="button" onClick={clearPopupFilters} style={secondaryBtnStyle} data-tour="p2p-clear-btn">Clear</button>}
             {toolbarRight}
           </div>
         </div>
-      )}
-      {showFilters && filterOpen && (
-        <FormSheet icon="search" title="Filters" subtitle="Narrow the requisitions, then press Apply." width={560} busy={false} onClose={() => setFilterOpen(false)} tour="p2p-filter-sheet"
-          footer={<>
-            <button type="button" onClick={clearPopupFilters} style={sheetBtn('secondary', SHEET.INK)}>Clear Filters</button>
-            <button type="button" onClick={applyFilters} style={sheetBtn('primary', SHEET.BLUE)} data-tour="p2p-apply-btn"><SheetIcon name="check" size={16} />Apply Filters</button>
-          </>}>
-          <div data-tour="p2p-list-filters" style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div>
-              <label style={sheetLabel}>Status</label>
-              <Select aria-label="Filter by status" style={sheetInput} value={draft.status} onChange={(e) => setDraft((d) => ({ ...d, status: e.target.value }))}>
-                <option value="">All statuses</option>
-                {Object.entries(STATUS_GROUPS).map(([k, g]) => <option key={k} value={`group:${k}`}>{g.label}</option>)}
-                {statusOptions.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
-              </Select>
-            </div>
-            <div>
-              <label style={sheetLabel}>Category</label>
-              <Select aria-label="Filter by category" style={sheetInput} value={draft.category} onChange={(e) => setDraft((d) => ({ ...d, category: e.target.value }))}>
-                <option value="">All categories</option>
-                {categoryOptions.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
-              </Select>
-            </div>
-            <div>
-              <label style={sheetLabel}>Buyer</label>
-              <Select aria-label="Filter by buyer" style={sheetInput} value={draft.buyer} onChange={(e) => setDraft((d) => ({ ...d, buyer: e.target.value }))}>
-                <option value="">All buyers</option>
-                {buyerOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-                <option value="none">No buyer assigned</option>
-              </Select>
-            </div>
-            {mineToggle && (
-              <label data-tour="p2p-mine-toggle" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: '#57534e', cursor: 'pointer' }}>
-                <Checkbox checked={draft.mine} onChange={(e) => setDraft((d) => ({ ...d, mine: e.target.checked }))} />
-                Raised by me
-              </label>
-            )}
-            <div aria-label="Filter by project">
-              <label style={sheetLabel}>Project</label>
-              <OrderProjectPicker value={draft.op} onChange={(v) => setDraft((d) => ({ ...d, op: v }))} requireElement={false} placeholder="All projects" />
-            </div>
-          </div>
-        </FormSheet>
       )}
       <div data-tour="p2p-list-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'hidden' }}>
         <div style={{ overflow: 'auto', maxHeight: vis.preview ? undefined : 'calc(100vh - 320px)' }}>

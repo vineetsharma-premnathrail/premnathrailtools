@@ -102,12 +102,39 @@ def _column_keys(obj: Any) -> list[str]:
     return [attr.key for attr in inspect(obj).mapper.column_attrs]
 
 
+_MASK_TOKENS = {"pan", "uan", "esic", "aadhaar", "aadhar", "password", "passwd", "ssn"}
+
+
+def _is_sensitive(key: str) -> bool:
+    k = key.lower()
+    return bool(set(k.split("_")) & _MASK_TOKENS) or "account_no" in k or "account_number" in k
+
+
+def mask_value(value: Any) -> Any:
+    """Identity numbers, bank account numbers and passwords never enter the
+    audit trail in clear: only '••••' and the last 4 characters, so a change
+    is still visible but the number is not readable (or searchable) there."""
+    if value is None or value == "":
+        return value
+    s = str(value)
+    return "••••" + s[-4:] if len(s) > 4 else "••••"
+
+
+def _safe(key: str, value: Any) -> Any:
+    # Only text values are identity/bank numbers: flags, counters and timestamps
+    # that happen to share a word (must_change_password, app_password_locked_until)
+    # keep their real value so the trail stays readable.
+    if _is_sensitive(key) and isinstance(value, str):
+        return mask_value(value)
+    return _json_safe(value)
+
+
 def _snapshot(obj: Any) -> dict:
     # Reads the already-loaded state only, never triggering a lazy load
     # mid-flush.
     state = inspect(obj)
     return {
-        key: _json_safe(state.dict[key])
+        key: _safe(key, state.dict[key])
         for key in _column_keys(obj)
         if key in state.dict and key not in _IGNORED_FIELDS
     }
@@ -127,8 +154,8 @@ def _changes(obj: Any) -> tuple[dict, dict]:
         after = hist.added[0] if hist.added else None
         if before == after:
             continue
-        old[key] = _json_safe(before)
-        new[key] = _json_safe(after)
+        old[key] = _safe(key, before)
+        new[key] = _safe(key, after)
     return old, new
 
 

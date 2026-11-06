@@ -13,6 +13,14 @@ export interface PrePoReceiptItem {
   unit?: string | null
   quantity: number
   remarks?: string | null
+  /** Rate typed on the receipt (null = none); the PO rate replaces it when the PO is received. */
+  unit_rate?: number | null
+  /** Where the stock went: Free stock, Quality stock (inspection lot), or null on old receipts. */
+  receipt_posting?: 'free' | 'quality' | null
+  inspection_lot_id?: number | null
+  inspection_lot_number?: string | null
+  /** Quantity already settled by a GRN against the PO (no second stock posting). */
+  settled_qty?: number
 }
 
 export type PrePoDocType = 'invoice' | 'challan' | 'other'
@@ -40,6 +48,8 @@ export interface PrePoReceipt {
   vendor_invoice_number?: string | null
   remarks?: string | null
   status: PrePoStatus
+  /** True when saving this receipt put the goods into stock (false on receipts made before 2026-11-06). */
+  stock_posted?: boolean
   p2p_request_id?: number | null
   p2p_number?: string | null
   purchase_order_id?: number | null
@@ -64,7 +74,7 @@ export interface PrePoReceiptCreate {
   delivery_challan_number?: string
   vendor_invoice_number?: string
   remarks?: string
-  items: { store_item_id: number; quantity: number; remarks?: string }[]
+  items: { store_item_id: number; quantity: number; unit_rate?: number; remarks?: string }[]
 }
 
 /** Response of "Create requisition": the locked direct RFQ (carries id_ref and p2p_request_id_ref). */

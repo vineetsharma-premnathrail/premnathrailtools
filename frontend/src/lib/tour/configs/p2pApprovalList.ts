@@ -16,8 +16,8 @@ const config: TourConfig = {
     },
     {
       target: 'p2p-filter-btn',
-      title: 'Filters',
-      purpose: 'Opens the Filters popup: status, category, buyer and project. Apply Filters uses your choices; Clear removes them.',
+      title: 'Filter',
+      purpose: 'Opens the Filter panel: status, category, buyer and project. Choices apply at once; the button shows how many are on and "Clear filters" removes them.',
       required: false,
     },
     {

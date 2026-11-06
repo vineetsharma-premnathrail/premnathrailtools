@@ -7,6 +7,12 @@ class AppConfig {
     defaultValue: 'http://10.0.2.2:8000/api/v1',
   );
 
+  /// The web portal, for the few pages that stay web-only.
+  static const portalUrl = String.fromEnvironment(
+    'PORTAL_URL',
+    defaultValue: 'https://erp.premnathrailtools.cloud',
+  );
+
   /// Same Azure app registration the portal and the Teams app use.
   static const azureClientId = String.fromEnvironment('AZURE_CLIENT_ID');
 

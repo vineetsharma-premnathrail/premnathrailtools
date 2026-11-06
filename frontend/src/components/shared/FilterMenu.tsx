@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { FunnelSimple } from '@phosphor-icons/react'
 import AnchoredPopover from '@/components/shared/AnchoredPopover'
 import SearchableSelect from '@/components/erp/SearchableSelect'
@@ -23,17 +23,21 @@ export interface FilterField {
  * shows how many filters are on. The page keeps the filter state (shared with
  * its column-header filters), this only renders it.
  */
-export default function FilterMenu({ fields, onChange, onClear, tourId }: {
+export default function FilterMenu({ fields, onChange, onClear, tourId, extraActive = 0, children }: {
   fields: FilterField[]
   onChange: (key: string, value: string) => void
   /** Resets every field to its default. */
   onClear: () => void
   tourId?: string
+  /** Extra controls the dropdown fields cannot express (a project picker, a switch). Rendered under the fields; their dropdown lists must be SearchableSelect (or `.ui-select-list`) so the panel stays open. */
+  children?: ReactNode
+  /** How many of those extra controls are on; added to the badge. */
+  extraActive?: number
 }) {
   const [open, setOpen] = useState(false)
   const btnRef = useRef<HTMLButtonElement>(null)
   const boxRef = useRef<HTMLDivElement>(null)
-  const active = fields.filter((f) => f.value !== (f.defaultValue ?? '')).length
+  const active = fields.filter((f) => f.value !== (f.defaultValue ?? '')).length + extraActive
 
   useEffect(() => {
     if (!open) return
@@ -85,6 +89,7 @@ export default function FilterMenu({ fields, onChange, onClear, tourId }: {
               />
             </label>
           ))}
+          {children}
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 4 }}>
             <button type="button" onClick={onClear} disabled={!active} style={{ ...secondaryBtnStyle, opacity: active ? 1 : 0.5 }}>Clear filters</button>
             <button type="button" onClick={() => setOpen(false)} style={secondaryBtnStyle}>Done</button>

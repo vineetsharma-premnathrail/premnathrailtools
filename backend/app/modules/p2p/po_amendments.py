@@ -32,6 +32,7 @@ from app.modules.main.models.user import User
 from app.modules.organization.models.approval import ApprovalRequest, ApprovalWorkflow
 from app.modules.organization.services import approval_engine as engine
 from app.modules.organization.services.approval_engine import StageDef, TransactionType, register_transaction
+from app.modules.p2p.approvals import _PO_CONTEXT_FIELDS
 from app.modules.p2p.models.p2p_request import P2PRequest
 from app.modules.p2p.models.po_amendment import P2PPOAmendment
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder, P2PPurchaseOrderItem
@@ -352,8 +353,9 @@ register_transaction(TransactionType(
     entity_type=AMEND_ENTITY, url="/dashboard/p2p/purchase-orders/amendments/{id}",
     description="A change to a released PO (quantity, price, delivery date, added/deleted lines). Seeded from the "
                 "Purchase order workflow: the PO approvers, then any one Partner.",
-    context_fields={"vendor_name": {"label": "Vendor", "type": "text"},
-                    "value_change": {"label": "Value change", "type": "number"}},
+    # The PO's own fields too: the stages are copied from the PO workflow, so a condition there
+    # (department, non-L1 award, single quotation ...) must still be valid on the amendment.
+    context_fields={**_PO_CONTEXT_FIELDS, "value_change": {"label": "Value change", "type": "number"}},
     default_stages=[StageDef("Partner (final approval)", "partner")],
     require_permission=False, allow_self_approval=False, distinct_approvers=True,
     comment_required_on_approve=True,
@@ -418,9 +420,10 @@ def submit(db: Session, po: P2PPurchaseOrder, pr: P2PRequest | None, payload, us
     db.add(am)
     db.flush()
     seed_workflow(db)
-    from app.modules.p2p.approvals import _pr_context
-    ctx = {**(_pr_context(pr) if pr else {}), "vendor_name": po.vendor_name,
-           "value_change": round((am.new_total or 0) - (am.old_total or 0), 2)}
+    from app.modules.p2p.approvals import _pr_context, po_risk_context, po_risk_flags
+    # The PO's risk facts (non-L1 vendor, single quotation, quantity above the requisition) as they stand now.
+    risk = po_risk_context(po, po_risk_flags(db, pr, po)) if pr else {"vendor_name": po.vendor_name}
+    ctx = {**(_pr_context(pr) if pr else {}), **risk, "value_change": round((am.new_total or 0) - (am.old_total or 0), 2)}
     req = engine.submit(db, AMEND_KEY, entity_id=am.id, requester=user,
                   title=f"PO {po.po_number} amendment {am.amendment_no}" + (f" — {po.vendor_name}" if po.vendor_name else ""),
                   reference=f"{po.po_number}-A{am.amendment_no}", amount=am.new_total, context=ctx,

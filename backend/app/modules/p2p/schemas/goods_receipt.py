@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 class P2PGoodsReceiptBatchPayload(BaseModel):
     """One vendor heat / batch of a batch-tracked line (Store batches)."""
     heat_number: str
-    quantity: float
+    quantity: float = Field(allow_inf_nan=False)
     tc_number: str | None = None
     mfg_date: date | None = None
     expiry_date: date | None = None
@@ -14,17 +14,17 @@ class P2PGoodsReceiptBatchPayload(BaseModel):
 
 class P2PGoodsReceiptBatchInspectPayload(BaseModel):
     batch_id: int
-    accepted_quantity: float
+    accepted_quantity: float = Field(allow_inf_nan=False)
 
 
 class P2PGoodsReceiptItemPayload(BaseModel):
     po_item_id: int
-    received_quantity: float
+    received_quantity: float = Field(allow_inf_nan=False)
     # Required (summing to received_quantity) for a batch-tracked item.
     batches: list[P2PGoodsReceiptBatchPayload] = Field(default_factory=list)
     # Blind receipt: the quantity the vendor's invoice / challan states —
     # received_quantity is what the store physically counted.
-    invoice_quantity: float | None = None
+    invoice_quantity: float | None = Field(default=None, allow_inf_nan=False)
     # WM putaway bin (a bin of the GRN's store).
     bin_id: int | None = None
     # Serialised item: one serial number per unit received.
@@ -34,8 +34,8 @@ class P2PGoodsReceiptItemPayload(BaseModel):
 
 class P2PGoodsReceiptItemInspectPayload(BaseModel):
     item_id: int
-    accepted_quantity: float
-    rejected_quantity: float = 0
+    accepted_quantity: float = Field(allow_inf_nan=False)
+    rejected_quantity: float = Field(default=0, allow_inf_nan=False)
     quality_status: str
     rejection_reason: str | None = None
     remarks: str | None = None
@@ -63,6 +63,15 @@ class P2PGoodsReceiptItemResponse(BaseModel):
     quality_status: str
     # quality (in Quality stock since receipt) / lot / none (asset, no stock) / null (older GRN).
     receipt_posting: str | None = None
+    # Part of received_quantity already in stock from a Before-PO receipt: settled by this GRN, not posted again.
+    pre_po_qty: float = 0
+    # Read-only Quality status for Store ("In quality check — lot X"): the incoming inspection lot(s) of this line,
+    # filled in by the route. quality_lots = [{id, lot_number, status, decision, quantity}] (one lot per heat on batch lines).
+    quality_lots: list[dict] = Field(default_factory=list)
+    quality_lot_id: int | None = None  # the lead lot (an open one first); the frontend turns it into a signed ref
+    quality_lot_number: str | None = None
+    quality_lot_status: str | None = None
+    quality_lot_decision: str | None = None
     rejection_reason: str | None = None
     remarks: str | None = None
     # Store batches of this line (heat no., TC) — filled in by the route.

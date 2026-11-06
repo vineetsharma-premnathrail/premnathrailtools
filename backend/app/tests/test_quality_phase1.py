@@ -23,6 +23,14 @@ Q = "/api/v1/quality"
 
 
 @pytest.fixture(autouse=True)
+def _quality_rules_on(db):
+    """First-article control and automatic NCRs are Quality settings that default to OFF (2026-11-06); these tests cover them."""
+    from app.modules.quality.models.masters import QualitySetting
+    db.add_all([QualitySetting(key="first_article_on_new_vendor", value="on"), QualitySetting(key="ncr_auto_raise", value="on")])
+    db.commit()
+
+
+@pytest.fixture(autouse=True)
 def _sqlite_number_series(monkeypatch):
     monkeypatch.setattr("app.modules.p2p.service._lock_number_series", lambda db, prefix: None)
 
@@ -220,10 +228,11 @@ def test_grn_for_flagged_item_goes_to_quality_and_lot_decision_completes_grn(cli
     # Failures can't be plainly accepted; partial rejection is fine.
     r = client.post(f"{Q}/inspection-lots/{lot['id']}/decision", json={"decision": "accept"}, headers=hdr(head))
     assert r.status_code == 409
-    r = client.post(f"{Q}/inspection-lots/{lot['id']}/decision", json={"decision": "partial", "accepted_qty": 15, "rejected_qty": 5}, headers=hdr(head))
+    r = client.post(f"{Q}/inspection-lots/{lot['id']}/decision", json={"decision": "partial", "accepted_qty": 15, "rejected_qty": 5, "deviation_reference": "DEV-P1"}, headers=hdr(head))
     assert r.status_code == 200, r.text
     lot = r.json()
-    assert lot["status"] == "decision_made" and len(lot["ncrs"]) == 1
+    # The rejected 5 and the accepted 15 of a lot with failures (use as is) each get an NCR.
+    assert lot["status"] == "decision_made" and len(lot["ncrs"]) == 2
     b = balance(db, item, loc)
     assert (b.on_hand_qty, b.quality_qty, b.quarantine_qty) == (15, 0, 5)
 

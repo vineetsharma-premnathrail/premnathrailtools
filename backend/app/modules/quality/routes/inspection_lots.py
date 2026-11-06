@@ -1,8 +1,8 @@
 """Inspection lots: list / My Inspections, manual creation, results,
-usage decision, close. All rules live in services/lots.py."""
+decision, close. All rules live in services/lots.py."""
 import os
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import Response
 from sqlalchemy.orm import Session, selectinload
 
@@ -12,10 +12,13 @@ from app.core.config import settings
 from app.core.data_scope import apply_scope, ensure_in_scope
 from app.core.permission_registry import can_view_tab
 from app.core.permissions import (
-    GRANT_HINT, PermissionDenied, _tab_label, ensure_feature_action, require_app_access, require_feature_action, require_tab_action,
+    GRANT_HINT, PermissionDenied, _tab_label, ensure_feature_action, ensure_tab_action, require_app_access, require_feature_action,
+    require_tab_action,
 )
 from app.db.session import get_db
 from app.modules.main.models.user import User
+from app.modules.main.routes.auth import get_current_user
+from app.modules.quality.models.characteristic import QualityCharacteristic
 from app.modules.quality.models.inspection_lot import (
     QualityInspectionLot, QUALITY_LOT_STATUSES, QUALITY_LOT_OPEN_STATUSES, QUALITY_LOT_DECISION_LABELS,
 )
@@ -34,7 +37,21 @@ from app.modules.quality.services.lots import LotError
 from app.modules.store.models.item import StoreItem
 from app.modules.store.models.location import StoreLocation
 
-router = APIRouter(prefix="/quality/inspection-lots", tags=["Quality"], dependencies=[Depends(require_app_access("quality"))])
+def _quality_users_only(request: Request, user: User = Depends(get_current_user)) -> User:
+    """Quality checks and decisions belong to the Quality module (separate from Store): someone with no Quality
+    access at all — e.g. a Store-only user — is refused with the reason and the fix, before any lot is read or changed."""
+    if "quality" not in user.get_apps():
+        if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+            detail = ("Quality decisions are made in the Quality module by Quality users — "
+                      "ask an admin to give you Quality › Inspection Lots access.")
+        else:
+            detail = ("Inspection lots belong to the Quality module — ask an admin to give you Quality › Inspection Lots access. "
+                      "Store sees the quality status of each GRN line on the GRN itself.")
+        raise PermissionDenied(detail, "quality:inspection_lots:view")
+    return user
+
+
+router = APIRouter(prefix="/quality/inspection-lots", tags=["Quality"], dependencies=[Depends(_quality_users_only)])
 
 _CAN_CREATE = require_tab_action("quality", "inspection_lots", "create")
 _CAN_EDIT = require_tab_action("quality", "inspection_lots", "edit")
@@ -56,6 +73,8 @@ def _to_responses(db: Session, lots: list[QualityInspectionLot], detail: bool = 
     locs = {x.id: x.name for x in db.query(StoreLocation).filter(StoreLocation.id.in_({l.location_id for l in lots} - {None})).all()}
     plans = {p.id: p.plan_number for p in db.query(QualityInspectionPlan).filter(QualityInspectionPlan.id.in_({l.plan_id for l in lots} - {None})).all()}
     codes = {c.id: f"{c.code} — {c.name}" for c in db.query(QualityDefectCode).all()} if detail else {}
+    specs = {c.id: c.description for c in db.query(QualityCharacteristic).filter(QualityCharacteristic.id.in_(
+        {r.characteristic_id for l in lots for r in l.results} or {-1})).all()} if detail else {}
     links = opi.link_display(db, lots)
     out = []
     for l in lots:
@@ -75,6 +94,7 @@ def _to_responses(db: Session, lots: list[QualityInspectionLot], detail: bool = 
             for r in resp.results:
                 r.defect_code_label = codes.get(r.defect_code_id)
                 r.recorded_by_name = users.get(r.recorded_by_id)
+                r.specification = specs.get(r.characteristic_id)
             resp.ncrs = [{"id": n.id, "ncr_number": n.ncr_number, "status": n.status, "severity": n.severity, "quantity": n.quantity}
                          for n in db.query(QualityNcr).filter(QualityNcr.lot_id == l.id, QualityNcr.is_deleted == False).all()]  # noqa: E712
             photo_users = {}
@@ -152,14 +172,35 @@ def _ensure_lot_list_view(user: User, *, mine: bool, inspection_type: str | None
     raise PermissionDenied(f"You don't have 'View' permission on {names}. {GRANT_HINT}", f"quality:{tabs[-1]}:view")
 
 
+# The dashboard cards, as a list filter: the same meaning as the KPIs in routes/dashboard.py.
+LOT_VIEWS = ("waiting", "in_inspection", "overdue", "decided_month", "rejected_month")
+
+
+def _apply_view(db: Session, q, view: str):
+    from datetime import date, timedelta
+    from app.modules.quality.services.settings import get_setting
+    M = QualityInspectionLot
+    if view in ("waiting", "in_inspection", "overdue"):
+        q = q.filter(M.status.in_(QUALITY_LOT_OPEN_STATUSES))
+        if view == "in_inspection":
+            q = q.filter(M.status == "in_inspection")
+        elif view == "overdue":
+            q = q.filter(M.lot_date < date.today() - timedelta(days=int(get_setting(db, "lot_waiting_days"))))
+        return q
+    q = q.filter(M.decision.isnot(None), M.lot_date >= date.today().replace(day=1), M.source_type != "ncr")
+    return q.filter(M.rejected_qty > 0) if view == "rejected_month" else q
+
+
 @router.get("", response_model=list[QualityInspectionLotResponse])
 async def list_lots(
     status_filter: str | None = Query(None, alias="status"), inspection_type: str | None = None,
-    mine: bool = False, open_only: bool = False, search: str | None = None,
+    mine: bool = False, open_only: bool = False, search: str | None = None, view: str | None = None,
     order_project_id: int | None = None, order_project_element_id: int | None = None,
     db: Session = Depends(get_db), user: User = Depends(require_app_access("quality")),
 ):
     _ensure_lot_list_view(user, mine=mine, inspection_type=inspection_type, status_filter=status_filter)
+    if view is not None and view not in LOT_VIEWS:
+        raise HTTPException(status_code=422, detail=f"Unknown lot view '{view}' — use one of: {', '.join(LOT_VIEWS)}.")
     q = apply_scope(db.query(QualityInspectionLot).options(selectinload(QualityInspectionLot.results)), user, QualityInspectionLot)
     if status_filter:
         q = q.filter(QualityInspectionLot.status == status_filter)
@@ -171,6 +212,8 @@ async def list_lots(
         q = q.filter(QualityInspectionLot.order_project_id == order_project_id)
     if order_project_element_id:
         q = q.filter(QualityInspectionLot.order_project_element_id == order_project_element_id)
+    if view:
+        q = _apply_view(db, q, view)
     if mine:
         # My Inspections: assigned to me, plus unassigned open lots anyone can pick up.
         q = q.filter(QualityInspectionLot.status.in_(QUALITY_LOT_OPEN_STATUSES)).filter(
@@ -189,7 +232,8 @@ async def create_manual_lot(payload: QualityInspectionLotCreate, db: Session = D
     if payload.inspection_type in ("incoming",):
         raise HTTPException(status_code=422, detail="Incoming lots are created automatically by the GRN for items flagged 'inspection on receipt' — record the GRN in Store instead.")
     if payload.inspection_type == "first_article":
-        raise HTTPException(status_code=422, detail="Raise a first article from Quality → First Article — it opens the FAI record (rule 9) together with its lot.")
+        raise HTTPException(status_code=422, detail="A first article lot is opened automatically by the first receipt of an item from a vendor when first-article control is on "
+                                                    "(Quality settings › Inspection rules) — it can't be raised by hand here.")
     visibility.ensure_option_allowed(user, LOT_VISIBILITY_KEY, "inspection_type", payload.inspection_type)
     item = db.query(StoreItem).filter(StoreItem.id == payload.item_id).first()
     if not item:
@@ -219,7 +263,22 @@ async def get_lot(lot_id: int, db: Session = Depends(get_db), user: User = Depen
     return _detail(db, lot_id)
 
 
-@router.post("/{lot_id}/refresh-plan", response_model=QualityInspectionLotResponse)
+XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+@router.get("/{lot_id}/report.xlsx")
+async def lot_report_xlsx(lot_id: int, db: Session = Depends(get_db), user: User = Depends(require_app_access("quality"))):
+    """Inspection report of the lot in the ISO format F/STR/01 (Excel). Needs Print on Quality › Inspection Lots
+    and the lot to be in the user's data scope (same check as the lot page)."""
+    from app.modules.quality.services import inspection_report
+    ensure_tab_action(user, "quality", "inspection_lots", "print")
+    lot = _get_or_404(db, lot_id, user)
+    content = inspection_report.build_xlsx(inspection_report.collect(db, lot))
+    return Response(content=content, media_type=XLSX_MEDIA_TYPE, headers={
+        "Content-Disposition": f'attachment; filename="{inspection_report.report_filename(lot.lot_number)}"', "Cache-Control": "no-store"})
+
+
+@router.post("/{lot_id}/refresh-plan",response_model=QualityInspectionLotResponse)
 async def refresh_plan(lot_id: int, db: Session = Depends(get_db), _user: User = Depends(_CAN_EDIT)):
     lot = _get_or_404(db, lot_id, _user, lock=True)
     _run(db, lambda: lot_service.refresh_plan(db, lot))
@@ -315,7 +374,7 @@ async def upload_photos(
     lot = _get_or_404(db, lot_id, user)
     if lot.status not in QUALITY_LOT_OPEN_STATUSES:
         raise HTTPException(status_code=409, detail=f"Lot {lot.lot_number} is {lot.status.replace('_', ' ')} — photos are part of the record "
-                                                    "once the usage decision is made, so they can only be added while the lot is open.")
+                                                    "once the decision is made, so they can only be added while the lot is open.")
     if result_id is not None and result_id not in {r.id for r in lot.results}:
         raise HTTPException(status_code=422, detail=f"Result row #{result_id} doesn't belong to lot {lot.lot_number}.")
     for f in files:

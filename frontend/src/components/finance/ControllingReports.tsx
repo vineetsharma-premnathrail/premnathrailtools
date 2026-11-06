@@ -10,12 +10,11 @@ import Link from 'next/link'
 import { accountsApi, costCentersApi } from '@/lib/api'
 import { extractErrorMessages } from '@/lib/validation'
 import { TEXT, BRAND } from '@/lib/theme'
-import SearchableSelect from '@/components/erp/SearchableSelect'
 import { recordHref } from '@/lib/recordRef'
 import { VOUCHER_PATH } from '@/components/finance/voucherLabels'
-import Select from '@/components/shared/Select'
+import FilterMenu from '@/components/shared/FilterMenu'
 import {
-  inr, dmy, sectionStyle, secondaryBtnStyle, linkBtnStyle, thStyle, tdStyle, numTd, numTh, labelStyle,
+  inr, dmy, sectionStyle, secondaryBtnStyle, linkBtnStyle, thStyle, tdStyle, numTd, numTh,
   ErrorBanner, InfoBanner, StatusPill, TableWrap, EmptyRow, StatCard,
 } from '@/components/finance/financeUi'
 import { RowCount } from '@/components/shared/ui'
@@ -150,9 +149,12 @@ export function CostCenterReport({ fromDate, toDate }: { fromDate: string; toDat
       </InfoBanner>
       <ErrorBanner error={error} />
       <div data-tour="fin-rep-cc-filters" style={{ ...sectionStyle, padding: '12px 16px', display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-        <div style={{ flex: '1 1 260px', maxWidth: 360 }}>
-          <label style={labelStyle}>Cost centre</label>
-          <SearchableSelect value={ccId} onChange={(v: string) => { setCcId(v); setDrill(null) }} options={opts} placeholder="All cost centres" />
+        <div style={{ marginBottom: 2 }}>
+          <FilterMenu
+            fields={[{ key: 'cc', label: 'Cost centre', value: ccId, allLabel: 'All cost centres', options: opts.filter((o) => o.value !== '') }]}
+            onChange={(_k, v) => { setCcId(v); setDrill(null) }}
+            onClear={() => { setCcId(''); setDrill(null) }}
+          />
         </div>
         <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12.5, color: TEXT.body, paddingBottom: 9 }}>
           <input type="checkbox" checked={withSubs} onChange={(e) => setWithSubs(e.target.checked)} disabled={!ccId} /> Include sub-centres
@@ -255,12 +257,12 @@ export function InternalOrdersReport({ toDate, initialOrderId }: { toDate: strin
       </InfoBanner>
       <ErrorBanner error={error} />
       <div style={{ ...sectionStyle, padding: '12px 16px', display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-        <div style={{ flex: '0 1 180px' }}>
-          <label style={labelStyle}>Status</label>
-          <Select style={{ width: '100%', padding: '9px 10px', borderRadius: 10, fontSize: 13 }} value={status} onChange={(e) => setStatus(e.target.value)}>
-            <option value="">All</option>
-            {Object.entries(IO_STATUS_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-          </Select>
+        <div style={{ marginBottom: 2 }}>
+          <FilterMenu
+            fields={[{ key: 'status', label: 'Status', value: status, allLabel: 'All', options: Object.entries(IO_STATUS_LABELS).map(([k, l]) => ({ value: k, label: l })) }]}
+            onChange={(_k, v) => setStatus(v)}
+            onClear={() => setStatus('')}
+          />
         </div>
       </div>
       <TableWrap minWidth={1100} maxHeight="calc(100vh - 360px)" tour="fin-rep-io-table">

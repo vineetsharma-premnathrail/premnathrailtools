@@ -19,6 +19,7 @@ from app.modules.quality.service import generate_inspection_plan_number
 from app.modules.quality.services import access, authz
 from app.modules.quality.services.plans import PlanError, new_revision, obsolete_plan
 from app.modules.quality.services.sampling import nearest_aql
+from app.modules.quality.services.standard_checklist import is_standard_plan, STANDARD_FORMAT_NO
 from app.modules.store.models.item import StoreItem
 
 router = APIRouter(prefix="/quality/inspection-plans", tags=["Quality"], dependencies=[Depends(require_app_access("quality"))])
@@ -55,6 +56,14 @@ def _get_or_404(db: Session, plan_id: int) -> QualityInspectionPlan:
     if not plan:
         raise HTTPException(status_code=404, detail=f"Inspection plan #{plan_id} not found")
     return plan
+
+
+def _refuse_standard(plan: QualityInspectionPlan, what: str) -> None:
+    """The standard checklist (ISO format F/STR/01) is every incoming lot's fallback — it is never revised, retired or deleted here."""
+    if is_standard_plan(plan):
+        raise HTTPException(status_code=409, detail=(
+            f"Plan {plan.plan_number} is the standard incoming checklist ({STANDARD_FORMAT_NO}) used for every item without its own plan, "
+            f"so it can't be {what}. To check an item differently, create and approve a plan for that item — it is used instead of the standard checklist."))
 
 
 def _validate_header(data: dict) -> None:
@@ -169,6 +178,7 @@ async def get_inspection_plan(plan_id: int, db: Session = Depends(get_db)):
 @router.patch("/{plan_id}", response_model=QualityInspectionPlanResponse)
 async def update_inspection_plan(plan_id: int, payload: QualityInspectionPlanUpdate, db: Session = Depends(get_db), _user: User = Depends(_CAN_EDIT)):
     plan = _get_or_404(db, plan_id)
+    _refuse_standard(plan, "edited")
     if plan.status != "draft":
         raise HTTPException(status_code=409, detail=f"Plan {plan.plan_number} is {plan.status} — only drafts are edited. Use 'New revision' to change an approved plan.")
     data = payload.model_dump(exclude_unset=True, exclude={"lines"})
@@ -229,6 +239,7 @@ async def approve_inspection_plan(plan_id: int, db: Session = Depends(get_db), u
 @router.post("/{plan_id}/new-revision", response_model=QualityInspectionPlanResponse)
 async def revise_inspection_plan(plan_id: int, db: Session = Depends(get_db), user: User = Depends(_CAN_CREATE)):
     plan = _get_or_404(db, plan_id)
+    _refuse_standard(plan, "revised")
     copy = _plan_action(lambda: new_revision(db, plan, generate_inspection_plan_number(db), user.id))
     db.commit()
     return _to_response(db, _get_or_404(db, copy.id))
@@ -239,6 +250,7 @@ async def obsolete_inspection_plan(plan_id: int, db: Session = Depends(get_db), 
     if not access.can_approve_plan(user):
         raise HTTPException(status_code=403, detail="Only a Quality head can make a plan obsolete.")
     plan = _get_or_404(db, plan_id)
+    _refuse_standard(plan, "made obsolete")
     _plan_action(lambda: obsolete_plan(db, plan))
     db.commit()
     return _to_response(db, _get_or_404(db, plan.id))
@@ -249,6 +261,7 @@ async def delete_inspection_plan(plan_id: int, db: Session = Depends(get_db), us
     from datetime import datetime, timezone
     plan = _get_or_404(db, plan_id)
     ensure_can_delete(user, plan, "quality", "inspection_plans", what="inspection plan")
+    _refuse_standard(plan, "deleted")
     if plan.status != "draft":
         raise HTTPException(status_code=409, detail=f"Plan {plan.plan_number} is {plan.status} — approved/obsolete plans are kept as records. Make it obsolete instead.")
     plan.is_deleted = True

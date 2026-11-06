@@ -22,14 +22,13 @@ const config: TourConfig = {
     },
     {
       target: 'p2p-pot-filter-btn',
-      title: 'Filters',
-      purpose: 'Opens the Filters popup. Choose, then press Apply Filters; the button shows how many filters are on and a Clear button appears next to it.',
+      title: 'Filter',
+      purpose: 'Opens the Filter panel. Choices apply at once; the button shows how many filters are on and a Clear button appears next to it. The PO date from / to boxes beside it set a range of PO dates.',
       options: [
         { value: 'Stage', meaning: 'Draft, In approval, With vendor, Partly received, Received, Short-closed, Closed or Cancelled. In approval is not an order until the final approval is given, so it is never counted as overdue.' },
         { value: 'Delivery', meaning: 'Overdue = released POs whose expected delivery date has passed with goods still to come (your daily follow-up list); Due in 7 days = due today or within the next week.' },
         { value: 'Vendor / Buyer', meaning: 'Only the purchase orders of one vendor or one buyer.' },
         { value: 'Project', meaning: 'Only the purchase orders charged to one project.' },
-        { value: 'PO date from / to', meaning: 'A range of PO dates.' },
         { value: 'Sort by', meaning: 'PO number (default, A to Z), most urgent first, delivery date, PO date, vendor, stage, value or delivered %.' },
       ],
     },

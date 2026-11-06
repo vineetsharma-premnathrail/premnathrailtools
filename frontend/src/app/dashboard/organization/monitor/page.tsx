@@ -1,6 +1,6 @@
 'use client'
 
-import Select from '@/components/shared/Select'
+import FilterMenu from '@/components/shared/FilterMenu'
 import { useCallback, useEffect, useState } from 'react'
 import { useRequireOrgTab } from '@/app/dashboard/organization/_lib/useRequireOrgTab'
 import { useCan } from '@/lib/permissions'
@@ -117,9 +117,13 @@ export default function SystemMonitorPage() {
           <button key={t.key} type="button" onClick={() => { setTab(t.key); setError(''); setNotice('') }} style={chipBtnStyle(tab === t.key)}>{t.label}</button>
         ))}
         {tab !== 'jobs' && (
-          <Select value={days} onChange={(e) => setDays(Number(e.target.value))} style={{ ...inputStyle, width: 130, marginLeft: 'auto' }}>
-            <option value={1}>Last 24 hours</option><option value={7}>Last 7 days</option><option value={30}>Last 30 days</option><option value={90}>Last 90 days</option>
-          </Select>
+          <div style={{ marginLeft: 'auto' }}>
+            <FilterMenu
+              fields={[{ key: 'days', label: 'Period', value: String(days), defaultValue: '7', allLabel: 'Last 7 days', options: [{ value: '1', label: 'Last 24 hours' }, { value: '30', label: 'Last 30 days' }, { value: '90', label: 'Last 90 days' }] }]}
+              onChange={(_k, v) => setDays(Number(v))}
+              onClear={() => setDays(7)}
+            />
+          </div>
         )}
       </div>
 

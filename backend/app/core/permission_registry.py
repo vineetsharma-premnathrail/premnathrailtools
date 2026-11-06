@@ -380,6 +380,33 @@ def register_features(module_key: str, tab_key: str, *features: tuple) -> None:
     _attach_features()
 
 
+# Tabs that exist in code but are not live yet. The Role editor still lists them,
+# grouped under NOT_LIVE_GROUP, so the owner sees they are not in use — they are NOT
+# removed from the catalog: the editor rebuilds a module's grants from the catalog on
+# save, so a removed tab would silently strip its grants (e.g. quality:ncr:approve =
+# Quality head authority). Quality went live 2026-11-06 with the incoming slice only.
+NOT_LIVE_TABS: dict[str, set[str]] = {
+    "quality": {"ncr", "inspection_plans", "in_process_inspection", "final_inspection", "first_article",
+                "inspection_calls", "standards", "capa", "complaints", "supplier_quality", "documents"},
+}
+NOT_LIVE_GROUP = "Not live yet (kept for later — NCR approve = Quality head)"
+
+
+def editor_modules() -> dict[str, dict]:
+    """MODULES as the Role editor shows them: not-live tabs grouped under NOT_LIVE_GROUP."""
+    out: dict[str, dict] = {}
+    for mk, m in MODULES.items():
+        hidden = NOT_LIVE_TABS.get(mk)
+        if not hidden:
+            out[mk] = m
+            continue
+        groups = {**m.get("groups", {}), **{k: NOT_LIVE_GROUP for k in m["subtabs"] if k in hidden}}
+        # Live tabs first, then the not-live group (dict order is the editor's row order).
+        subtabs = {k: v for k, v in m["subtabs"].items() if k not in hidden} | {k: v for k, v in m["subtabs"].items() if k in hidden}
+        out[mk] = {**m, "subtabs": subtabs, "groups": groups}
+    return out
+
+
 # Modules that are portal apps (User.get_apps); organization is the admin area.
 NON_APP_MODULES = {"organization"}
 

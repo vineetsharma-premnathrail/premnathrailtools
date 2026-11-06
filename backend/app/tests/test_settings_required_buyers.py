@@ -1,13 +1,9 @@
-"""Procurement › Settings › Buyer for each requisition category never blank
-(2026-10-26): standard buyers pre-filled, the other four categories required."""
-import pytest
-
+"""Procurement > Settings: the required Default buyer (2026-11-06). Replaces the
+2026-10-26 "Buyer by category" settings, which are gone."""
 from app.auth.jwt_handler import create_access_token
 from app.tests.test_p2p_requests import make_user
 
 URL = "/api/v1/p2p/settings"
-NO_STANDARD = ("srv", "adm", "cap", "oth")
-STANDARD = ("mkt", "pnh", "raw", "ele", "hwc", "job")
 
 
 def _h(u):
@@ -18,61 +14,41 @@ def _admin(db):
     return make_user(db, "req.admin@premnathrail.com", role="admin")
 
 
-def test_standard_buyer_prefilled_and_specs_required(client, db):
-    ele = make_user(db, "manish.kumar@premnathrail.com", assigned_apps=("p2p",))
+def test_default_buyer_spec_is_required_and_old_category_buyers_are_gone(client, db):
     body = client.get(URL, headers=_h(_admin(db))).json()
     specs = {s["key"]: s for s in body["specs"]}
-    for c in STANDARD + NO_STANDARD:
-        assert specs[f"buyer_{c}"]["required"] is True
-        assert "default_resolver" not in specs[f"buyer_{c}"]
-        assert "Blank" not in specs[f"buyer_{c}"]["help"]
+    assert specs["default_buyer"]["required"] is True and specs["default_buyer"]["group"] == "line_buyers"
     assert specs["rfq_quote_days"]["required"] is False
-    assert body["values"]["buyer_ele"] == ele.id
-    assert body["is_default"]["buyer_ele"] is True
-    assert body["values"]["buyer_mkt"] is None  # standard buyer not a user here: no crash
-    for c in NO_STANDARD:
-        assert body["values"][f"buyer_{c}"] is None
+    assert body["values"]["default_buyer"] is None
+    assert not [k for k in specs if k.startswith("buyer_") and not k.startswith("buyer_type_")]
+    assert "buyers" not in [g["key"] for g in body["groups"]]
+    # Item type buyers are optional now: blank falls through to the default buyer.
+    assert all(specs[k]["required"] is False for k in specs if k.startswith("buyer_type_"))
 
 
-def test_inactive_standard_buyer_not_shown(client, db):
-    u = make_user(db, "manish.kumar@premnathrail.com", assigned_apps=("p2p",))
-    u.is_active = False
-    db.commit()
-    assert client.get(URL, headers=_h(_admin(db))).json()["values"]["buyer_ele"] is None
-
-
-@pytest.mark.parametrize("blank", [None, ""])
-def test_required_buyer_cannot_be_saved_blank(client, db, blank):
-    r = client.put(URL, json={"values": {"buyer_srv": blank}}, headers=_h(_admin(db)))
-    assert r.status_code == 422
-    assert "Services (SRV): pick a person — this setting can't be left blank." in r.json()["detail"]
-
-
-def test_reset_rules(client, db):
+def test_default_buyer_cannot_be_saved_blank(client, db):
     admin = _admin(db)
-    ele = make_user(db, "manish.kumar@premnathrail.com", assigned_apps=("p2p",))
-    other = make_user(db, "req.other@premnathrail.com", assigned_apps=("p2p",))
-    h = _h(admin)
-    assert client.put(URL, json={"values": {"buyer_ele": other.id, "buyer_srv": other.id}}, headers=h).status_code == 200
-    # standard category: reset allowed, standard buyer shows again
-    r = client.post(f"{URL}/reset/buyer_ele", headers=h)
-    assert r.status_code == 200
-    assert r.json()["values"]["buyer_ele"] == ele.id
-    assert r.json()["is_default"]["buyer_ele"] is True
-    # no standard buyer: reset refused
-    r = client.post(f"{URL}/reset/buyer_srv", headers=h)
-    assert r.status_code == 422
-    assert "pick a person instead" in r.json()["detail"]
+    for blank in (None, ""):
+        r = client.put(URL, json={"values": {"default_buyer": blank}}, headers=_h(admin))
+        assert r.status_code == 422
+        assert "Default buyer: pick a person — this setting can't be left blank." in r.json()["detail"]
 
 
-def test_resolve_auto_buyer_id_unchanged(db):
-    from app.modules.p2p.models.p2p_request import resolve_auto_buyer_id
-    ele = make_user(db, "manish.kumar@premnathrail.com", assigned_apps=("p2p",))
-    assert resolve_auto_buyer_id(db, "ELE") == ele.id
-    assert resolve_auto_buyer_id(db, "SRV") is None
+def test_default_buyer_must_be_a_buyer_and_can_be_saved(client, db):
+    from app.tests.test_erp_service_requests import make_user as erp_user
+    admin = _admin(db)
+    buyer = make_user(db, "req.buyer@premnathrail.com", assigned_apps=("p2p",))
+    outsider = erp_user(db, "req.outsider@premnathrail.com")
+    r = client.put(URL, json={"values": {"default_buyer": outsider.id}}, headers=_h(admin))
+    assert r.status_code == 422 and "no access to the p2p or purchase module" in r.json()["detail"]
+    r = client.put(URL, json={"values": {"default_buyer": buyer.id}}, headers=_h(admin))
+    assert r.status_code == 200 and r.json()["values"]["default_buyer"] == buyer.id
+    # Required with no default to go back to: reset is refused with the way forward.
+    r = client.post(f"{URL}/reset/default_buyer", headers=_h(admin))
+    assert r.status_code == 422 and "pick a person instead" in r.json()["detail"]
 
 
 def test_non_editor_denied(client, db):
     u = make_user(db, "req.plain@premnathrail.com", assigned_apps=("p2p",))
-    r = client.put(URL, json={"values": {"buyer_srv": u.id}}, headers=_h(u))
+    r = client.put(URL, json={"values": {"default_buyer": u.id}}, headers=_h(u))
     assert r.status_code == 403

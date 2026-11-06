@@ -16,6 +16,7 @@ import ReasonSheet from '@/components/shared/ReasonSheet'
 import { SField, SRow, SheetBody, SheetFooter, sw } from '@/components/finance/financeSheet'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import Select from '@/components/shared/Select'
+import FilterMenu from '@/components/shared/FilterMenu'
 import {
   productCostingApi, CostEstimate, CostEstimateLine, CostableItem, StandardPriceRow, OrderVariance, OrderVarianceSummary,
 } from '@/lib/controllingCostingApi'
@@ -182,10 +183,12 @@ export function CostEstimatesTab() {
       <div style={{ display: 'flex', gap: 10, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
         <input style={{ ...inputStyle, maxWidth: 280 }} placeholder="Search item / estimate no." value={search}
           onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') load() }} />
-        <Select style={{ ...inputStyle, maxWidth: 170 }} value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="">All statuses</option>
-          {Object.entries(EST_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </Select>
+        <FilterMenu
+          tourId="costing-status-filter"
+          fields={[{ key: 'status', label: 'Status', value: status, allLabel: 'All statuses', options: Object.entries(EST_LABELS).map(([k, v]) => ({ value: k, label: v })) }]}
+          onChange={(_k, v) => setStatus(v)}
+          onClear={() => setStatus('')}
+        />
         <button style={secondaryBtnStyle} onClick={load}>Search</button>
       </div>
 
@@ -382,10 +385,12 @@ export function OrderVarianceTab() {
         Actual = material issued − returned at the value actually issued, labour booked on the shop floor, and overhead from the period-end run. Positive variance = over target.
       </InfoBanner>
       <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
-        <Select style={{ ...inputStyle, maxWidth: 200 }} value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="">All work orders</option>
-          {Object.entries(WO_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </Select>
+        <FilterMenu
+          tourId="order-variance-status-filter"
+          fields={[{ key: 'status', label: 'Status', value: status, allLabel: 'All work orders', options: Object.entries(WO_STATUS_LABELS).map(([k, v]) => ({ value: k, label: v })) }]}
+          onChange={(_k, v) => setStatus(v)}
+          onClear={() => setStatus('')}
+        />
       </div>
       <TableWrap minWidth={1050} maxHeight="calc(100vh - 420px)" tour="order-variance-list">
         <thead><tr>

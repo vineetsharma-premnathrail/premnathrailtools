@@ -12,19 +12,9 @@ const config: TourConfig = {
     },
     { target: 'org-roles-search', title: 'Search', purpose: 'Filters roles by name or description.', validExample: 'store' },
     {
-      target: 'org-roles-filter',
-      title: 'Which roles',
-      purpose: 'Switch between your own roles and the built-in presets.',
-      options: [
-        { value: 'Custom roles', meaning: 'Roles your company made (editable). Includes the "Standard access (migrated)" roles created when roles were introduced — tighten or replace them.' },
-        { value: 'Built-in presets', meaning: 'Per module: Full Access and View Only. Assignable, not editable — Copy one to start a custom role.' },
-        { value: 'All', meaning: 'Both.' },
-      ],
-    },
-    {
       target: 'org-roles-table',
       title: 'Roles',
-      purpose: 'Every role with its description, type and how many users hold it. Click a row to open it.',
+      purpose: 'Every role with its description and how many users hold it. Click a row to open it.',
       after: '"Everyone" roles apply to every user automatically (e.g. Employee self-service).',
     },
   ],

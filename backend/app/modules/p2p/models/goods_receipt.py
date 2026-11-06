@@ -132,6 +132,9 @@ class P2PGoodsReceiptItem(Base, TimestampMixin, OrderProjectLineMixin):
     #   NULL      — GRNs recorded before 2026-10-13: nothing posted at
     #               receipt, the accepted quantity is posted at inspection.
     receipt_posting: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # Part of received_quantity that was already put into stock by a Before-PO
+    # receipt (BPO) — settled, not posted again; a reversal must not take it out.
+    pre_po_qty: Mapped[float] = mapped_column(Float, default=0, server_default="0", nullable=False)
     rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
 

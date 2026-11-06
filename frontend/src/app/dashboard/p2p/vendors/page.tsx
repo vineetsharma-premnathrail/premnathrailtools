@@ -8,15 +8,13 @@ import { vendorsApi } from '@/lib/api'
 import { ProcurementVendor } from '@/types'
 import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
 import { inputStyle, secondaryBtnStyle, smallSecondaryBtnStyle, RowCount, Pill, StatChip } from '@/components/shared/ui'
-import { Funnel } from '@phosphor-icons/react'
-import { FormSheet, SheetIcon, SHEET, sheetBtn, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
+import FilterMenu from '@/components/shared/FilterMenu'
 import P2PNav from '@/components/p2p/P2PNav'
 import ExportDialog from '@/components/erp/ExportDialog'
 import ImportDialog from '@/components/shared/ImportDialog'
 import VendorFormDialog from '@/components/p2p/VendorFormDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
-import Select from '@/components/shared/Select'
 
 const STATUS_HEX: Record<string, string> = { active: '#16a34a', inactive: '#78716c', blocked: '#dc2626' }
 const STATUS_LABEL: Record<string, string> = { active: 'Active', inactive: 'Inactive', blocked: 'Blocked' }
@@ -42,8 +40,6 @@ export default function VendorsPage() {
   const [showExport, setShowExport] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [reload, setReload] = useState(0)
-  const [showFilters, setShowFilters] = useState(false)
-  const [draftStatus, setDraftStatus] = useState('active')
 
   useEffect(() => {
     if (!allowed) return
@@ -70,9 +66,7 @@ export default function VendorsPage() {
 
   // The list opens on Active vendors; any other status choice counts as an active filter.
   const activeFilterCount = status !== 'active' ? 1 : 0
-  const clearFilters = () => { setStatus('active'); setShowFilters(false) }
-  const openFilters = () => { setDraftStatus(status); setShowFilters(true) }
-  const applyFilters = () => { setStatus(draftStatus); setShowFilters(false) }
+  const clearFilters = () => setStatus('active')
 
   if (isLoading) return <div><P2PNav /><p role="status" style={{ fontSize: 13, color: TEXT.muted }}>Loading…</p></div>
   if (!allowed) return <div><P2PNav /><p role="alert" style={{ fontSize: 13, color: TEXT.muted }}>You don&apos;t have access to Vendors. Ask an admin to give you Procurement › Vendors › View.</p></div>
@@ -94,37 +88,17 @@ export default function VendorsPage() {
         {can('p2p', 'vendors', 'create') && <button type="button" data-tour="vendors-add-btn" onClick={() => setShowAdd(true)} style={NEW_BTN}>+ Add Vendor</button>}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           <input aria-label="Search vendors" data-tour="vendors-search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, code, GSTIN, city, contact…" style={{ ...inputStyle, width: 280, maxWidth: '100%' }} />
-          <button type="button" onClick={openFilters} data-tour="vendors-filter-btn" aria-label="Filters" title="Filters"
-            style={{ ...secondaryBtnStyle, display: 'inline-flex', alignItems: 'center', gap: 6, ...(activeFilterCount ? { borderColor: '#ea580c', color: '#c2410c' } : {}) }}>
-            <Funnel size={16} weight={activeFilterCount ? 'fill' : 'regular'} />
-            Filters
-            {activeFilterCount > 0 && <span style={{ minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, background: '#ea580c', color: '#fff', fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{activeFilterCount}</span>}
-          </button>
+          <FilterMenu
+            tourId="vendors-filter-btn"
+            fields={[{ key: 'status', label: 'Status', value: status, defaultValue: 'active', allLabel: 'Active', options: [{ value: 'inactive', label: 'Inactive' }, { value: 'blocked', label: 'Blocked' }, { value: '', label: 'All statuses' }] }]}
+            onChange={(_k, v) => setStatus(v)}
+            onClear={() => setStatus('active')}
+          />
           {activeFilterCount > 0 && <button type="button" onClick={clearFilters} style={secondaryBtnStyle} data-tour="vendors-clear-btn">Clear</button>}
           {can('p2p', 'vendors', 'export') && <button type="button" data-tour="vendors-export-btn" onClick={() => setShowExport(true)} style={secondaryBtnStyle}>Export</button>}
           {can('p2p', 'vendors', 'import') && <button type="button" data-tour="vendors-import-btn" onClick={() => setShowImport(true)} style={secondaryBtnStyle}>Import</button>}
         </div>
       </div>
-
-      {showFilters && (
-        <FormSheet icon="search" title="Filters" subtitle="Narrow the vendors, then press Apply." width={560} busy={false} onClose={() => setShowFilters(false)} tour="vendors-filter-sheet"
-          footer={<>
-            <button type="button" onClick={clearFilters} style={sheetBtn('secondary', SHEET.INK)}>Clear Filters</button>
-            <button type="button" onClick={applyFilters} style={sheetBtn('primary', SHEET.BLUE)} data-tour="vendors-apply-btn"><SheetIcon name="check" size={16} />Apply Filters</button>
-          </>}>
-          <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div>
-              <label style={sheetLabel}>Status</label>
-              <Select aria-label="Status" title="Status" value={draftStatus} onChange={(e) => setDraftStatus(e.target.value)} style={sheetInput} data-tour="vendors-status-filter">
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-                <option value="blocked">Blocked</option>
-                <option value="">All statuses</option>
-              </Select>
-            </div>
-          </div>
-        </FormSheet>
-      )}
 
       {error && (
         <div role="alert" style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>

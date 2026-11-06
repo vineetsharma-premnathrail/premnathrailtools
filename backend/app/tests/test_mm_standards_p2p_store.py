@@ -181,11 +181,12 @@ def test_flagged_grn_posts_into_quality_stock_at_once_and_the_lot_decision_relea
     decide_grn_lots(db, g.json()["id"], "partial", accepted_qty=7, rejected_qty=3)
     b = _bal(db, item_id, loc.id)
     assert (b.on_hand_qty, b.quality_qty, b.quarantine_qty) == (7, 0, 3)
-    # Quality-rejected goods go back through the NCR, not the store's Return to Vendor; accepted goods can be returned.
-    refused = client.post("/api/v1/p2p/vendor-returns", json={"goods_receipt_id": g.json()["id"], "reason": "quality_rejection", "items": [
+    # NCR auto-raise is off by default (2026-11-06): rejected goods with no NCR go back through the store's
+    # Return to Vendor straight from Blocked stock (with an NCR they would go through its disposition instead).
+    back = client.post("/api/v1/p2p/vendor-returns", json={"goods_receipt_id": g.json()["id"], "reason": "quality_rejection", "items": [
         {"grn_item_id": g.json()["items"][0]["id"], "source": "rejected", "quantity": 3}]}, headers=auth_header(buyer))
-    assert refused.status_code == 409 and "NCR" in refused.json()["detail"]
-    assert _bal(db, item_id, loc.id).quarantine_qty == 3
+    assert back.status_code == 201, back.text
+    assert _bal(db, item_id, loc.id).quarantine_qty == 0
     rtv = client.post("/api/v1/p2p/vendor-returns", json={"goods_receipt_id": g.json()["id"], "reason": "quality_rejection", "items": [
         {"grn_item_id": g.json()["items"][0]["id"], "source": "accepted", "quantity": 7}]}, headers=auth_header(buyer))
     assert rtv.status_code == 201, rtv.text

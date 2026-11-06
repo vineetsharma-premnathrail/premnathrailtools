@@ -18,7 +18,7 @@ import PromptDialog from '@/components/erp/PromptDialog'
 import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
-import Select from '@/components/shared/Select'
+import FilterMenu from '@/components/shared/FilterMenu'
 
 const STATUS_HEX: Record<string, string> = {
   quality: '#d97706', in_stock: '#16a34a', blocked: '#dc2626', in_transit: '#2563eb', issued: '#7c3aed',
@@ -105,14 +105,14 @@ export default function StoreSerialsPage() {
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 14 }}>
         <input style={{ ...inputStyle, flex: '2 1 240px', maxWidth: 380, width: 'auto' }} placeholder="Serial no., item, vendor, issued to…" value={q} onChange={(e) => setQ(e.target.value)} />
-        <Select style={{ ...inputStyle, flex: '0 1 190px', width: 'auto' }} value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="">All statuses</option>
-          {statuses.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-        </Select>
-        <Select style={{ ...inputStyle, flex: '0 1 190px', width: 'auto' }} value={locationId} onChange={(e) => setLocationId(e.target.value)}>
-          <option value="">All stores</option>
-          {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-        </Select>
+        <FilterMenu
+          fields={[
+            { key: 'status', label: 'Status', value: status, allLabel: 'All statuses', options: statuses },
+            { key: 'store', label: 'Store', value: locationId, allLabel: 'All stores', options: locations.map((l) => ({ value: String(l.id), label: l.name })) },
+          ]}
+          onChange={(key, v) => { if (key === 'status') setStatus(v); else setLocationId(v) }}
+          onClear={() => { setStatus(''); setLocationId('') }}
+        />
         <span style={{ fontSize: 12.5, color: TEXT.muted, alignSelf: 'center' }}>{total.toLocaleString('en-IN')} unit{total === 1 ? '' : 's'}{total > PAGE ? ` — page ${page + 1} of ${pages}` : ''}</span>
         {total > PAGE && (
           <>

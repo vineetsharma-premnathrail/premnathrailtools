@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'module_screens.dart';
+
 /// One ERP module, as the portal shows it in the sidebar (menu) and on the
 /// Dashboard cards. Titles, descriptions, colours and order come from
 /// frontend/src/components/Sidebar.tsx and frontend/src/app/dashboard/page.tsx -
@@ -35,6 +37,9 @@ class ErpModule {
 
   /// Who sees it: the portal sidebar rule, fed by /auth/me.
   final bool Function(Map<String, dynamic> user) visibleFor;
+
+  /// The module's main screen (`lib/modules/<key>/`).
+  Widget screen(ErpModule m) => moduleScreens[key]!(m);
 }
 
 List<String> _strings(Object? v) => v is List ? v.whereType<String>().toList() : const [];

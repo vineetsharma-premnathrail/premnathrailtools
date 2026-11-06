@@ -1,6 +1,6 @@
 'use client'
 
-import Select from '@/components/shared/Select'
+import FilterMenu from '@/components/shared/FilterMenu'
 import { RowCount, inputStyle as sharedInputStyle } from '@/components/shared/ui'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -151,11 +151,12 @@ export default function RndRequirementsPage() {
             )
           })}
         </div>
-        <Select data-tour="rnd-req-mine" style={{ ...inputStyle, flex: '0 1 200px' }} value={mine} onChange={(e) => setMine(e.target.value as '' | 'review' | 'respond')}>
-          <option value="">Everyone&apos;s</option>
-          <option value="review">Waiting for my review</option>
-          <option value="respond">Awaiting my response</option>
-        </Select>
+        <FilterMenu
+          tourId="rnd-req-filter-btn"
+          fields={[{ key: 'mine', label: 'Assigned', value: mine, allLabel: "Everyone's", options: [{ value: 'review', label: 'Waiting for my review' }, { value: 'respond', label: 'Awaiting my response' }] }]}
+          onChange={(_k, v) => setMine(v as '' | 'review' | 'respond')}
+          onClear={() => setMine('')}
+        />
       </div>
 
       <div style={{

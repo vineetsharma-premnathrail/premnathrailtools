@@ -18,6 +18,7 @@ A09 - Logging & Monitoring         → Request-ID tracing, structured security e
 A10 - SSRF                         → block private IP ranges in query params and URL-valued headers
 """
 
+import json
 import re
 import time
 import uuid
@@ -77,6 +78,25 @@ RECORD_PATH_RE = re.compile(r"/\d+(?:/|$)")
 # A04 — Max body sizes
 MAX_BODY_BYTES = 10 * 1024 * 1024 * 1024   # 10 GB (file uploads)
 MAX_JSON_BYTES = 512 * 1024                 # 512 KB (JSON payloads)
+
+
+class _NonFiniteNumber(ValueError):
+    pass
+
+
+def _reject_json_constant(token: str):
+    raise _NonFiniteNumber(token)
+
+
+# 1e999 parses to inf without going through parse_constant.
+_EXPONENT_OVERFLOW = re.compile(rb"[0-9][eE][+-]?[0-9]{3,}")
+
+
+def _finite_float(text: str) -> float:
+    value = float(text)
+    if value in (float("inf"), float("-inf")):
+        raise _NonFiniteNumber(text)
+    return value
 
 # A04 — Allowed HTTP methods
 ALLOWED_METHODS = {"GET", "POST", "PATCH", "DELETE", "PUT", "OPTIONS", "HEAD"}
@@ -447,6 +467,34 @@ class OWASPMiddleware(BaseHTTPMiddleware):
                 logger.warning("[A03] Injection in header %s | ip=%s rid=%s", header_name, ip, request_id)
                 _record_violation(ip, trusted)
                 return JSONResponse(status_code=400, content={"detail": "Bad request."})
+
+        # ── Bare NaN / Infinity in a JSON body ─────────────────────────────
+        # Python's json accepts these tokens, and `NaN <= 0` is False, so a
+        # NaN quantity/amount would walk past every "must be > 0" and stock
+        # check. Only real tokens are refused (a "NaN" inside a string is fine).
+        # FastAPI also parses a body as JSON when Content-Type is missing, "+json" or
+        # mixed case, and a chunked body has no Content-Length, so neither is a
+        # reason to skip: every non-form body up to the JSON cap is checked.
+        _ctype = request.headers.get("content-type", "").lower()
+        if method in ("POST", "PUT", "PATCH") and path.startswith("/api/") \
+                and "multipart" not in _ctype and "x-www-form-urlencoded" not in _ctype:
+            try:
+                _len = int(request.headers.get("content-length", "0"))
+            except ValueError:
+                _len = 0
+            if _len <= MAX_JSON_BYTES:
+                try:
+                    _raw = await request.body()
+                    if len(_raw) <= MAX_JSON_BYTES and (
+                        b"NaN" in _raw or b"Infinity" in _raw or _EXPONENT_OVERFLOW.search(_raw)
+                    ):
+                        json.loads(_raw, parse_constant=_reject_json_constant, parse_float=_finite_float)
+                except _NonFiniteNumber:
+                    return JSONResponse(status_code=422, content={"detail": (
+                        "A number in this request is NaN or Infinity, which is not a valid quantity or amount. "
+                        "Send a normal finite number (for example 12.5).")})
+                except Exception:
+                    pass  # not valid JSON: the route's own parser reports that
 
         # ── A03: SQLi scan on JSON body (POST/PATCH/DELETE to /api/ only) ──
         if method in ("POST", "PATCH", "DELETE") and path.startswith("/api/"):

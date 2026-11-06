@@ -48,8 +48,9 @@ const config: TourConfig = {
       ],
     },
     {
-      target: 'rnd-req-mine',
-      title: 'Assigned filter',
+      target: 'rnd-req-filter-btn',
+      title: 'Filter',
+      purpose: 'Opens the Filter menu with Assigned: narrow the list to the requirements waiting on you. It applies as soon as you pick a value; Clear filters resets it.',
       options: [
         { value: 'Everyone’s', meaning: 'All requirements sent to R&D.' },
         { value: 'Waiting for my review', meaning: 'Revisions you may accept (R&D head or R&D › Requirements › Review) that are still awaiting review.' },

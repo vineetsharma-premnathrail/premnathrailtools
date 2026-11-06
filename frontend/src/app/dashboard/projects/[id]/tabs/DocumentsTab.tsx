@@ -1,6 +1,6 @@
 'use client'
 
-import Select from '@/components/shared/Select'
+import FilterMenu from '@/components/shared/FilterMenu'
 import { useCallback, useEffect, useState } from 'react'
 import { projectsApi } from '@/lib/api'
 import { useCan } from '@/lib/permissions'
@@ -9,7 +9,7 @@ import { PmProject, PmProjectDocument } from '@/types'
 import { TEXT } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
-import { ErrorBanner, AttachmentList, inputStyle, sectionStyle } from '@/components/projects/work/pmUi'
+import { ErrorBanner, AttachmentList, sectionStyle } from '@/components/projects/work/pmUi'
 
 /** Every file of the project in one register: files attached on milestones
  * and tasks in Project Plan & Milestones (with the milestone, task and person
@@ -63,18 +63,15 @@ export default function DocumentsTab({ project }: { project: PmProject }) {
       <ErrorBanner error={error} />
       {(depts.length > 0 || milestones.length > 0) && (
         <div data-tour="pm-docs-dept-filter" style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
-          {milestones.length > 0 && (
-            <Select style={{ ...inputStyle, width: 240 }} value={milestone} onChange={(e) => setMilestone(e.target.value)}>
-              <option value="">All milestones</option>
-              {milestones.map(([id, title]) => <option key={id} value={id}>{title}</option>)}
-            </Select>
-          )}
-          {depts.length > 0 && (
-            <Select style={{ ...inputStyle, width: 220 }} value={dept} onChange={(e) => setDept(e.target.value)}>
-              <option value="">All departments</option>
-              {depts.map((d) => <option key={d} value={d}>{d}</option>)}
-            </Select>
-          )}
+          <FilterMenu
+            tourId="pm-docs-filter-btn"
+            fields={[
+              ...(milestones.length > 0 ? [{ key: 'milestone', label: 'Milestone', value: milestone, allLabel: 'All milestones', options: milestones.map(([id, title]) => ({ value: String(id), label: String(title) })) }] : []),
+              ...(depts.length > 0 ? [{ key: 'dept', label: 'Department', value: dept, allLabel: 'All departments', options: depts.map((d) => ({ value: d, label: d })) }] : []),
+            ]}
+            onChange={(key, v) => { if (key === 'milestone') setMilestone(v); else setDept(v) }}
+            onClear={() => { setMilestone(''); setDept('') }}
+          />
           <span style={{ fontSize: 12.5, color: TEXT.muted }}>{shown.length} file(s)</span>
         </div>
       )}

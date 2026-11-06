@@ -5,8 +5,18 @@ from pydantic import BaseModel, Field, field_validator
 
 class PrePoReceiptItemCreate(BaseModel):
     store_item_id: int
-    quantity: float = Field(gt=0)
+    quantity: float = Field(gt=0, allow_inf_nan=False)
     remarks: str | None = Field(default=None, max_length=2000)
+    # Optional rate per unit from the vendor's quote / bill; values the stock until the PO's own rate arrives.
+    unit_rate: float | None = Field(default=None, allow_inf_nan=False)
+
+    @field_validator("unit_rate")
+    @classmethod
+    def _rate_positive(cls, v: float | None) -> float | None:
+        if v is not None and v <= 0:
+            raise ValueError("Rate must be more than 0 - leave it empty if you don't know it; the stock is then valued at the item's average "
+                             "rate until the PO's rate comes.")
+        return v
 
 
 class PrePoReceiptCreate(BaseModel):
@@ -39,6 +49,12 @@ class PrePoReceiptItemResponse(BaseModel):
     unit: str | None = None
     quantity: float
     remarks: str | None = None
+    unit_rate: float | None = None
+    # 'free' = in Free stock, 'quality' = in Quality stock under inspection_lot_*; None = receipt made before stock was posted.
+    receipt_posting: str | None = None
+    inspection_lot_id: int | None = None
+    inspection_lot_number: str | None = None
+    settled_qty: float = 0
 
 
 class PrePoReceiptAttachmentResponse(BaseModel):
@@ -73,5 +89,6 @@ class PrePoReceiptResponse(BaseModel):
     created_by_name: str | None = None
     created_at: datetime | None = None
     cancel_reason: str | None = None
+    stock_posted: bool = False
     items: list[PrePoReceiptItemResponse] = Field(default_factory=list)
     attachments: list[PrePoReceiptAttachmentResponse] = Field(default_factory=list)

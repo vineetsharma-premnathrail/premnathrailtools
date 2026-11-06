@@ -87,6 +87,9 @@ def current_drawing_ref(db: Session, item_id: int) -> str | None:
 def applies(db: Session, item: StoreItem | None, base_type: str) -> bool:
     if not item:
         return False
+    from app.modules.quality.services.settings import setting_on
+    if not setting_on(db, "first_article_on_new_vendor"):
+        return False  # Quality › Settings › Inspection rules: first article control is off — every receipt is a normal lot
     if base_type in VENDOR_TYPES:
         return bool(item.inspection_on_receipt)
     if base_type in INHOUSE_TYPES:
@@ -201,11 +204,13 @@ def ensure_released(db: Session, lot: QualityInspectionLot) -> None:
         raise FaiError(
             f"Rule 9: this is a {what} and its first article {f.fai_number}"
             + (f" (lot {lot_no})" if lot_no else "")
-            + " is not approved yet. A Quality engineer must approve the FAI in Quality → First Article before regular "
-              f"lots can be accepted. You can still reject lot {lot.lot_number}.")
+            + " is not approved yet. A Quality engineer must approve that first article before regular "
+              f"lots can be accepted (or a Quality head can turn first-article control off in Quality settings › Inspection rules). "
+              f"You can still reject lot {lot.lot_number}.")
     raise FaiError(
-        f"Rule 9: this is a {what} with no first article inspection. Raise an FAI in Quality → First Article "
-        f"(full drawing check) and get it approved before accepting lot {lot.lot_number}, or reject the lot.")
+        f"Rule 9: this is a {what} with no first article inspection. Ask a Quality engineer to raise and approve a first article "
+        f"(full drawing check) before accepting lot {lot.lot_number}, or reject the lot — or have a Quality head turn first-article "
+        "control off in Quality settings › Inspection rules.")
 
 
 def check_production_release(db: Session, item: StoreItem | None, wo_number: str) -> None:
@@ -220,7 +225,7 @@ def check_production_release(db: Session, item: StoreItem | None, wo_number: str
         raise FaiError(
             f"Rule 9: {item.item_code} {item.item_name} is a {QUALITY_FAI_TRIGGER_LABELS[f.trigger].lower()} and its first "
             f"article {f.fai_number} (from {f.source_reference or 'an earlier work order'}) isn't approved yet. "
-            "Finish and approve the FAI in Quality → First Article before releasing more production.")
+            "Ask a Quality engineer to finish and approve that first article before releasing more production.")
 
 
 # ---------------------------------------------------------------------------
@@ -261,12 +266,12 @@ def approve(db: Session, fai: QualityFirstArticle, *, remarks: str | None, user:
         raise FaiError(f"{fai.fai_number} is already {fai.status} — a decided FAI is never changed. Raise a new one if needed.")
     if not access.can_approve_fai(user):
         raise FaiError("Only a Quality engineer (or head) can approve a first article — ask an admin to apply the role "
-                       "in Quality → Settings → Quality roles.", 403)
+                       "in Quality settings › Quality roles.", 403)
     lot = _lot(db, fai)
     if not lot:
         raise FaiError(f"{fai.fai_number} has no first-article inspection lot, so there is nothing to approve it on.")
     if lot.status not in ("decision_made", "closed"):
-        raise FaiError(f"First-article lot {lot.lot_number} has no usage decision yet — record the full drawing check "
+        raise FaiError(f"First-article lot {lot.lot_number} has no decision yet — record the full drawing check "
                        "and decide the lot first.")
     if lot.decision not in ("accept", "accept_with_deviation"):
         raise FaiError(f"Lot {lot.lot_number} was rejected, so the first article can't be approved — reject the FAI; the "

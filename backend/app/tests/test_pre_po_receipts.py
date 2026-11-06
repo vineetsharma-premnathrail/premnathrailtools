@@ -1,7 +1,7 @@
-"""Before-PO receipts: Store records goods that came before their PO (no stock
-posted); Procurement raises a requisition for them (Create requisition) and uploads
+"""Before-PO receipts: Store records goods that came before their PO (the goods
+go into stock at once since 2026-11-06 - see test_pre_po_stock.py); Procurement raises a requisition for them (Create requisition) and uploads
 the Tally PO on it (Upload PO), which links the receipt; the PO goes through normal
-approval and GRN; the GRN closes the receipt."""
+approval and GRN; the GRN settles the stock and closes the receipt."""
 from datetime import date
 
 from app.modules.accounts.models.vendor import Vendor
@@ -59,7 +59,7 @@ def _body(vendor, item, qty=10, **kw):
             "items": [{"store_item_id": item.id, "quantity": qty}], **kw}
 
 
-def test_store_records_a_receipt_without_posting_stock(client, db):
+def test_store_records_a_receipt_and_puts_the_goods_into_stock(client, db):
     keeper = _store_user(db, "bpo.keeper@premnathrail.com")
     v, item = _vendor(db), master_item(db, "Bolt BPO", code="BPO-1", uom="Nos")
     r = client.post(STORE, json=_body(v, item, 10, delivery_challan_number="DC-1"), headers=auth_header(keeper))
@@ -67,7 +67,9 @@ def test_store_records_a_receipt_without_posting_stock(client, db):
     body = r.json()
     assert body["status"] == "pending_po" and body["receipt_number"].startswith("BPO-")
     assert body["vendor_name"] == v.name and body["items"][0]["item_code"] == "BPO-1" and body["items"][0]["unit"] == "Nos"
-    assert db.query(StoreStockBalance).filter_by(item_id=item.id).count() == 0  # held, not in stock
+    assert body["stock_posted"] is True and body["items"][0]["receipt_posting"] == "free"
+    bal = db.query(StoreStockBalance).filter_by(item_id=item.id).one()  # in Free stock at once (was: not posted before 2026-11-06)
+    assert bal.on_hand_qty == 10 and bal.location_id == body["store_location_id"]
     lst = client.get(STORE, headers=auth_header(keeper)).json()
     assert [x["receipt_number"] for x in lst] == [body["receipt_number"]]
 
@@ -205,12 +207,18 @@ def test_procurement_raises_the_requisition_uploads_the_po_it_is_approved_receiv
     # Normal PO approval: the engine, then a Partner.
     _decide_all(client, db, "p2p_purchase_order", po["id"], [approver, partner])
 
-    # GRN for the full quantity closes the receipt.
-    loc = _store(db, "BPO5")
+    # GRN for the full quantity closes the receipt: the goods are in stock already (store held by the receipt), so
+    # the GRN settles them and posts nothing again. Another store is refused with the reason.
+    other = _store(db, "BPO5")
     body = client.get(f"/api/v1/p2p/purchase-orders/{po['id']}", headers=auth_header(buyer)).json()
+    wrong = _grn(client, buyer, body, other, 7)
+    assert wrong.status_code == 422 and "same store" in wrong.json()["detail"], wrong.text
+    loc = db.query(StoreLocation).filter_by(manager_user_id=keeper.id).one()
     g = _grn(client, buyer, body, loc, 7)
     assert g.status_code == 200, g.text
     assert g.json()["status"] == "completed"  # no Quality-check flag: completes when it is recorded
+    assert g.json()["items"][0]["pre_po_qty"] == 7
+    assert db.query(StoreStockBalance).filter_by(item_id=item.id).one().on_hand_qty == 7  # not 14
     db.expire_all()
     assert db.get(StorePrePoReceipt, rec["id"]).status == "closed"
 

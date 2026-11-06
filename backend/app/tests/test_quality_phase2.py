@@ -24,6 +24,14 @@ from app.tests.test_quality_phase1 import (  # noqa: F401  (fixture)
 
 
 @pytest.fixture(autouse=True)
+def _quality_rules_on(db):
+    """First-article control and automatic NCRs are Quality settings that default to OFF (2026-11-06); these tests cover them."""
+    from app.modules.quality.models.masters import QualitySetting
+    db.add_all([QualitySetting(key="first_article_on_new_vendor", value="on"), QualitySetting(key="ncr_auto_raise", value="on")])
+    db.commit()
+
+
+@pytest.fixture(autouse=True)
 def _no_rate_limit(monkeypatch):
     import app.middleware.owasp as owasp
     monkeypatch.setitem(owasp.RATE_CONFIG["write"], "limit", 100000)
@@ -129,7 +137,7 @@ def test_first_article_from_grn_blocks_regular_lots_until_approved(client, db):
 
     # FAI can't be approved before its lot is decided; engineer approves after.
     r = client.post(f"{Q}/first-articles/{fai.id}/decision", json={"approve": True}, headers=hdr(eng))
-    assert r.status_code == 409 and "usage decision" in r.json()["detail"]
+    assert r.status_code == 409 and "no decision yet" in r.json()["detail"]
     assert _inspect_and_decide(client, first.id, eng, head).status_code == 200
     inspector = make_user(db, "insp-fai@x.com", quality_role="inspector")
     assert client.post(f"{Q}/first-articles/{fai.id}/decision", json={"approve": True}, headers=hdr(inspector)).status_code == 403

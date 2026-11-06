@@ -9,22 +9,18 @@ import { TEXT, BRAND, GLASS, SHADOWS, SUCCESS } from '@/lib/theme'
 import { primaryBtnStyle, secondaryBtnStyle, inputStyle, RowCount, Pill } from '@/components/shared/ui'
 import ItemImportDialog from '@/components/store/ItemImportDialog'
 import StoreNav from '@/components/store/StoreNav'
+import FilterMenu from '@/components/shared/FilterMenu'
 import { recordPath } from '@/lib/recordRef'
 import { useItemTypes } from '@/components/store/itemTypes'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
-import Select from '@/components/shared/Select'
 import { useVisibility } from '@/lib/visibility'
 import { VisTd, VisTh } from '@/lib/visibilityComponents'
 import { sampleItems } from '@/lib/storePreviewSamples'
 
 // Columns a role may hide (Store › Items › Visibility); Code, Name and Status are always shown.
 const HIDEABLE: Record<string, string> = { Type: 'type', Category: 'category', Subcategory: 'subcategory', UOM: 'uom', 'Technical Specification': 'description' }
-
-const filterSelectStyle: React.CSSProperties = {
-  ...inputStyle, width: undefined, background: 'rgba(255,255,255,.7)', textOverflow: 'ellipsis',
-}
 
 export default function StoreItemsPage() {
   const { isAuthorized, isLoading } = useRequireApp('store')
@@ -151,40 +147,25 @@ export default function StoreItemsPage() {
           placeholder="Search code, name or specification"
           style={{ ...inputStyle, flex: '1 1 360px', minWidth: 260, width: undefined, maxWidth: 520, background: 'rgba(255,255,255,.7)' }}
         />
-        <Select
-          data-tour="items-type-filter"
-          value={typeFilter}
-          onChange={(e) => { setTypeFilter(e.target.value); setCategoryFilter(''); setSubcategoryFilter('') }}
-          style={{ ...filterSelectStyle, width: 150 }}
-        >
-          <option value="">All Types</option>
-          {Object.entries(ITEM_TYPE_LABELS).map(([value, label]) => (
-            <option key={value} value={value}>{label}</option>
-          ))}
-        </Select>
-        {/* Type → Category → Subcategory: each step appears only once the one before it is picked */}
-        {typeFilter && (
-          <Select
-            data-tour="items-category-filter"
-            value={categoryFilter}
-            onChange={(e) => { setCategoryFilter(e.target.value); setSubcategoryFilter('') }}
-            style={{ ...filterSelectStyle, width: 190 }}
-          >
-            <option value="">All Categories</option>
-            {categoryOptions.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
-          </Select>
-        )}
-        {subcategoryOptions.length > 0 && (
-          <Select
-            data-tour="items-subcategory-filter"
-            value={subcategoryFilter}
-            onChange={(e) => setSubcategoryFilter(e.target.value)}
-            style={{ ...filterSelectStyle, width: 190 }}
-          >
-            <option value="">All Subcategories</option>
-            {subcategoryOptions.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
-          </Select>
-        )}
+        {/* One Filter button (shared FilterMenu) instead of a row of dropdowns. Type → Category →
+            Subcategory: each step appears only once the one before it is picked. */}
+        <FilterMenu
+          tourId="items-type-filter"
+          fields={[
+            { key: 'type', label: 'Type', value: typeFilter, allLabel: 'All Types',
+              options: Object.entries(ITEM_TYPE_LABELS).map(([value, label]) => ({ value, label })) },
+            ...(typeFilter ? [{ key: 'category', label: 'Category', value: categoryFilter, allLabel: 'All Categories',
+              options: categoryOptions.map((c) => ({ value: c.name, label: c.name })) }] : []),
+            ...(subcategoryOptions.length > 0 ? [{ key: 'subcategory', label: 'Subcategory', value: subcategoryFilter, allLabel: 'All Subcategories',
+              options: subcategoryOptions.map((c) => ({ value: c.name, label: c.name })) }] : []),
+          ]}
+          onChange={(key, v) => {
+            if (key === 'type') { setTypeFilter(v); setCategoryFilter(''); setSubcategoryFilter('') }
+            else if (key === 'category') { setCategoryFilter(v); setSubcategoryFilter('') }
+            else setSubcategoryFilter(v)
+          }}
+          onClear={() => { setTypeFilter(''); setCategoryFilter(''); setSubcategoryFilter('') }}
+        />
         {hasFilters && (
           <button type="button" onClick={() => { setSearch(''); setTypeFilter(''); setCategoryFilter(''); setSubcategoryFilter('') }}
             style={{ background: 'none', border: 'none', color: BRAND.primaryActive, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>

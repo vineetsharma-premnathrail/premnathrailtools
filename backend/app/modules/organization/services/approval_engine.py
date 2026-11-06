@@ -25,7 +25,7 @@ and the approval land in one transaction.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any, Callable
@@ -138,7 +138,67 @@ def get_type(key: str) -> TransactionType:
     return tt
 
 
-def _validate_stage_def(s: dict, tt: TransactionType) -> None:
+# ── Choices that come from data (read at the moment they are needed) ─────
+# A context field may carry "choices_from": "<source key>" instead of a fixed
+# "choices" list (e.g. the requester's department: the Departments that exist
+# today). The sources are registered with register_choice_source(); a field
+# naming an unknown source simply has no choices and is not value-checked.
+
+_CHOICE_SOURCES: dict[str, Callable[[Session], list[tuple[str, str]]]] = {}
+
+
+def register_choice_source(key: str, fn: Callable[[Session], list[tuple[str, str]]]) -> None:
+    """fn(db) -> [(value, label), ...]; value is stored as text, label is what the admin reads."""
+    _CHOICE_SOURCES[key] = fn
+
+
+def resolved_context_fields(db: Session, tt: TransactionType) -> dict:
+    """The type's context fields with every `choices_from` field filled with its
+    current choices / choice_labels (a copy: the registered type is untouched).
+    Types without such a field get their own dict back."""
+    if not any(f.get("choices_from") for f in tt.context_fields.values()):
+        return tt.context_fields
+    out = {}
+    for name, f in tt.context_fields.items():
+        src = _CHOICE_SOURCES.get(f.get("choices_from") or "")
+        if src is None:
+            out[name] = f
+            continue
+        pairs = src(db)
+        out[name] = {**f, "choices": [v for v, _ in pairs], "choice_labels": {v: label for v, label in pairs}}
+    return out
+
+
+def choice_label(db: Session, tt: TransactionType, field_name: str, value: Any) -> str:
+    """A stored choice value in words (a department id -> its name); other values come back as text."""
+    spec = resolved_context_fields(db, tt).get(field_name) or {}
+    return str((spec.get("choice_labels") or {}).get(str(value), value))
+
+
+def _department_choices(db: Session) -> list[tuple[str, str]]:
+    """Every Department (Organization › Department) as (id, name); a name used at
+    more than one plant gets the plant's name added so the admin can tell them apart."""
+    from app.modules.organization.models.branch import Branch
+    from app.modules.organization.models.department import Department
+
+    rows = (db.query(Department.id, Department.name, Branch.name)
+            .outerjoin(Branch, Branch.id == Department.branch_id)
+            .order_by(func.lower(Department.name), Department.id).all())
+    used: dict[str, int] = {}
+    for _id, name, _plant in rows:
+        key = (name or "").strip().lower()
+        used[key] = used.get(key, 0) + 1
+    return [(str(i), f"{name} ({plant})" if used[(name or "").strip().lower()] > 1 and plant else name) for i, name, plant in rows]
+
+
+register_choice_source("departments", _department_choices)
+
+
+def _validate_stage_def(s: dict, tt: TransactionType, fields: dict | None = None) -> None:
+    """`fields` = the type's context fields with dynamic choices filled in
+    (resolved_context_fields); without it (registration time, no database)
+    such fields are not value-checked."""
+    fields = tt.context_fields if fields is None else fields
     name = (s.get("name") or "").strip()
     if not name:
         raise HTTPException(status_code=422, detail="Every stage needs a name, e.g. 'Department head'.")
@@ -156,8 +216,8 @@ def _validate_stage_def(s: dict, tt: TransactionType) -> None:
         raise HTTPException(status_code=422, detail=f"Stage '{name}': pick which approval flag (e.g. Finance manager).")
     if rule == "record_field":
         f = cfg.get("field")
-        if f not in tt.context_fields or tt.context_fields[f].get("type") != "user":
-            people = [v.get("label") or humanize(k) for k, v in tt.context_fields.items() if v.get("type") == "user"]
+        if f not in fields or fields[f].get("type") != "user":
+            people = [v.get("label") or humanize(k) for k, v in fields.items() if v.get("type") == "user"]
             raise HTTPException(
                 status_code=422,
                 detail=f"Stage '{name}': '{tt.label}' can name the approver only from: {', '.join(people) or 'no person fields'}.",
@@ -165,12 +225,12 @@ def _validate_stage_def(s: dict, tt: TransactionType) -> None:
     if s.get("approval_mode", "any") not in ("any", "all"):
         raise HTTPException(status_code=422, detail=f"Stage '{name}': mode must be 'any' (one of them) or 'all' (every one).")
     for c in s.get("conditions") or []:
-        if c.get("field") not in tt.context_fields:
+        if c.get("field") not in fields:
             raise HTTPException(status_code=422, detail=f"Stage '{name}': a condition uses '{humanize(c.get('field'))}', which {tt.label} "
                                                         "doesn't have — remove that condition and pick the field again.")
         if c.get("op") not in CONDITION_OPS:
             raise HTTPException(status_code=422, detail=f"Stage '{name}': pick how a condition compares — one of: {', '.join(CONDITION_OPS.values())}.")
-        _validate_condition(name, c, tt.context_fields[c["field"]])
+        _validate_condition(name, c, fields[c["field"]])
     hours = s.get("escalate_after_hours")
     if hours is not None:
         if not isinstance(hours, int) or hours < 1 or hours > 24 * 60:
@@ -205,16 +265,61 @@ def _validate_condition(stage: str, c: dict, f: dict) -> None:
         bad = [v for v in values if choices and v.lower() not in {str(ch).lower() for ch in choices}]
         if bad:
             names = f.get("choice_labels") or {}
-            raise HTTPException(status_code=422, detail=f"{where}: '{', '.join(bad)}' isn't a valid value — pick from "
-                                                        f"{', '.join(names.get(str(c), humanize(c)) for c in choices)}.")
+            shown = [names.get(str(c), humanize(c)) for c in choices]
+            if f.get("choices_from"):
+                # A list read from data (e.g. departments): the value is an id that may since have been deleted.
+                raise HTTPException(status_code=422, detail=f"{where}: '{', '.join(bad)}' is not one of the current options (it may have been "
+                                                            f"deleted) — pick again from {', '.join(shown[:20])}{' …' if len(shown) > 20 else ''}.")
+            raise HTTPException(status_code=422, detail=f"{where}: '{', '.join(bad)}' isn't a valid value — pick from {', '.join(shown)}.")
 
 
 # ── Workflow definitions ─────────────────────────────────────────────────
 
-def _stage_rows(tt: TransactionType, stages: list[dict]) -> list[ApprovalWorkflowStage]:
+def _convert_legacy_department(db: Session, s: dict, fields: dict) -> dict:
+    """A stage saved before the department pick-list (2026-11-06) tests the department NAME
+    (field 'department'). Turn such a condition into 'Requester's department' (department_id) by matching
+    the name(s) to Department rows; a name that matches no or several departments is refused with the
+    name, so the admin picks the department."""
+    conds = s.get("conditions") or []
+    if "department" in fields or "department_id" not in fields or not any(c.get("field") == "department" for c in conds):
+        return s
+    from app.modules.organization.models.branch import Branch
+    from app.modules.organization.models.department import Department
+
+    out = []
+    for c in conds:
+        if c.get("field") != "department":
+            out.append(c)
+            continue
+        want = c.get("value")
+        names = [str(n).strip() for n in (want if isinstance(want, list) else str(want if want is not None else "").split(",")) if str(n).strip()]
+        ids = []
+        for n in names:
+            rows = (db.query(Department.id, Department.name, Branch.name).outerjoin(Branch, Branch.id == Department.branch_id)
+                    .filter(func.lower(func.trim(Department.name)) == n.lower()).all())
+            if len(rows) != 1:
+                found = ", ".join(f"{dn} ({bn})" if bn else dn for _i, dn, bn in rows)
+                raise HTTPException(status_code=422, detail=(
+                    f"Stage '{(s.get('name') or '').strip()}': the condition on department '{n}' can't be kept — "
+                    + (f"{len(rows)} departments have that name ({found}); " if rows else "no department has that name any more; ")
+                    + "pick 'Requester's department' again from the list."))
+            ids.append(str(rows[0][0]))
+        op = c.get("op")
+        if len(ids) > 1 and op in ("eq", "ne"):
+            op = "in" if op == "eq" else "not_in"
+        out.append({**c, "field": "department_id", "op": op, "value": ids if len(ids) > 1 or op in ("in", "not_in") else (ids[0] if ids else want)})
+    return {**s, "conditions": out}
+
+
+def _stage_rows(tt: TransactionType, stages: list[dict], db: Session | None = None) -> list[ApprovalWorkflowStage]:
+    """Validated stage rows. With `db`, a condition on a dynamic list (departments)
+    is checked against what exists now."""
     rows = []
+    fields = resolved_context_fields(db, tt) if db is not None else None
     for i, s in enumerate(stages):
-        _validate_stage_def(s, tt)
+        if db is not None:
+            s = _convert_legacy_department(db, s, fields)
+        _validate_stage_def(s, tt, fields)
         hours = s.get("escalate_after_hours")
         rows.append(ApprovalWorkflowStage(
             sequence=i + 1, name=s["name"].strip(), approver_rule=s["approver_rule"],
@@ -235,7 +340,7 @@ def ensure_workflow(db: Session, key: str) -> ApprovalWorkflow:
             key=key, module_key=tt.module_key, name=tt.label, allow_self_approval=tt.allow_self_approval,
             distinct_approvers=tt.distinct_approvers, require_permission=tt.require_permission,
         )
-        wf.stages = _stage_rows(tt, [s.__dict__ for s in tt.default_stages])
+        wf.stages = _stage_rows(tt, [s.__dict__ for s in tt.default_stages], db)
         try:
             # Savepoint: two first-ever requests at the same moment both try to
             # create the type's row (key is unique). The loser must not fail —
@@ -256,7 +361,7 @@ def save_workflow(db: Session, key: str, payload: dict, actor: User) -> Approval
     wf = ensure_workflow(db, key)
     old = workflow_out(wf)
     stages = payload.get("stages") or []
-    wf.stages = _stage_rows(tt, stages)
+    wf.stages = _stage_rows(tt, stages, db)
     for flag in ("is_active", "allow_self_approval", "distinct_approvers", "require_permission"):
         if flag in payload and payload[flag] is not None:
             setattr(wf, flag, bool(payload[flag]))
@@ -1165,7 +1270,7 @@ def preview(db: Session, key: str, *, requester: User, context: dict, branch_id:
     else:
         if draft.get("is_active") is False:
             return []
-        rows = _stage_rows(get_type(key), draft.get("stages") or [])  # validates; never added to the session
+        rows = _stage_rows(get_type(key), draft.get("stages") or [], db)  # validates; never added to the session
         saved = ensure_workflow(db, key)
         req_perm = draft.get("require_permission")
         wf = SimpleNamespace(stages=rows, allow_self_approval=bool(draft.get("allow_self_approval")), key=key,
@@ -1223,7 +1328,7 @@ def check_workflow(db: Session, key: str, payload: dict, actor: User | None = No
     themselves) — saving is refused until it is fixed. Other errors depend on
     people's setup (one person has no manager) and may be saved knowingly."""
     tt = get_type(key)
-    rows = _stage_rows(tt, payload.get("stages") or [])  # validates; never added to the session
+    rows = _stage_rows(tt, payload.get("stages") or [], db)  # validates; never added to the session
     allow_self = bool(payload.get("allow_self_approval"))
     active = payload.get("is_active", True) is not False
     issues: list[dict] = []
@@ -1356,6 +1461,9 @@ def _all_stages(db: Session) -> list[tuple[TransactionType, bool, list]]:
     out = []
     for key, tt in sorted(_TYPES.items(), key=lambda kv: (MODULES[kv[1].module_key]["label"], kv[1].label)):
         wf = stored.get(key)
+        fields = resolved_context_fields(db, tt)
+        if fields is not tt.context_fields:
+            tt = replace(tt, context_fields=fields)  # a copy that can name its dynamic choices (department names)
         stages = list(wf.stages) if wf else [SimpleNamespace(sequence=i + 1, **s.__dict__) for i, s in enumerate(tt.default_stages)]
         out.append((tt, wf.is_active if wf else True, stages))
     return out

@@ -1,6 +1,6 @@
 from __future__ import annotations
 from datetime import date, datetime
-from sqlalchemy import String, Integer, Float, Date, DateTime, Text, ForeignKey, CheckConstraint
+from sqlalchemy import Boolean, String, Integer, Float, Date, DateTime, Text, ForeignKey, CheckConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 from app.db.mixins import TimestampMixin
@@ -14,7 +14,11 @@ STORE_PRE_PO_STATUSES = ("pending_po", "po_created", "closed", "cancelled")
 
 class StorePrePoReceipt(Base, TimestampMixin):
     """Goods that physically arrived before their purchase order exists.
-    Held in store, NOT in stock; stock is added later by the GRN on the PO."""
+    Since 2026-11-06 (owner) the receipt posts stock at once: Free stock (issuable),
+    or Quality stock + an inspection lot for an item flagged 'Quality check on
+    receipt'. The later GRN on the PO settles that quantity instead of posting it
+    again (stock_posted). Receipts made before that change were never posted, so
+    their GRN still posts the stock as before."""
 
     __tablename__ = "store_pre_po_receipts"
 
@@ -34,6 +38,8 @@ class StorePrePoReceipt(Base, TimestampMixin):
     cancelled_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     cancel_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # True = this receipt put its goods into stock itself (2026-11-06 onwards).
+    stock_posted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
 
     items: Mapped[list["StorePrePoReceiptItem"]] = relationship(
         "StorePrePoReceiptItem", back_populates="receipt",
@@ -59,6 +65,15 @@ class StorePrePoReceiptItem(Base, TimestampMixin):
     unit: Mapped[str | None] = mapped_column(String(20), nullable=True)
     quantity: Mapped[float] = mapped_column(Float, nullable=False)
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Rate per unit as known at the gate (vendor quote / bill), optional. Values the
+    # stock until the PO comes; the GRN on the PO revalues to the PO rate.
+    unit_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Where the stock went: 'free' or 'quality' (inspection lot); NULL = not posted (older receipts).
+    receipt_posting: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    inspection_lot_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("quality_inspection_lots.id", ondelete="SET NULL"), nullable=True)
+    # Quantity already matched by GRN lines of the PO (never posted again).
+    settled_qty: Mapped[float] = mapped_column(Float, default=0, server_default="0", nullable=False)
 
     receipt: Mapped["StorePrePoReceipt"] = relationship("StorePrePoReceipt", back_populates="items")
     store_item = relationship("StoreItem")

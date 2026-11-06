@@ -89,8 +89,8 @@ const config: TourConfig = {
     },
     {
       target: 'p2p-filter-btn',
-      title: 'Filters',
-      purpose: 'Opens the Filters popup (status, category, buyer, project, Raised by me). Press Apply Filters to use your choices; the button shows how many filters are on, and Clear removes them.',
+      title: 'Filter',
+      purpose: 'Opens the Filter panel (status, category, buyer, project, Raised by me). Choices apply at once; the button shows how many filters are on, and "Clear filters" removes them.',
       required: false,
       options: [
         { value: 'Status', meaning: 'Only PRs in one status, for example Pending Approval or PO Raised.' },

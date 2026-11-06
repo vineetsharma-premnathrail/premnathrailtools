@@ -89,7 +89,7 @@ async def raise_wo_purchase_request(
 ):
     from app.modules.p2p import approvals as p2p_approvals
     from app.modules.p2p.models.p2p_request import (
-        ENGINE_SCHEME, LINE_CATEGORY, P2P_CATEGORIES, P2P_REQUIREMENT_TYPES, P2PRequest, resolve_auto_buyer_id,
+        ENGINE_SCHEME, LINE_CATEGORY, P2P_CATEGORIES, P2P_REQUIREMENT_TYPES, P2PRequest, default_buyer_id, resolve_line_buyer_id,
     )
     from app.modules.p2p.routes.p2p_requests import _sync_pr_lines, _validate_pr_payload, _write_audit as p2p_audit
     from app.modules.p2p.schemas.p2p_request import P2PRequestCreate, P2PRequestItemPayload
@@ -142,7 +142,7 @@ async def raise_wo_purchase_request(
                        "service PR, so its vendor bill is costed to this job.",
             )
 
-    auto_buyer_id = resolve_auto_buyer_id(db, payload.category_code)
+    auto_buyer_id = default_buyer_id(db)  # replaced below by the first line's buyer
     pr = P2PRequest(
         p2p_number=generate_p2p_number(db, payload.category_code),
         category_code=payload.category_code, project_label=pr_payload.project_label, project_type="existing",
@@ -154,6 +154,15 @@ async def raise_wo_purchase_request(
     db.add(pr)
     db.flush()
     _sync_pr_lines(db, pr, lines)
+    # Each line goes to the buyer of its Item Master item's category (then item type, then
+    # the default buyer); the requisition's main buyer is the first line's buyer.
+    for row in pr.items:
+        if row.buyer_id is None:
+            row.buyer_id = resolve_line_buyer_id(db, None, item_id=row.store_item_id)
+    first_buyer = next((row.buyer_id for row in pr.items if row.buyer_id), None)
+    if first_buyer:
+        pr.assigned_buyer_id = first_buyer
+        pr.assignment_date = date.today()
     p2p_audit(db, pr.id, "created", user, summary=f"{user.name or user.email} raised P2P request {pr.p2p_number} from "
                                                   f"maintenance work order {wo.wo_number}.", new_status="submitted")
     db.add(MaintenanceWorkOrderPurchaseRequest(work_order_id=wo.id, p2p_request_id=pr.id, purpose=payload.purpose, created_by_id=user.id))

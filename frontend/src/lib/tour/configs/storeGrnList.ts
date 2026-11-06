@@ -11,6 +11,12 @@ const config: TourConfig = {
       why: 'Standard ERP flow is PO → GRN → Quality check (only for flagged items) → Stock → Vendor Invoice. Accounts matches the vendor bill against the GRN quantity (3-way match), so the GRN must record only what really came in.',
     },
     {
+      target: 'store-grn-print-inward-btn',
+      title: 'Gate Inward Register',
+      purpose: 'Downloads the Gate Inward Register (format F/STR/02) as Excel: one row per item received on a GRN or a Before-PO receipt in the period — party, challan / invoice no. and date, quantity, vehicle, where it came from and the store it went into.',
+      whatToEnter: 'Pick the From and To dates and, if you want, one store.',
+    },
+    {
       target: 'store-grn-new-btn',
       title: '+ New Goods Receipt',
       purpose: 'Starts a new GRN against an approved Purchase Order. Only visible to the Purchase team — receiving against a PO is their action (the system enforces this too).',

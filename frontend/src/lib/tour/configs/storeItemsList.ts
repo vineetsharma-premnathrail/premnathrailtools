@@ -78,8 +78,9 @@ const config: TourConfig = {
     },
     {
       target: 'items-type-filter',
-      title: 'Item Type filter',
-      purpose: 'Narrows the list to one item type. The types come from Store → Settings → Item Types.',
+      title: 'Filter',
+      purpose: 'Opens the filters: Item Type first (types come from Store → Settings → Item Types), then Category once a type is picked, then Subcategory when that category has any. The badge shows how many filters are on.',
+      after: 'Changing the Type resets Category and Subcategory. "Clear filters" inside the panel resets them; the "Clear filters" link next to the button also clears the search.',
       options: [
         { value: 'Material', meaning: 'Raw, production, electrical, hydraulic, mechanical, hardware, paint and packaging material.' },
         { value: 'Consumable', meaning: 'Used up during operations — office, cleaning, PPE, workshop consumables.' },
@@ -87,17 +88,6 @@ const config: TourConfig = {
         { value: 'Asset', meaning: 'Machinery, equipment, vehicles, IT assets and furniture.' },
         { value: 'Service', meaning: 'Job work, maintenance and professional services (no physical stock).' },
       ],
-    },
-    {
-      target: 'items-category-filter',
-      title: 'Category filter',
-      purpose: 'Appears once an Item Type is picked and lists only that type\'s categories. Changing it resets the Subcategory filter.',
-    },
-    {
-      target: 'items-subcategory-filter',
-      title: 'Subcategory filter',
-      purpose: 'Appears only when the chosen category has subcategories, and narrows further inside it.',
-      after: 'A "Clear filters" link appears once any filter or search is set — it resets them all.',
     },
     {
       target: 'items-table',

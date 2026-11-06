@@ -272,6 +272,91 @@ async def import_issue_lines(
     return {"lines": list(lines.values()), "errors": errors}
 
 
+def _xlsx_response(content: bytes, filename: str):
+    from fastapi.responses import Response
+    from app.modules.store.services.iso_registers import XLSX_MEDIA_TYPE
+    return Response(content=content, media_type=XLSX_MEDIA_TYPE,
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+def _register_stores(db: Session, user: User, location_id: int | None) -> set[int] | None:
+    """Stores a register may list: the picked one (if the user's Store data
+    access covers it), else every store the user can see (None = all)."""
+    from app.modules.store.services.plant_access import visible_location_ids
+    if location_id is not None:
+        if not db.get(StoreLocation, location_id):
+            raise HTTPException(status_code=404, detail="Store not found — it may have been removed. Reload the page and pick the store again.")
+        ensure_location_allowed(db, user, location_id)
+        return {location_id}
+    return visible_location_ids(db, user)
+
+
+@router.get("/print-register")
+async def print_issue_register(
+    date_from: date = Query(..., description="First issue date (inclusive)"),
+    date_to: date = Query(..., description="Last issue date (inclusive)"),
+    location_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_tab_action("store", "issues", "print")),
+):
+    """F/STR/05 Material Issue Register (owner's ISO format) as Excel: every
+    issue line in the date range, by issue date then issue number."""
+    from app.modules.store.services.iso_registers import RegisterError, build_issue_register, stream_name
+    stores = _register_stores(db, user, location_id)
+    try:
+        content = build_issue_register(db, user, date_from=date_from, date_to=date_to, location_ids=stores)
+    except RegisterError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return _xlsx_response(content, stream_name("F-STR-05_Material_Issue_Register", date_from, date_to))
+
+
+@router.get("/print-outward-register")
+async def print_gate_outward_register(
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    location_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("store")),
+):
+    """F/STR/03 Gate Outward Register as Excel: challan issues (job work,
+    samples, site, service, dispatch, scrap sold), returns to vendor and
+    transfers to another plant's store. Needs Print on Store › Issues or
+    Store › Transfers; each kind of document is listed only when the user can
+    view that kind."""
+    from app.core.permission_registry import can_perform
+    from app.modules.store.services.iso_registers import RegisterError, build_outward_register, stream_name
+    ensure_any_store_action(user, ("issues", "print"), ("transfers", "print"))
+    stores = _register_stores(db, user, location_id)
+    try:
+        content = build_outward_register(
+            db, user, date_from=date_from, date_to=date_to, location_ids=stores,
+            include_issues=can_perform(user, "store", "issues", "view"),
+            include_vendor_returns=can_perform(user, "store", "grn", "view"),
+            include_transfers=can_perform(user, "store", "transfers", "view"))
+    except RegisterError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return _xlsx_response(content, stream_name("F-STR-03_Gate_Outward_Register", date_from, date_to))
+
+
+@router.get("/{issue_id}/print-slip")
+async def print_issue_slip(
+    issue_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_tab_action("store", "issues", "print")),
+):
+    """F/STR/04 Store Requisition Slip of one issue (owner's ISO format) as Excel."""
+    from app.modules.store.services.iso_registers import RegisterError, build_issue_slip, stream_name
+    issue = db.query(StoreMaterialIssue).options(selectinload(StoreMaterialIssue.items)).filter(StoreMaterialIssue.id == issue_id).first()
+    if not issue:
+        raise HTTPException(status_code=404, detail="Material issue not found — it may have been removed. Go back to the Issues list and open it again.")
+    ensure_in_scope(db, user, issue)
+    try:
+        content = build_issue_slip(db, issue)
+    except RegisterError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return _xlsx_response(content, stream_name("F-STR-04_Requisition_Slip", issue.issue_number))
+
+
 @router.get("/{issue_id}", response_model=StoreMaterialIssueResponse)
 async def get_material_issue(
     issue_id: int,

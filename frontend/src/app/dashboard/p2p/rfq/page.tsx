@@ -1,9 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import Select from '@/components/shared/Select'
-import { FiltersButton, FiltersSheet, PO_TD, PO_TH } from '@/components/p2p/POTrackingShared'
-import { sheetInput, sheetLabel } from '@/components/shared/FormSheet'
+import FilterMenu from '@/components/shared/FilterMenu'
+import { PO_TD, PO_TH } from '@/components/p2p/POTrackingShared'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
@@ -41,8 +40,6 @@ export default function P2PRfqPage() {
   const [error, setError] = useState<string | string[]>('')
   const [search, setSearch] = useState('')
   const [filters, setFilters] = useState({ status: 'all', vendors: 'all' })
-  const [draft, setDraft] = useState(filters)
-  const [showFilters, setShowFilters] = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -93,9 +90,7 @@ export default function P2PRfqPage() {
   const toggleStatus = (v: string) => setFilters((f) => ({ ...f, status: f.status === v ? 'all' : v }))
   const toggleSingle = () => setFilters((f) => ({ ...f, vendors: f.vendors === 'single' ? 'all' : 'single' }))
   const activeFilterCount = [filters.status, filters.vendors].filter((v) => v !== 'all').length
-  const openFilters = () => { setDraft(filters); setShowFilters(true) }
-  const applyFilters = () => { setFilters(draft); setShowFilters(false) }
-  const clearFilters = () => { const none = { status: 'all', vendors: 'all' }; setFilters(none); setDraft(none); setShowFilters(false) }
+  const clearFilters = () => setFilters({ status: 'all', vendors: 'all' })
 
   return (
     <div>
@@ -115,32 +110,21 @@ export default function P2PRfqPage() {
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="RFQ#, PR#, project..." aria-label="Search quotation requests" data-tour="rfq-search"
             style={{ ...inputStyle, width: 280, maxWidth: '100%' }} />
-          <FiltersButton count={activeFilterCount} onOpen={openFilters} tour="rfq-filter-btn" />
+          <FilterMenu
+            tourId="rfq-filter-btn"
+            fields={[
+              { key: 'status', label: 'RFQ status (requests sent)', value: filters.status, defaultValue: 'all', allLabel: 'All statuses', options: [
+                { value: 'pending', label: 'RFQ pending' }, { value: 'sent', label: 'RFQs sent (all)' },
+                ...Object.entries(RFQ_STATUS_LABELS).map(([v, l]) => ({ value: v, label: l })),
+              ] },
+              { key: 'vendors', label: 'Vendors (requests sent)', value: filters.vendors, defaultValue: 'all', allLabel: 'One vendor or several', options: [{ value: 'single', label: 'One vendor only' }, { value: 'multi', label: 'Several vendors' }] },
+            ]}
+            onChange={(key, v) => setFilters((f) => ({ ...f, [key]: v }))}
+            onClear={clearFilters}
+          />
           {activeFilterCount > 0 && <button type="button" onClick={clearFilters} style={secondaryBtnStyle} data-tour="rfq-clear-btn">Clear</button>}
         </div>
       </div>
-
-      {showFilters && (
-        <FiltersSheet subtitle="Narrow the quotation requests, then press Apply." tour="rfq-filter-sheet" applyTour="rfq-apply-btn" onClose={() => setShowFilters(false)} onClear={clearFilters} onApply={applyFilters}>
-          <div>
-            <label style={sheetLabel}>RFQ status (requests sent)</label>
-            <Select value={draft.status} onChange={(e) => setDraft((d) => ({ ...d, status: e.target.value }))} style={sheetInput} data-tour="rfq-status-filter">
-              <option value="all">All Statuses</option>
-              <option value="pending">RFQ pending</option>
-              <option value="sent">RFQs sent (all)</option>
-              {Object.entries(RFQ_STATUS_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </Select>
-          </div>
-          <div>
-            <label style={sheetLabel}>Vendors (requests sent)</label>
-            <Select value={draft.vendors} onChange={(e) => setDraft((d) => ({ ...d, vendors: e.target.value }))} style={sheetInput} data-tour="rfq-vendors-filter">
-              <option value="all">One vendor or several</option>
-              <option value="single">One vendor only</option>
-              <option value="multi">Several vendors</option>
-            </Select>
-          </div>
-        </FiltersSheet>
-      )}
 
       <div style={{ display: 'flex', flexDirection: 'column' }}>
       <div data-tour="rfq-list-table" style={sectionStyle}>

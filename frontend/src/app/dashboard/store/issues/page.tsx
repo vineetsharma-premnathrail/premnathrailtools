@@ -6,7 +6,8 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { storeApi } from '@/lib/api'
 import { StoreMaterialIssue } from '@/types'
 import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
-import { primaryBtnStyle, RowCount, thStyle, numThStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle, RowCount, thStyle, numThStyle } from '@/components/shared/ui'
+import PrintRegisterSheet, { type RegisterKind } from '@/components/store/PrintRegisterSheet'
 import StoreNav from '@/components/store/StoreNav'
 import { recordPath } from '@/lib/recordRef'
 import MessageDialog from '@/components/erp/MessageDialog'
@@ -32,12 +33,14 @@ export default function StoreMaterialIssuesPage() {
   const [issues, setIssues] = useState<StoreMaterialIssue[]>(vis.preview ? sampleIssues : [])
   const [loading, setLoading] = useState(!vis.preview)
   const [error, setError] = useState('')
+  const [printKind, setPrintKind] = useState<RegisterKind | null>(null)
 
   useEffect(() => {
     if (!isAuthorized) return
     if (vis.preview) return
     setLoading(true)
-    storeApi.listMaterialIssues().then(setIssues).catch((err) => setError(extractErrorMessages(err, 'Failed to load material issues.').join(' '))).finally(() => setLoading(false))
+    // Job-work challans are issues too, but they live under Store › Job Work — one place for them.
+    storeApi.listMaterialIssues().then((list) => setIssues(list.filter((i: StoreMaterialIssue) => i.issue_type !== 'job_work'))).catch((err) => setError(extractErrorMessages(err, 'Failed to load material issues.').join(' '))).finally(() => setLoading(false))
   }, [isAuthorized])
 
   if (isLoading || !isAuthorized) return null
@@ -56,14 +59,23 @@ export default function StoreMaterialIssuesPage() {
             Store &amp; Inventory
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Material Issues</h1>
-          <p style={{ fontSize: 13, color: TEXT.muted, margin: '4px 0 12px' }}>Material handed out of a store — to production, a project, a vendor for job work, a site or as samples.</p>
+          <p style={{ fontSize: 13, color: TEXT.muted, margin: '4px 0 12px' }}>Material handed out of a store — to production, a project, a site or as samples. Job-work challans are under Store › Job Work.</p>
         </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {!vis.preview && can('store', 'issues', 'print') && (
+          <button type="button" data-tour="issues-print-register-btn" onClick={() => setPrintKind('issue')} style={secondaryBtnStyle}>Print Register</button>
+        )}
+        {!vis.preview && (can('store', 'issues', 'print') || can('store', 'transfers', 'print')) && (
+          <button type="button" data-tour="issues-print-outward-btn" onClick={() => setPrintKind('outward')} style={secondaryBtnStyle}>Gate Outward Register</button>
+        )}
         {can('store', 'issues', 'create') && (
           <button data-tour="issues-add-btn" onClick={() => router.push('/dashboard/store/issues/new')} style={primaryBtnStyle}>
             <span style={{ fontSize: 17, lineHeight: 1, marginRight: 6 }}>+</span> New Issue
           </button>
         )}
+        </div>
       </div>
+      {printKind && <PrintRegisterSheet kind={printKind} onClose={() => setPrintKind(null)} />}
 
       <MessageDialog open={!!error} variant="error" title="Failed to Load Material Issues" message={error} onClose={() => setError('')} actionLabel="Reload" onAction={() => window.location.reload()} />
 

@@ -1,5 +1,6 @@
 'use client'
 
+import FilterMenu from '@/components/shared/FilterMenu'
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -304,18 +305,20 @@ export default function StoreStockPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <Select data-tour="stock-store-filter" style={{ ...inputStyle, flex: '1 1 150px', width: 'auto' }} value={filterLocation} onChange={(e) => setFilterLocation(e.target.value)}>
-          <option value="">All stores</option>
-          {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-        </Select>
-        <Select data-tour="stock-category-filter" style={{ ...inputStyle, flex: '1 1 150px', width: 'auto' }} value={filterCategory} onChange={(e) => { setFilterCategory(e.target.value); setFilterSubcategory('') }}>
-          <option value="">All categories</option>
-          {categories.map((c) => <option key={c} value={c}>{c}</option>)}
-        </Select>
-        <Select data-tour="stock-subcategory-filter" style={{ ...inputStyle, flex: '1 1 150px', width: 'auto' }} value={filterSubcategory} onChange={(e) => setFilterSubcategory(e.target.value)}>
-          <option value="">All subcategories</option>
-          {subcategories.map((s) => <option key={s} value={s}>{s}</option>)}
-        </Select>
+        <FilterMenu
+          tourId="stock-store-filter"
+          fields={[
+            { key: 'store', label: 'Store', value: filterLocation, allLabel: 'All stores', options: locations.map((l) => ({ value: String(l.id), label: l.name })) },
+            { key: 'category', label: 'Category', value: filterCategory, allLabel: 'All categories', options: categories.map((c) => ({ value: c, label: c })) },
+            { key: 'subcategory', label: 'Subcategory', value: filterSubcategory, allLabel: 'All subcategories', options: subcategories.map((c) => ({ value: c, label: c })) },
+          ]}
+          onChange={(key, v) => {
+            if (key === 'store') setFilterLocation(v)
+            else if (key === 'category') { setFilterCategory(v); setFilterSubcategory('') }
+            else setFilterSubcategory(v)
+          }}
+          onClear={() => { setFilterLocation(''); setFilterCategory(''); setFilterSubcategory('') }}
+        />
         {hasFilters && <button onClick={clearFilters} style={secondaryBtnStyle}>Clear</button>}
       </div>
 

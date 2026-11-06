@@ -91,6 +91,8 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
     { href: '/dashboard/crm', label: 'CRM', icon: 'crm', visible: !!user?.apps?.includes('crm') },
     { href: '/dashboard/p2p', label: 'Procurement', icon: 'p2p', visible: !!user?.apps?.includes('p2p') },
     { href: '/dashboard/store', label: 'Store & Inventory', icon: 'store', visible: !!user?.apps?.includes('store') },
+    // Live since 2026-11-06 with the incoming-inspection slice only (other Quality tabs hidden in QualityNav).
+    { href: '/dashboard/quality', label: 'Quality', icon: 'quality', visible: !!user?.apps?.includes('quality') },
     { href: '/dashboard/projects', label: 'Project Management', icon: 'projects', visible: !!user?.apps?.includes('projects') },
     { href: '/dashboard/finance', label: 'Finance & Accounting', icon: 'finance', visible: !!user?.apps?.includes('accounts') },
     // Organization isn't an "app": shown to anyone who can view at least one of
@@ -113,7 +115,6 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
     // Visible to every logged-in user: My HR (leave, attendance, travel,
     // claims, assets) is self-service; HR-only tabs are gated inside HrNav.
     { href: '/dashboard/hr', label: 'HR & Admin', icon: 'hr', upcoming: true, visible: !!user?.apps?.includes('hr') },
-    { href: '/dashboard/quality', label: 'Quality', icon: 'quality', upcoming: true, visible: !!user?.apps?.includes('quality') },
     { href: '/dashboard/design', label: 'Design', icon: 'design', upcoming: true, visible: !!user?.apps?.includes('design') },
   ].filter((link) => link.visible)
 

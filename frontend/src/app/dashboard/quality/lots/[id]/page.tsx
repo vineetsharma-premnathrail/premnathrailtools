@@ -15,6 +15,9 @@ import { QualityDefectCode, QualityInspectionLot, QualityLotResult } from '@/typ
 import { TEXT } from '@/lib/theme'
 import QualityNav from '@/components/quality/QualityNav'
 import PromptDialog from '@/components/erp/PromptDialog'
+import MessageDialog from '@/components/erp/MessageDialog'
+import { qualityPrintApi } from '@/lib/qualityPrintApi'
+import { downloadBlob } from '@/lib/reports/download'
 import { Field, Section, InfoRow, DetailCard, DetailSummary, DetailGroup, DetailRow, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, RowCount } from '@/components/shared/ui'
 import {
   Pill, PageHeader, ErrorBanner, ActionSheet, SheetBlock, fmtQty, fmtDate, INSPECTION_TYPE_LABELS, LOT_STATUS_LABELS, LOT_STATUS_HEX,
@@ -37,6 +40,7 @@ const FAI_STATUS_HEX: Record<string, string> = { open: '#F59E0B', approved: '#16
 const SOURCE_LABELS: Record<string, string> = {
   grn: 'GRN', work_order: 'Work order output', ncr: 'NCR re-inspection', manual: 'Manual',
   work_order_operation: 'Production gate', material_return: 'Job work receipt',
+  pre_po_receipt: 'Before PO receipt',
 }
 
 const head: React.CSSProperties = { ...cell, fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: SHEET.MUTED, borderTop: 'none', whiteSpace: 'nowrap' }
@@ -85,6 +89,9 @@ export default function LotDetailPage() {
   // A lot opens for every Quality user in scope; the photos switch binds roles holding the tab.
   const seePhotos = !can('quality', 'inspection_lots', 'view') || canFeature('quality', 'inspection_lots', 'photos', 'view')
   const isHead = can('quality', 'ncr', 'approve')
+  // Print Inspection Report (Excel): Quality › Inspection Lots › Print.
+  const canPrint = !preview && can('quality', 'inspection_lots', 'print')
+  const [printing, setPrinting] = useState(false)
   const [cancelOpen, setCancelOpen] = useState(false)
   const [gauges, setGauges] = useState<QualityGauge[]>([])
 
@@ -128,7 +135,7 @@ export default function LotDetailPage() {
   }
 
   if (isLoading || !isAuthorized) return null
-  if (linkError && !preview) return (<div><QualityNav /><InvalidRecordLink message={linkError} listHref="/dashboard/quality/lots" listLabel="Back to inspection lots" /></div>)
+  if (linkError && !preview) return (<div><QualityNav /><InvalidRecordLink message={linkError} listHref="/dashboard/quality/lots" listLabel="Back to Incoming Inspection" /></div>)
   if (!lot) {
     return (
       <div>
@@ -169,6 +176,18 @@ export default function LotDetailPage() {
     run(() => qualityApi.recordLotResults(lot.id, entries), 'Failed to save results.')
   }
 
+  const printReport = async () => {
+    setError('')
+    setPrinting(true)
+    try {
+      downloadBlob(await qualityPrintApi.lotReportXlsx(lot.id), `Inspection-Report-${lot.lot_number}.xlsx`)
+    } catch (err) {
+      setError(extractErrorMessages(err, 'The inspection report could not be prepared.'))
+    } finally {
+      setPrinting(false)
+    }
+  }
+
   const decide = async () => {
     const payload: Record<string, unknown> = { decision: decision.decision, remarks: decision.remarks || null }
     if (decision.decision === 'partial') {
@@ -176,7 +195,7 @@ export default function LotDetailPage() {
       payload.rejected_qty = Number(decision.rejected_qty)
     }
     if (decision.decision === 'accept_with_deviation') payload.deviation_reference = decision.deviation_reference
-    if (await run(() => qualityApi.decideLot(lot.id, payload), 'Failed to record the usage decision.')) setSheet('')
+    if (await run(() => qualityApi.decideLot(lot.id, payload), 'Failed to record the decision.')) setSheet('')
   }
 
   const decisionSummary = () => {
@@ -200,9 +219,12 @@ export default function LotDetailPage() {
         onConfirm={(reason) => { setCancelOpen(false); run(() => qualityApi.cancelLot(lot.id, reason), 'Failed to cancel the lot.') }} />
 
       <PageHeader title={lot.lot_number} subtitle={`Quality · ${INSPECTION_TYPE_LABELS[lot.inspection_type] || lot.inspection_type} lot`}>
+        {canPrint && <button type="button" disabled={printing} onClick={printReport} style={secondaryBtnStyle}>{printing ? 'Preparing…' : 'Print F/STR/01 (Excel)'}</button>}
         {!preview && <button type="button" onClick={() => router.push('/dashboard/quality/lots')} style={secondaryBtnStyle}>← Back</button>}
       </PageHeader>
-      {!sheet && <ErrorBanner error={error} />}
+      {/* Server refusals (no permission, same person decides, stock rules…) come back with the real reason and the fix. */}
+      <MessageDialog open={!sheet && !cancelOpen && !!error} variant="error" title="This could not be done"
+        message={error || ''} onClose={() => setError('')} />
 
       <DetailCard>
         <VisSection vis={vis} k="detail_summary">
@@ -228,23 +250,23 @@ export default function LotDetailPage() {
         </VisSection>
         <VisSection vis={vis} k="detail_inspection">
         <DetailGroup title="Inspection">
-          <DetailRow label="Inspection plan">{lot.plan_number ? `${lot.plan_number} rev ${lot.plan_revision}` : 'No approved plan yet'}</DetailRow>
+          <DetailRow label="Inspection checklist">{lot.plan_number ? `${lot.plan_number} rev ${lot.plan_revision}` : 'No checklist attached yet'}</DetailRow>
           <DetailRow label="Sample size (max)">{lot.sample_size != null ? String(lot.sample_size) : null}</DetailRow>
           {lot.first_article && (
             <DetailRow label="First article">
-              <button type="button" onClick={() => router.push(recordPath('/dashboard/quality/first-articles', lot.first_article))} style={{ padding: 0, border: 'none', background: 'none', cursor: 'pointer', display: 'inline-flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', textAlign: 'left', fontSize: 13.5 }}>
-                <strong style={{ color: '#FF6A2A' }}>{lot.first_article.fai_number}</strong>
+              <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', fontSize: 13.5 }}>
+                <strong>{lot.first_article.fai_number}</strong>
                 <Pill text={lot.first_article.status.charAt(0).toUpperCase() + lot.first_article.status.slice(1)} hex={FAI_STATUS_HEX[lot.first_article.status]} />
                 <span style={{ color: TEXT.muted, fontSize: 12 }}>full drawing check; approve the FAI after the decision</span>
-              </button>
+              </span>
             </DetailRow>
           )}
           {lot.gate && (
             <DetailRow label="Production gate">
-              <button type="button" onClick={() => router.push(recordPath('/dashboard/production/work-orders', lot.gate, 'work_order_id'))} style={{ padding: 0, border: 'none', background: 'none', cursor: 'pointer', display: 'inline-flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', textAlign: 'left', fontSize: 13.5 }}>
-                <strong style={{ color: '#FF6A2A' }}>{lot.gate.wo_number}</strong>
+              <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', fontSize: 13.5 }}>
+                <strong>{lot.gate.wo_number}</strong>
                 <span style={{ color: TEXT.muted, fontSize: 12 }}>op {lot.gate.operation} — the next operation is held until this lot is decided</span>
-              </button>
+              </span>
             </DetailRow>
           )}
         </DetailGroup>
@@ -282,7 +304,7 @@ export default function LotDetailPage() {
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           {canEdit && lot.status === 'created' && !lot.plan_id && (
-            <button type="button" disabled={busy} style={secondaryBtnStyle} onClick={() => run(() => qualityApi.lotAction(lot.id, 'refresh-plan'), 'No approved plan yet.')}>Attach approved plan</button>
+            <button type="button" disabled={busy} style={secondaryBtnStyle} onClick={() => run(() => qualityApi.lotAction(lot.id, 'refresh-plan'), 'The standard checklist could not be attached to this lot — check the lot type and try again; if it keeps failing, tell a Quality head.')}>Attach checklist</button>
           )}
           {canEdit && lot.status === 'created' && (
             <button type="button" disabled={busy} style={primaryBtnStyle} onClick={() => run(() => qualityApi.lotAction(lot.id, 'start'), 'Failed to start the inspection.')}>Start inspection</button>
@@ -314,7 +336,7 @@ export default function LotDetailPage() {
         )}
         {lot.results.length === 0 && lot.skip_lot && lot.plan_id ? null : lot.results.length === 0 ? (
           <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>
-            No approved inspection plan is attached. A Quality engineer must create and a Quality head approve a {INSPECTION_TYPE_LABELS[lot.inspection_type]} plan for this item (Quality → Inspection Plans), then use &ldquo;Attach approved plan&rdquo;.
+            No inspection checklist is attached to this lot yet. &ldquo;Attach checklist&rdquo; adds the standard F/STR/01 checklist.
           </p>
         ) : (
           <div style={{ overflow: 'auto' }}>
@@ -380,7 +402,7 @@ export default function LotDetailPage() {
           </div>
         )}
         {lot.results_recorded_by_name && <p style={{ ...sheetHint, margin: '10px 0 0' }}>Results submitted by {lot.results_recorded_by_name}.</p>}
-        {lot.skip_lot || lot.results.length === 0 ? null : resultsEditable && <p style={{ ...sheetHint, margin: '10px 0 0' }}>Measured values: separate several readings with commas or spaces. “Save results” keeps them; “Submit results for decision” sends the lot to the usage decision.</p>}
+        {lot.skip_lot || lot.results.length === 0 ? null : resultsEditable && <p style={{ ...sheetHint, margin: '10px 0 0' }}>Measured values: separate several readings with commas or spaces. “Save results” keeps them; “Submit results for decision” sends the lot to the decision.</p>}
         <div style={{ height: 18 }} />
       </SheetBlock>
       </VisSection>
@@ -395,15 +417,15 @@ export default function LotDetailPage() {
 
       {(preview || lot.status === 'results_recorded') && (
         <VisSection vis={vis} k="detail_usage_decision">
-        <Section title="Usage decision" style={{ marginBottom: 20 }}>
+        <Section title="Decision" style={{ marginBottom: 20 }}>
           {lot.failed_count > 0 && (
             <p style={{ fontSize: 13, color: '#b91c1c', margin: 0 }}>
               {lot.failed_count} characteristic(s) failed.{lot.critical_failed ? ' A critical characteristic failed — the lot can only be rejected (rule 4).' : ''}
             </p>
           )}
           {canDecide
-            ? <div><button type="button" disabled={busy} style={primaryBtnStyle} onClick={() => openSheet('decision')}>Record usage decision</button></div>
-            : <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>Results are in — waiting for a Quality engineer / head to record the usage decision.</p>}
+            ? <div><button type="button" disabled={busy} style={primaryBtnStyle} onClick={() => openSheet('decision')}>Record decision</button></div>
+            : <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>Results are in — waiting for a Quality engineer / head to record the decision.</p>}
         </Section>
         </VisSection>
       )}
@@ -423,7 +445,7 @@ export default function LotDetailPage() {
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
               <span style={{ fontSize: 12, color: TEXT.muted }}>NCRs:</span>
               {lot.ncrs.map((n) => (
-                <span key={n.id} onClick={preview ? undefined : () => router.push(recordPath('/dashboard/quality/ncr', n))} style={{ cursor: 'pointer', display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                <span key={n.id} style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
                   <strong style={{ fontSize: 13, color: '#FF6A2A' }}>{n.ncr_number}</strong>
                   <Pill text={n.severity} hex={SEVERITY_HEX[n.severity]} />
                   <Pill text={NCR_STATUS_LABELS[n.status] || n.status} hex={NCR_STATUS_HEX[n.status]} />
@@ -439,7 +461,7 @@ export default function LotDetailPage() {
         <VisSection vis={vis} k="detail_documents">
         <Section title="Documents" style={{ marginBottom: 20 }}>
           {preview ? previewNote('The inspection report and the test certificate, on the company letterhead.') : <>
-          <QualityRecordDoc title="Inspection report" hint="Results per characteristic, usage decision and NCRs, on the company letterhead."
+          <QualityRecordDoc title="Inspection report" hint="Results per characteristic, decision and NCRs, on the company letterhead."
             entityType="quality_inspection_report" entityId={lot.id} pdfKind="inspection-report" canModify={canEdit}
             downloadName={`Inspection-Report-${lot.lot_number}`} />
           {(lot.accepted_qty || 0) > 0 && (
@@ -461,7 +483,7 @@ export default function LotDetailPage() {
         </ActionSheet>
       )}
       {sheet === 'decision' && (
-        <ActionSheet icon="flag" iconColor={decision.decision === 'accept' ? '#16A34A' : '#DC2626'} title="Usage decision" subtitle={`${lot.lot_number} · ${lot.item_name} · ${fmtQty(lot.quantity, lot.uom)}`}
+        <ActionSheet icon="flag" iconColor={decision.decision === 'accept' ? '#16A34A' : '#DC2626'} title="Decision" subtitle={`${lot.lot_number} · ${lot.item_name} · ${fmtQty(lot.quantity, lot.uom)}`}
           onClose={closeSheet} busy={busy} error={error} submitLabel={`Record: ${DECISION_LABELS[decision.decision]}`} onSubmit={decide}>
           {lot.failed_count > 0 && (
             <p style={{ fontSize: 13, color: '#b91c1c', margin: '0 0 12px' }}>

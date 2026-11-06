@@ -16,21 +16,15 @@ const config: TourConfig = {
     },
     {
       target: 'org-audit-filter-module',
-      title: 'Module filter',
-      purpose: 'Narrows the list below to logs from one module only, e.g. only Procurement actions.',
-      after: 'Applies immediately — no need to click Search.',
-    },
-    {
-      target: 'org-audit-filter-action',
-      title: 'Action filter',
-      purpose: 'Narrows the list to a single action type, e.g. only approvals or only deletions.',
+      title: 'Filter',
+      purpose: 'Opens the Filter panel. Module narrows the list below to one module only (e.g. only Procurement actions); Action narrows it to a single action type (e.g. only approvals or only deletions).',
       after: 'Applies immediately — no need to click Search.',
     },
     {
       target: 'org-audit-filter-search',
       title: 'Search summary',
       purpose: 'Free-text search over each log entry\'s summary line — use it to find logs mentioning a specific record, name, or keyword.',
-      after: 'Requires clicking Search (or pressing Enter) to apply, unlike the two dropdown filters above.',
+      after: 'Requires clicking Search (or pressing Enter) to apply, unlike the Module and Action filters.',
     },
     {
       target: 'org-audit-search-btn',

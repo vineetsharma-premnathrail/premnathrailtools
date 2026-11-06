@@ -23,35 +23,19 @@ const config: TourConfig = {
     },
     {
       target: 'fin-pinv-status',
-      title: 'Status filter',
+      title: 'Filter',
+      purpose: 'Opens the Filter panel with Status, Payment, Type and Vendor (show bills of one vendor only). Choices apply at once.',
       options: [
-        { value: 'Pending', meaning: 'Recorded but not yet in the books — waiting for a second finance user to post (or for variance approval).' },
-        { value: 'Posted', meaning: 'In the books with a journal; now payable to the vendor.' },
-        { value: 'Cancelled', meaning: 'Cancelled before posting, with a reason. No ledger effect.' },
+        { value: 'Status: Pending', meaning: 'Recorded but not yet in the books — waiting for a second finance user to post (or for variance approval).' },
+        { value: 'Status: Posted', meaning: 'In the books with a journal; now payable to the vendor.' },
+        { value: 'Status: Cancelled', meaning: 'Cancelled before posting, with a reason. No ledger effect.' },
+        { value: 'Payment: Unpaid', meaning: 'Nothing paid or adjusted yet.' },
+        { value: 'Payment: Part paid', meaning: 'Some payment or debit note set off; a balance is still due.' },
+        { value: 'Payment: Paid', meaning: 'Fully settled.' },
+        { value: 'Type: Against PO', meaning: 'Material bills linked to a purchase order (3-way matched).' },
+        { value: 'Type: Direct', meaning: 'Service / expense bills with no PO.' },
+        { value: 'Type: Opening', meaning: 'Unpaid bills carried in from the old books via Opening Balances.' },
       ],
-    },
-    {
-      target: 'fin-pinv-payment',
-      title: 'Payment filter',
-      options: [
-        { value: 'Unpaid', meaning: 'Nothing paid or adjusted yet.' },
-        { value: 'Part paid', meaning: 'Some payment or debit note set off; a balance is still due.' },
-        { value: 'Paid', meaning: 'Fully settled.' },
-      ],
-    },
-    {
-      target: 'fin-pinv-type',
-      title: 'Type filter',
-      options: [
-        { value: 'Against PO', meaning: 'Material bills linked to a purchase order (3-way matched).' },
-        { value: 'Direct', meaning: 'Service / expense bills with no PO.' },
-        { value: 'Opening', meaning: 'Unpaid bills carried in from the old books via Opening Balances.' },
-      ],
-    },
-    {
-      target: 'fin-pinv-vendor-filter',
-      title: 'Vendor filter',
-      purpose: 'Show bills of one vendor only.',
     },
     {
       target: 'fin-pinv-table',

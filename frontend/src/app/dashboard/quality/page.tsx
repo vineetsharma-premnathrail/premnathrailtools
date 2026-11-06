@@ -12,24 +12,17 @@ import { useCan } from '@/lib/permissions'
 
 type KpiTone = 'bad' | 'warn' | 'neutral'
 
-const KPI_CARDS: { key: keyof QualityDashboardKpis; label: string; tone: KpiTone; href?: string; pct?: boolean }[] = [
-  { key: 'lots_waiting', label: 'Lots waiting', tone: 'neutral', href: '/dashboard/quality/my-inspections' },
-  { key: 'lots_overdue', label: 'Lots waiting too long', tone: 'bad', href: '/dashboard/quality/lots' },
-  { key: 'open_ncrs', label: 'Open NCRs', tone: 'warn', href: '/dashboard/quality/ncr' },
-  { key: 'critical_ncrs', label: 'Critical NCRs', tone: 'bad', href: '/dashboard/quality/ncr' },
-  { key: 'major_ncrs', label: 'Major NCRs', tone: 'warn', href: '/dashboard/quality/ncr' },
-  { key: 'minor_ncrs', label: 'Minor NCRs', tone: 'neutral', href: '/dashboard/quality/ncr' },
-  { key: 'ncrs_awaiting_approval', label: 'Dispositions awaiting approval', tone: 'warn', href: '/dashboard/quality/ncr' },
-  { key: 'month_rejection_rate', label: 'Rejection rate (this month)', tone: 'neutral', pct: true },
-  { key: 'open_capas', label: 'Open CAPAs', tone: 'warn', href: '/dashboard/quality/capa' },
-  { key: 'overdue_capas', label: 'Overdue CAPAs', tone: 'bad', href: '/dashboard/quality/capa' },
-  { key: 'open_complaints', label: 'Open Complaints', tone: 'warn', href: '/dashboard/quality/complaints' },
-  { key: 'gate_inspections_pending', label: 'In-process gates pending', tone: 'neutral', href: '/dashboard/quality/in-process-inspection' },
-  { key: 'open_first_articles', label: 'First articles open', tone: 'warn', href: '/dashboard/quality/first-articles' },
-  { key: 'inspection_calls_next_7_days', label: 'Inspection calls (7 days)', tone: 'neutral', href: '/dashboard/quality/inspection-calls' },
-  { key: 'vendors_on_watch', label: 'Vendors on watch', tone: 'warn', href: '/dashboard/quality/supplier-quality' },
-  { key: 'vendors_blocked', label: 'Vendors blocked', tone: 'bad', href: '/dashboard/quality/supplier-quality' },
-  { key: 'vendor_blocks_pending', label: 'Vendor blocks awaiting Partner', tone: 'warn', href: '/dashboard/quality/supplier-quality' },
+// Live cards only (incoming inspection). Every card opens the Incoming Inspection list already filtered
+// (?view=, see LotList). Cards for NCR, CAPA, complaints, gates, first articles, calls and vendors return
+// when those parts of Quality go live (qualityLive.ts).
+type CardKey = keyof QualityDashboardKpis
+const KPI_CARDS: { key: CardKey; label: string; tone: KpiTone; view: string; pct?: boolean }[] = [
+  { key: 'lots_waiting', label: 'Lots waiting', tone: 'neutral', view: 'waiting' },
+  { key: 'lots_in_inspection', label: 'In inspection', tone: 'neutral', view: 'in_inspection' },
+  { key: 'lots_overdue', label: 'Lots waiting too long', tone: 'bad', view: 'overdue' },
+  { key: 'month_lots_decided', label: 'Decided this month', tone: 'neutral', view: 'decided_month' },
+  { key: 'month_rejected_qty', label: 'Rejected qty (this month)', tone: 'warn', view: 'rejected_month' },
+  { key: 'month_rejection_rate', label: 'Rejection rate (this month)', tone: 'neutral', view: 'rejected_month', pct: true },
 ]
 
 function cardTone(tone: KpiTone) {
@@ -69,7 +62,7 @@ export default function QualityDashboardPage() {
           Quality Module
         </p>
         <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Quality</h1>
-        <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>{user?.department ? `${user.department} — ` : ''}Inspection lots, NCRs and their dispositions, CAPA, complaints and supplier quality.</p>
+        <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>{user?.department ? `${user.department} — ` : ''}Incoming inspection of purchased items: lots waiting, in inspection and decided.</p>
       </div>
 
       {error && (
@@ -91,9 +84,11 @@ export default function QualityDashboardPage() {
           return (
             <div
               key={c.key}
-              onClick={() => c.href && router.push(c.href)}
+              role="link" tabIndex={0} title="Show these lots"
+              onClick={() => router.push(`/dashboard/quality/lots?view=${c.view}`)}
+              onKeyDown={(e) => { if (e.key === 'Enter') router.push(`/dashboard/quality/lots?view=${c.view}`) }}
               style={{
-                cursor: c.href ? 'pointer' : 'default',
+                cursor: 'pointer',
                 borderRadius: 18, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
                 boxShadow: SHADOWS.glass(), padding: 18, background: tone.background, border: tone.border,
               }}

@@ -34,6 +34,7 @@ STORE_COST_SOURCES = (
     "production_actual",  # FG receipt from a work order at its actual cost (production/costing.py)
     "job_work",  # processed item back from a job-work vendor: components consumed + job charge
     "landed",  # GRN at PO rate + planned delivery costs (freight / packing / insurance / customs duty)
+    "pre_po_rate",  # Before-PO receipt at the rate typed at the gate, until the PO's GRN revalues it
 )
 
 

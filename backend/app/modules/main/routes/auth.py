@@ -225,6 +225,10 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="User not found or inactive")
     sid = payload.get("sid")
+    if sid is None and settings.environment == "production":
+        # Every real sign-in token carries a session id (_issue_tokens). One without
+        # it cannot be revoked and skips the app lock, so it is only for test tooling.
+        raise HTTPException(status_code=401, detail="This token has no session — sign in again to get a valid one.")
     if sid is not None:
         # Tokens from a sign-in are tied to their refresh session: once it is
         # revoked (logout, admin revoke, deactivation, session limit) the

@@ -568,7 +568,7 @@ register_audited(SalesAttachment, entity_type="sales_attachment", module_key="sa
 # are not registered: their routes already write explicit audit rows.
 register_audited(Vendor, entity_type="vendor", module_key="accounts", label="Vendor", ref=lambda o: f"{o.code} — {o.name}")
 register_audited(BankAccount, entity_type="bank_account", module_key="accounts", label="Bank account",
-                 ref=lambda o: f"{o.bank_name} — {o.account_no}" if o.account_no else o.bank_name)
+                 ref=lambda o: f"{o.bank_name} — ••••{str(o.account_no)[-4:]}" if o.account_no else o.bank_name)
 register_audited(GLAccount, entity_type="gl_account", module_key="accounts", label="GL account", ref=lambda o: f"{o.code} — {o.name}")
 register_audited(InternalOrder, entity_type="internal_order", module_key="accounts", label="Internal order", ref=lambda o: o.code)
 register_audited(AccountGroup, entity_type="account_group", module_key="accounts", label="Account group", ref=lambda o: o.name)

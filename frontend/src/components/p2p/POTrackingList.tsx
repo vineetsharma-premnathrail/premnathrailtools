@@ -5,19 +5,17 @@
 // requisition has several), each with its own vendor, stage, delivery date, progress and value.
 // Filtering, sorting and paging run on the server (GET /p2p/po-reports/tracking), so the counts and
 // totals are real. A row opens a side detail: Items · Receipts · Approval · Documents · Timeline.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { poReportsApi } from '@/lib/api'
 import { TEXT } from '@/lib/theme'
 import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { inputStyle, pageBtnStyle, secondaryBtnStyle, smallSecondaryBtnStyle, RowCount, Pill, StatChip } from '@/components/shared/ui'
-import Select from '@/components/shared/Select'
-import { sheetInput, sheetLabel } from '@/components/shared/FormSheet'
-import SearchableSelect from '@/components/erp/SearchableSelect'
+import FilterMenu from '@/components/shared/FilterMenu'
 import DateField from '@/components/erp/DateField'
 import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/ProjectUnitPicker'
 import POTrackingDetail from '@/components/p2p/POTrackingDetail'
-import { DueChip, FiltersButton, FiltersSheet, PO_CARD, PO_TD, PO_TH, STAGE_ORDER, StageBadge, TrackRow, clip, clip2, money } from '@/components/p2p/POTrackingShared'
+import { DueChip, PO_CARD, PO_TD, PO_TH, STAGE_ORDER, StageBadge, TrackRow, clip, clip2, money } from '@/components/p2p/POTrackingShared'
 
 type Data = {
   rows: TrackRow[]; total: number; skip: number; limit: number; counts: Record<string, number>; all: number
@@ -39,7 +37,6 @@ const COLUMNS: { label: string; sort?: SortKey; compactHide?: boolean; cut?: boo
 
 const th: React.CSSProperties = PO_TH
 const td: React.CSSProperties = { ...PO_TD, verticalAlign: 'middle' }
-const NO_FILTERS = { stage: '', delivery: '', vendorId: '', buyerId: '', dateFrom: '', dateTo: '', opFilter: null as OrderProjectValue | null, sort: 'code' as SortKey }
 
 function useNarrow(limit = 1180) {
   const [narrow, setNarrow] = useState(false)
@@ -94,8 +91,6 @@ export default function POTrackingList({ lead }: { lead?: React.ReactNode }) {
   const [sort, setSort] = useState<SortKey>('code')
   const [desc, setDesc] = useState(false)
   const [skip, setSkip] = useState(0)
-  const [showFilters, setShowFilters] = useState(false)
-  const [draft, setDraft] = useState(NO_FILTERS)
   const [selected, setSelected] = useState<TrackRow | null>(null)
   const reqId = useRef(0)
 
@@ -131,17 +126,7 @@ export default function POTrackingList({ lead }: { lead?: React.ReactNode }) {
   const activeFilterCount = [stage, vendorId, buyerId, overdueOnly || dueSoonOnly, dateFrom, dateTo, opFilter].filter(Boolean).length
   const reset = () => {
     setStage(''); setSearch(''); setQuery(''); setVendorId(''); setBuyerId(''); setOverdueOnly(false); setDueSoonOnly(false)
-    setDateFrom(''); setDateTo(''); setOpFilter(null); setSort('code'); setDesc(false); setSkip(0); setShowFilters(false)
-  }
-  const openFilters = () => {
-    setDraft({ stage, delivery: overdueOnly ? 'overdue' : dueSoonOnly ? 'due_soon' : '', vendorId, buyerId, dateFrom, dateTo, opFilter, sort })
-    setShowFilters(true)
-  }
-  const applyFilters = () => {
-    setStage(draft.stage); setOverdueOnly(draft.delivery === 'overdue'); setDueSoonOnly(draft.delivery === 'due_soon')
-    setVendorId(draft.vendorId); setBuyerId(draft.buyerId); setDateFrom(draft.dateFrom); setDateTo(draft.dateTo); setOpFilter(draft.opFilter)
-    if (draft.sort !== sort) { setSort(draft.sort); setDesc(false) }
-    setSkip(0); setShowFilters(false)
+    setDateFrom(''); setDateTo(''); setOpFilter(null); setSort('code'); setDesc(false); setSkip(0)
   }
   // Count chips = quick filters on the same states the Filters popup sets (Stage, Delivery); clicking the active one clears it.
   const chipOverdue = overdueOnly && !stage
@@ -159,9 +144,6 @@ export default function POTrackingList({ lead }: { lead?: React.ReactNode }) {
   const rows = data?.rows ?? []
   const split = !!selected && !narrow
   const columns = COLUMNS.filter((c) => !(split && c.compactHide))
-  const vendorOptions = useMemo(() => [{ value: '', label: 'All vendors' }, ...vendors.map((v) => ({ value: String(v.id), label: v.name }))], [vendors])
-  const buyerOptions = useMemo(() => [{ value: '', label: 'All buyers' }, ...buyers.map((b) => ({ value: String(b.id), label: b.name }))], [buyers])
-  const sortOptions = SORT_OPTIONS.map((o) => ({ value: o.value, label: o.label }))
   const counts = data?.counts ?? {}
   const stageLabel = (s: string) => (s === 'with_vendor' ? 'With vendor' : s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, ' '))
   const to = Math.min((data?.skip ?? 0) + rows.length, data?.total ?? 0)
@@ -198,56 +180,36 @@ export default function POTrackingList({ lead }: { lead?: React.ReactNode }) {
         {lead}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           <input id="pot-search" aria-label="Search purchase orders" data-tour="p2p-pot-search" style={{ ...inputStyle, width: 280, maxWidth: '100%' }} placeholder="PO no., vendor, item, requisition..." value={search} onChange={(e) => setSearch(e.target.value)} />
-          <FiltersButton count={activeFilterCount} onOpen={openFilters} tour="p2p-pot-filter-btn" />
+          <div role="group" aria-label="PO date from" data-tour="p2p-pot-date-from"><DateField value={dateFrom} onChange={(v) => { setDateFrom(v); setSkip(0) }} placeholder="PO from" style={{ width: 130 }} /></div>
+          <div role="group" aria-label="PO date to"><DateField value={dateTo} onChange={(v) => { setDateTo(v); setSkip(0) }} placeholder="PO to" style={{ width: 130 }} /></div>
+          <FilterMenu
+            tourId="p2p-pot-filter-btn"
+            fields={[
+              { key: 'stage', label: 'Stage', value: stage, allLabel: 'All stages', options: STAGE_ORDER.map((s) => ({ value: s, label: stageLabel(s) })) },
+              { key: 'delivery', label: 'Delivery', value: overdueOnly ? 'overdue' : dueSoonOnly ? 'due_soon' : '', allLabel: 'Any delivery date', options: [{ value: 'overdue', label: 'Overdue' }, { value: 'due_soon', label: `Due in ${data?.due_soon_days ?? 7} days` }] },
+              { key: 'vendor', label: 'Vendor', value: vendorId, allLabel: 'All vendors', options: vendors.map((v) => ({ value: String(v.id), label: v.name })) },
+              { key: 'buyer', label: 'Buyer', value: buyerId, allLabel: 'All buyers', options: buyers.map((b) => ({ value: String(b.id), label: b.name })) },
+              { key: 'sort', label: 'Sort by', value: sort, defaultValue: 'code', allLabel: SORT_OPTIONS[0].label, options: SORT_OPTIONS.slice(1).map((o) => ({ value: o.value, label: o.label })) },
+            ]}
+            onChange={(key, v) => {
+              if (key === 'stage') setStage(v)
+              else if (key === 'delivery') { setOverdueOnly(v === 'overdue'); setDueSoonOnly(v === 'due_soon') }
+              else if (key === 'vendor') setVendorId(v)
+              else if (key === 'buyer') setBuyerId(v)
+              else { setSort(v as SortKey); setDesc(false) }
+              setSkip(0)
+            }}
+            onClear={reset}
+            extraActive={opFilter ? 1 : 0}
+          >
+            <div role="group" aria-label="Filter by project" style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, fontWeight: 600, color: '#57534e' }}>
+              Project
+              <OrderProjectPicker value={opFilter} onChange={(v) => { setOpFilter(v); setSkip(0) }} requireElement={false} placeholder="All projects" />
+            </div>
+          </FilterMenu>
           {activeFilterCount > 0 && <button type="button" onClick={reset} style={secondaryBtnStyle} data-tour="p2p-pot-clear-btn">Clear</button>}
         </div>
       </div>
-
-      {showFilters && (
-        <FiltersSheet subtitle="Narrow the purchase orders, then press Apply." tour="p2p-pot-filter-sheet" applyTour="p2p-pot-apply-btn" onClose={() => setShowFilters(false)} onClear={reset} onApply={applyFilters}>
-          <div data-tour="p2p-pot-status-filter">
-            <label style={sheetLabel}>Stage</label>
-            <Select value={draft.stage} onChange={(e) => setDraft((d) => ({ ...d, stage: e.target.value }))} style={sheetInput}>
-              <option value="">All Stages</option>
-              {STAGE_ORDER.map((s) => <option key={s} value={s}>{stageLabel(s)}</option>)}
-            </Select>
-          </div>
-          <div data-tour="p2p-pot-overdue-filter">
-            <label style={sheetLabel}>Delivery</label>
-            <Select value={draft.delivery} onChange={(e) => setDraft((d) => ({ ...d, delivery: e.target.value }))} style={sheetInput}>
-              <option value="">Any delivery date</option>
-              <option value="overdue">Overdue</option>
-              <option value="due_soon">{`Due in ${data?.due_soon_days ?? 7} days`}</option>
-            </Select>
-          </div>
-          <div>
-            <label style={sheetLabel} htmlFor="pot-vendor">Vendor</label>
-            <SearchableSelect id="pot-vendor" ariaLabel="Vendor" value={draft.vendorId} onChange={(v) => setDraft((d) => ({ ...d, vendorId: v }))} options={vendorOptions} placeholder="All vendors" />
-          </div>
-          <div>
-            <label style={sheetLabel} htmlFor="pot-buyer">Buyer</label>
-            <SearchableSelect id="pot-buyer" ariaLabel="Buyer" value={draft.buyerId} onChange={(v) => setDraft((d) => ({ ...d, buyerId: v }))} options={buyerOptions} placeholder="All buyers" />
-          </div>
-          <div role="group" aria-label="Filter by project">
-            <span style={sheetLabel}>Project</span>
-            <OrderProjectPicker value={draft.opFilter} onChange={(v) => setDraft((d) => ({ ...d, opFilter: v }))} requireElement={false} placeholder="All projects" />
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <div>
-              <span id="pot-from-label" style={sheetLabel}>PO date from</span>
-              <div role="group" aria-labelledby="pot-from-label"><DateField value={draft.dateFrom} onChange={(v) => setDraft((d) => ({ ...d, dateFrom: v }))} /></div>
-            </div>
-            <div>
-              <span id="pot-to-label" style={sheetLabel}>PO date to</span>
-              <div role="group" aria-labelledby="pot-to-label"><DateField value={draft.dateTo} onChange={(v) => setDraft((d) => ({ ...d, dateTo: v }))} /></div>
-            </div>
-          </div>
-          <div>
-            <label style={sheetLabel} htmlFor="pot-sort">Sort by</label>
-            <SearchableSelect id="pot-sort" ariaLabel="Sort by" value={draft.sort} onChange={(v) => setDraft((d) => ({ ...d, sort: v as SortKey }))} options={sortOptions} placeholder="Sort by" />
-          </div>
-        </FiltersSheet>
-      )}
 
       <div className="ui-cols" style={{ display: 'grid', gridTemplateColumns: split ? 'minmax(0, 1fr) minmax(400px, 460px)' : 'minmax(0, 1fr)', gap: 16, alignItems: 'start' }}>
         <div>

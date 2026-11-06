@@ -8,6 +8,7 @@ import { usePathname } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { filterTabsByAccess } from '@/lib/tabAccess'
 import { canFeature } from '@/lib/permissions'
+import { isLiveQualityHref } from '@/components/quality/qualityLive'
 import NotificationBell from '@/components/erp/NotificationBell'
 import NavSettingsGear from '@/components/shared/NavSettingsGear'
 import TourButton from '@/components/tour/TourButton'
@@ -15,7 +16,7 @@ import TourButton from '@/components/tour/TourButton'
 const TABS = [
   { href: '/dashboard/quality', label: 'Dashboard', icon: 'dashboard', subtabKey: 'dashboard' },
   { href: '/dashboard/quality/my-inspections', label: 'My Inspections', icon: 'inbox', subtabKey: 'my_inspections' },
-  { href: '/dashboard/quality/lots', label: 'Inspection Lots', icon: 'check', subtabKey: 'inspection_lots' },
+  { href: '/dashboard/quality/lots', label: 'Incoming Inspection', icon: 'check', subtabKey: 'inspection_lots' },
   { href: '/dashboard/quality/ncr', label: 'NCR', icon: 'alert', subtabKey: 'ncr' },
   { href: '/dashboard/quality/inspection-plans', label: 'Inspection Plans', icon: 'clipboard', subtabKey: 'inspection_plans' },
   { href: '/dashboard/quality/masters', label: 'Masters', icon: 'list', subtabKey: 'masters' },
@@ -63,7 +64,8 @@ export default function QualityNav() {
   const { user } = useAuth()
   // Settings sits as a gear next to the bell, not as a tab (same as R&D).
   // Gauges is a feature of Masters (core/features/quality.py: quality:masters.calibration, "Gauges tab").
-  const allowedTabs = filterTabsByAccess('quality', TABS, user)
+  // Only the live tabs show (qualityLive.ts, one list); the rest of TABS keeps its code for later.
+  const allowedTabs = filterTabsByAccess('quality', TABS.filter((t) => isLiveQualityHref(t.href)), user)
     .filter((t) => !('feature' in t) || canFeature(user, 'quality', t.subtabKey, t.feature, 'view'))
   const visibleTabs = allowedTabs.filter((t) => t.href !== '/dashboard/quality/settings')
   const settingsTab = allowedTabs.find((t) => t.href === '/dashboard/quality/settings')

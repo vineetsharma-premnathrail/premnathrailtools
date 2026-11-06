@@ -9,7 +9,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.permission_registry import (
-    ACTION_LABELS, ACTIONS, MODULES, expand_grants, is_admin_user, is_valid_grant,
+    ACTION_LABELS, ACTIONS, MODULES, editor_modules, expand_grants, is_admin_user, is_valid_grant,
 )
 from app.core.data_scope import SCOPE_LABELS, SCOPE_LEVELS, default_scope
 from app.core.permissions import ensure_can_delete, ensure_feature_action, require_feature_action, require_tab_action
@@ -224,7 +224,7 @@ def _audit(db: Session, actor: User, role: Role, action: str, summary: str, old=
 async def get_catalog(_user: User = Depends(_can_view)):
     """Every module, its tabs (with group headings) and the actions each tab
     has — what the role editor renders."""
-    return {"modules": MODULES, "actions": ACTIONS, "action_labels": ACTION_LABELS,
+    return {"modules": editor_modules(), "actions": ACTIONS, "action_labels": ACTION_LABELS,
             "scope_levels": list(SCOPE_LEVELS), "scope_labels": SCOPE_LABELS,
             "default_scope": default_scope(), "assignee_rules": _assignee_catalog(),
             "visibility": _visibility_catalog()}

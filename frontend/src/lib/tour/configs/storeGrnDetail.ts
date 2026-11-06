@@ -18,7 +18,7 @@ const config: TourConfig = {
         { value: 'Passed', meaning: 'Everything received is good — all of it is accepted into stock.' },
         { value: 'Partially Accepted', meaning: 'Some is good, some is not — the accepted part goes to stock, the rejected part is recorded against the vendor. Give a reason.' },
         { value: 'Failed', meaning: 'Nothing is usable — the whole quantity is rejected. Give a reason.' },
-        { value: 'With Quality (inspection lot)', meaning: 'Shown (not selectable) for items flagged "Quality check on receipt": Quality holds them in Quality stock under an inspection lot, and its usage decision fills in the accepted/rejected split.' },
+        { value: 'With Quality (inspection lot)', meaning: 'Shown (not selectable) for items flagged "Quality check on receipt": Quality holds them in Quality stock under an inspection lot, and its decision fills in the accepted/rejected split. Under the status you see the lot number and where it stands (In quality check, then Accepted / Rejected / Accepted with deviation); people with Quality access can click it to open the lot.' },
       ],
       validExample: 'Received 50 → Accepted 48, Rejected 2, Partially Accepted, reason "2 pcs thread damaged"',
       invalidExample: 'Received 50 → Accepted 50, Rejected 5 (more than received)',

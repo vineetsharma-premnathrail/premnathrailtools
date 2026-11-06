@@ -55,7 +55,7 @@ const config: TourConfig = {
     {
       target: 'store-grn-form-remarks',
       title: 'Remarks',
-      whatToEnter: 'Optional: condition on arrival. The vendor invoice / challan / e-way bill / vehicle go in the Gate Entry & Vendor Documents section.',
+      whatToEnter: 'Optional: condition on arrival. The vendor invoice or delivery challan, e-way bill and vehicle go in the Vendor Documents section.',
       validExample: '2 boxes damaged, seal intact',
     },
     {

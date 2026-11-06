@@ -1,6 +1,6 @@
 'use client'
 
-import Select from '@/components/shared/Select'
+import FilterMenu from '@/components/shared/FilterMenu'
 // The project's correspondence log for the project manager: every WBS team
 // chat message, task comment and file a department sent, newest first, in
 // one place — filter by department, WBS or kind. Items since your last
@@ -15,7 +15,7 @@ import { TEXT } from '@/lib/theme'
 import { formatDateTime } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
-import { DOC_TYPE_LABELS, ErrorBanner, actionBtn, inputStyle, sectionStyle } from './pmUi'
+import { DOC_TYPE_LABELS, ErrorBanner, actionBtn, sectionStyle } from './pmUi'
 import { MentionText } from './PmChat'
 import { smallSecondaryBtnStyle, pillStyle } from '@/components/shared/ui'
 
@@ -96,18 +96,16 @@ export default function ProjectDiscussions({ projectId, limit, onOpenAll }: { pr
 
       {!compact && items.length > 0 && (
         <div data-tour="pm-disc-filters" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
-          <Select style={{ ...inputStyle, width: 190 }} value={dept} onChange={(e) => { setDept(e.target.value); setWbs('') }}>
-            <option value="">All departments</option>
-            {depts.map((d) => <option key={d} value={d}>{d}</option>)}
-          </Select>
-          <Select style={{ ...inputStyle, width: 240 }} value={wbs} onChange={(e) => setWbs(e.target.value)}>
-            <option value="">All milestones</option>
-            {wbsList.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-          </Select>
-          <Select style={{ ...inputStyle, width: 160 }} value={kind} onChange={(e) => setKind(e.target.value)}>
-            <option value="">Chat, comments &amp; files</option>
-            {(Object.keys(KIND_LABELS) as PmCommItem['kind'][]).map((k) => <option key={k} value={k}>{KIND_LABELS[k]}</option>)}
-          </Select>
+          <FilterMenu
+            tourId="pm-disc-filter-btn"
+            fields={[
+              { key: 'dept', label: 'Department', value: dept, allLabel: 'All departments', options: depts.map((d) => ({ value: d, label: d })) },
+              { key: 'wbs', label: 'Milestone', value: wbs, allLabel: 'All milestones', options: wbsList.map(([id, label]) => ({ value: String(id), label: String(label) })) },
+              { key: 'kind', label: 'Type', value: kind, allLabel: 'Chat, comments & files', options: (Object.keys(KIND_LABELS) as PmCommItem['kind'][]).map((k) => ({ value: k, label: KIND_LABELS[k] })) },
+            ]}
+            onChange={(key, v) => { if (key === 'dept') { setDept(v); setWbs('') } else if (key === 'wbs') setWbs(v); else setKind(v) }}
+            onClear={() => { setDept(''); setWbs(''); setKind('') }}
+          />
           <label style={{ fontSize: 12.5, color: TEXT.secondary, display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer' }}>
             <input type="checkbox" checked={onlyFiles} onChange={(e) => setOnlyFiles(e.target.checked)} /> Only with files
           </label>

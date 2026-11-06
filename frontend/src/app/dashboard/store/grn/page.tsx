@@ -11,7 +11,8 @@ import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import StoreNav from '@/components/store/StoreNav'
 import { recordHref, recordPath } from '@/lib/recordRef'
-import { primaryBtnStyle, segmentBtnStyle, smallSecondaryBtnStyle, RowCount, Pill } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle, segmentBtnStyle, smallSecondaryBtnStyle, RowCount, Pill } from '@/components/shared/ui'
+import PrintRegisterSheet from '@/components/store/PrintRegisterSheet'
 import { useVisibility } from '@/lib/visibility'
 import { VisTd, VisTh } from '@/lib/visibilityComponents'
 import { sampleGrns, sampleReceivablePos } from '@/lib/storePreviewSamples'
@@ -63,6 +64,7 @@ export default function StoreGrnPage() {
   const [upcoming, setUpcoming] = useState<P2PReceivablePurchaseOrder[]>(vis.preview ? sampleReceivablePos : [])
   const [loading, setLoading] = useState(!vis.preview)
   const [error, setError] = useState<string | string[]>('')
+  const [printOpen, setPrintOpen] = useState(false)
 
   useEffect(() => {
     if (!isAuthorized) return
@@ -104,7 +106,11 @@ export default function StoreGrnPage() {
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Goods Receipt (GRN) & Quality check</h1>
           <p style={{ fontSize: 13, color: TEXT.muted, margin: '4px 0 0' }}>Record goods that arrive against a purchase order. Items flagged for a quality check wait for Quality; the rest go straight into Free stock.</p>
         </div>
-        {isPurchaseTeam && can('store', 'grn', 'create') && <button data-tour="store-grn-new-btn" onClick={() => router.push('/dashboard/store/grn/new')} style={primaryBtn}>+ New Goods Receipt</button>}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {!vis.preview && can('store', 'grn', 'print') && <button type="button" data-tour="store-grn-print-inward-btn" onClick={() => setPrintOpen(true)} style={secondaryBtnStyle}>Gate Inward Register</button>}
+          {isPurchaseTeam && can('store', 'grn', 'create') && <button data-tour="store-grn-new-btn" onClick={() => router.push('/dashboard/store/grn/new')} style={primaryBtn}>+ New Goods Receipt</button>}
+        </div>
+        {printOpen && <PrintRegisterSheet kind="inward" onClose={() => setPrintOpen(false)} />}
       </div>
 
       <div data-tour="store-grn-buckets" style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 4, marginBottom: 16 }}>

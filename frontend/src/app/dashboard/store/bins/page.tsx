@@ -23,6 +23,8 @@ import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import Select from '@/components/shared/Select'
+import FilterMenu from '@/components/shared/FilterMenu'
+import PrintRegisterSheet from '@/components/store/PrintRegisterSheet'
 
 type BinType = 'rack' | 'shelf' | 'bin'
 type Bin = { id: number; location_id: number; parent_id: number | null; bin_type: BinType; code: string; name?: string | null; is_active: boolean }
@@ -57,6 +59,7 @@ export default function StoreBinsPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | string[]>('')
   const [notice, setNotice] = useState('')
+  const [printOpen, setPrintOpen] = useState(false)
 
   const [form, setForm] = useState<{ id?: number; bin_type: BinType; parent_id: string; code: string; name: string } | null>(null)
   const [formErrors, setFormErrors] = useState<string[]>([])
@@ -310,6 +313,7 @@ export default function StoreBinsPage() {
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
           <div style={{ display: 'flex', gap: 8 }}>
+            {can('store', 'stock', 'print') && <button type="button" data-tour="store-bins-print-inventory-btn" onClick={() => setPrintOpen(true)} style={secondaryBtnStyle}>Print Inventory Register</button>}
             {locationId && can('store', 'stock', 'export') && <button type="button" onClick={exportExcel} style={secondaryBtnStyle}>Export Excel</button>}
             {canCreate && (
               // One Add — the dialog's Type picks rack / shelf / bin. Starts on Rack while the store has none.
@@ -319,6 +323,7 @@ export default function StoreBinsPage() {
             )}
           </div>
           {canCreate && !locationId && <span style={{ fontSize: 12, color: TEXT.muted }}>Pick a store below to add its racks and bins.</span>}
+          {printOpen && <PrintRegisterSheet kind="inventory" defaultLocationId={locationId ? Number(locationId) : null} onClose={() => setPrintOpen(false)} />}
         </div>
       </div>
 
@@ -339,12 +344,11 @@ export default function StoreBinsPage() {
         </Select>
         {locationId && (
           <>
-            <Select style={{ ...inputStyle, flex: '0 1 180px', width: 'auto' }} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as '' | BinType)}>
-              <option value="">Racks, shelves &amp; bins</option>
-              <option value="rack">Racks only</option>
-              <option value="shelf">Shelves only</option>
-              <option value="bin">Bins only</option>
-            </Select>
+            <FilterMenu
+              fields={[{ key: 'type', label: 'Type', value: typeFilter, allLabel: 'Racks, shelves & bins', options: [{ value: 'rack', label: 'Racks only' }, { value: 'shelf', label: 'Shelves only' }, { value: 'bin', label: 'Bins only' }] }]}
+              onChange={(_key, v) => setTypeFilter(v as '' | BinType)}
+              onClear={() => setTypeFilter('')}
+            />
             <input style={{ ...inputStyle, flex: '0 1 260px', width: 'auto' }} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Find an item — code or name" />
             <span style={{ fontSize: 12.5, color: TEXT.muted }}>{counts.rack} racks · {counts.shelf} shelves · {counts.bin} bins</span>
             <label style={{ fontSize: 12.5, color: TEXT.secondary, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>

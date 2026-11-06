@@ -6,6 +6,7 @@ import ModuleSettingsPage from '@/components/shared/ModuleSettingsPage'
 import P2PNav from '@/components/p2p/P2PNav'
 import ApprovalFlowCard from '@/components/p2p/ApprovalFlowCard'
 import PurposeRulesCard from '@/components/p2p/PurposeRulesCard'
+import BuyerResponsibilityCard from '@/components/p2p/BuyerResponsibilityCard'
 
 export default function ProcurementSettingsPage() {
   // Requesters hold `p2p`, the purchase team `purchase` — either may open Settings (read-only unless allowed to edit).
@@ -16,6 +17,6 @@ export default function ProcurementSettingsPage() {
   return (
     <ModuleSettingsPage title="Procurement settings" nav={<P2PNav />} backHref="/dashboard/p2p"
       load={p2pApi.getSettings} save={p2pApi.saveSettings} reset={p2pApi.resetSetting}
-      leadSections={<><ApprovalFlowCard /><PurposeRulesCard /></>} tourPrefix="p2p-settings" />
+      leadSections={<><ApprovalFlowCard /><PurposeRulesCard /><BuyerResponsibilityCard /></>} tourPrefix="p2p-settings" />
   )
 }

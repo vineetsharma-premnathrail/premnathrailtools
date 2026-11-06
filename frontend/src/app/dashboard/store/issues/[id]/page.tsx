@@ -16,6 +16,8 @@ import { recordPath, useRecordId } from '@/lib/recordRef'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { OrderProjectChip } from '@/components/sales/ProjectUnitPicker'
+import { storePrintApi } from '@/lib/storePrintApi'
+import { downloadBlob } from '@/lib/reports/download'
 
 const linkBtn: React.CSSProperties = { background: 'none', border: 'none', padding: 0, fontSize: 13.5, fontWeight: 600, color: '#2563eb', cursor: 'pointer' }
 const yesNo = (v?: boolean | null) => (v == null ? null : v ? 'Yes' : 'No')
@@ -32,6 +34,21 @@ export default function StoreMaterialIssueDetailPage() {
   const [issue, setIssue] = useState<StoreMaterialIssue | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
+  const [printing, setPrinting] = useState(false)
+  const [printError, setPrintError] = useState('')
+
+  // F/STR/04 Store Requisition Slip (owner's ISO format) as Excel.
+  const printSlip = async () => {
+    if (!issue) return
+    setPrinting(true)
+    try {
+      downloadBlob(await storePrintApi.issueSlip(issue.id), `F-STR-04_Requisition_Slip_${issue.issue_number.replace(/[^A-Za-z0-9_-]+/g, '-')}.xlsx`)
+    } catch (err) {
+      setPrintError(extractErrorMessages(err, 'The requisition slip could not be prepared — reload the page and try again.').join(' '))
+    } finally {
+      setPrinting(false)
+    }
+  }
 
   useEffect(() => {
     if (!isAuthorized || !issueId) return
@@ -49,6 +66,7 @@ export default function StoreMaterialIssueDetailPage() {
   return (
     <div>
       <StoreNav />
+      <MessageDialog open={!!printError} variant="error" title="Could not print the slip" message={printError} onClose={() => setPrintError('')} />
       <MessageDialog open={!!loadError} variant="error" title="Failed to Load Material Issue" message={loadError} onClose={() => setLoadError('')} actionLabel="Back to Issues" onAction={() => router.push('/dashboard/store/issues')} />
 
       {loading || !issue ? (
@@ -62,7 +80,12 @@ export default function StoreMaterialIssueDetailPage() {
               </p>
               <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{issue.issue_number}</h1>
             </div>
-            <button type="button" data-tour="issue-detail-back-btn" onClick={() => router.push('/dashboard/store/issues')} style={secondaryBtnStyle}>← Back</button>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {can('store', 'issues', 'print') && (
+                <button type="button" data-tour="issue-detail-print-slip-btn" onClick={printSlip} disabled={printing} style={secondaryBtnStyle}>{printing ? 'Preparing…' : 'Print Slip'}</button>
+              )}
+              <button type="button" data-tour="issue-detail-back-btn" onClick={() => router.push('/dashboard/store/issues')} style={secondaryBtnStyle}>← Back</button>
+            </div>
           </div>
 
           {/* One record view: what was issued, from where, to whom — then every fact as label–value rows. */}

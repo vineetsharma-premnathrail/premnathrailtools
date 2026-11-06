@@ -20,8 +20,8 @@ import ApprovalPanel from '@/components/shared/ApprovalPanel'
 import DraftBanner from '@/components/shared/DraftBanner'
 import { useFormDraft } from '@/lib/formDraft'
 import {
-  inputStyle, labelStyle, primaryBtnStyle, secondaryBtnStyle, linkBtnStyle, dangerLinkStyle,
-  thStyle, tdStyle, numTd, numTh, inr, dmy, todayIso, Field, ErrorBanner, InfoBanner, StatusPill, SubTabs, useFinanceSubTabs, PageHeader,
+  labelStyle, primaryBtnStyle, secondaryBtnStyle, linkBtnStyle, dangerLinkStyle,
+  thStyle, tdStyle, numTd, numTh, inr, dmy, todayIso, ErrorBanner, InfoBanner, StatusPill, SubTabs, useFinanceSubTabs, PageHeader,
   TableWrap, EmptyRow, TaxLinesEditor, EditableTaxLine, newTaxLine, toLinePayload, useCostObjectOptions, previewTax, ApprovalBadge, submitAfterSave, RecordFacts,
 } from '@/components/finance/financeUi'
 import { RowCount, pillStyle, DetailGroup, DetailRow } from '@/components/shared/ui'
@@ -29,6 +29,7 @@ import { recordHref } from '@/lib/recordRef'
 import { useDocCurrency } from '@/components/finance/DocCurrencyFields'
 import FinanceAttachments, { ProofPicker, PickedProof, uploadPickedProof, useProofCounts, ProofClip, useProofRules } from '@/components/finance/FinanceAttachments'
 import Select from '@/components/shared/Select'
+import FilterMenu from '@/components/shared/FilterMenu'
 
 type Errors = string | string[]
 
@@ -271,24 +272,19 @@ function InvoicesTab(ctx: Ctx) {
       )}
 
       <div data-tour="fin-pinv-list" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 14, alignItems: 'flex-end' }}>
-        <Field label="Status" style={{ flex: '0 1 150px' }} tour="fin-pinv-status">
-          <Select style={inputStyle} value={fStatus} onChange={(e) => setFStatus(e.target.value)}>
-            <option value="">All</option><option value="pending">Pending</option><option value="posted">Posted</option><option value="cancelled">Cancelled</option>
-          </Select>
-        </Field>
-        <Field label="Payment" style={{ flex: '0 1 150px' }} tour="fin-pinv-payment">
-          <Select style={inputStyle} value={fPay} onChange={(e) => setFPay(e.target.value)}>
-            <option value="">All</option><option value="pending">Unpaid</option><option value="partial">Part paid</option><option value="paid">Paid</option>
-          </Select>
-        </Field>
-        <Field label="Type" style={{ flex: '0 1 150px' }} tour="fin-pinv-type">
-          <Select style={inputStyle} value={fType} onChange={(e) => setFType(e.target.value)}>
-            <option value="">All</option><option value="po">Against PO</option><option value="direct">Direct</option><option value="opening">Opening</option>
-          </Select>
-        </Field>
-        <Field label="Vendor" style={{ flex: '1 1 260px', maxWidth: 360 }} tour="fin-pinv-vendor-filter">
-          <SearchableSelect value={fVendor} onChange={setFVendor} options={vendorOptions} placeholder="All vendors" />
-        </Field>
+        <div style={{ marginBottom: 2 }}>
+          <FilterMenu
+            tourId="fin-pinv-status"
+            fields={[
+              { key: 'status', label: 'Status', value: fStatus, allLabel: 'All', options: [{ value: 'pending', label: 'Pending' }, { value: 'posted', label: 'Posted' }, { value: 'cancelled', label: 'Cancelled' }] },
+              { key: 'pay', label: 'Payment', value: fPay, allLabel: 'All', options: [{ value: 'pending', label: 'Unpaid' }, { value: 'partial', label: 'Part paid' }, { value: 'paid', label: 'Paid' }] },
+              { key: 'type', label: 'Type', value: fType, allLabel: 'All', options: [{ value: 'po', label: 'Against PO' }, { value: 'direct', label: 'Direct' }, { value: 'opening', label: 'Opening' }] },
+              { key: 'vendor', label: 'Vendor', value: fVendor, allLabel: 'All vendors', options: vendorOptions.filter((o) => o.value !== '') },
+            ]}
+            onChange={(key, v) => { if (key === 'status') setFStatus(v); else if (key === 'pay') setFPay(v); else if (key === 'type') setFType(v); else setFVendor(v) }}
+            onClear={() => { setFStatus(''); setFPay(''); setFType(''); setFVendor('') }}
+          />
+        </div>
       </div>
 
       <TableWrap minWidth={1350} tour="fin-pinv-table">

@@ -13,16 +13,19 @@ import { sheetInput, sheetLabel, sheetHint, Req } from '@/components/shared/Form
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { extractErrorMessages } from '@/lib/validation'
 import Select from '@/components/shared/Select'
+import { LIVE_QUALITY_MASTER_LISTS } from '@/components/quality/qualityLive'
 
 interface Spec { key: string; group: string; label: string; type: 'int' | 'float' | 'str' | 'choice'; help?: string; choices?: [string, string][]; min?: number; max?: number }
 interface RoleUser { id: number; name: string; email: string; is_admin: boolean; is_partner: boolean; roles: string[] }
 
-const LISTS: { key: string; label: string; note: string }[] = [
+const ALL_LISTS: { key: string; label: string; note: string }[] = [
   { key: 'ncr_sources', label: 'NCR sources', note: 'Where a manual NCR can come from.' },
   { key: 'complaint_categories', label: 'Complaint categories', note: 'Used from Phase 3 (customer complaints).' },
   { key: 'audit_types', label: 'Audit types', note: 'Used from Phase 4 (audits).' },
   { key: 'inspection_agencies', label: 'Inspection agencies', note: 'Third-party inspection (RITES / RDSO / customer), Phase 2.' },
 ]
+
+const LISTS = ALL_LISTS.filter((l) => LIVE_QUALITY_MASTER_LISTS.includes(l.key))
 
 export default function QualitySettingsPage() {
   const { isAuthorized, isLoading, user } = useRequireApp('quality')
@@ -124,8 +127,7 @@ export default function QualitySettingsPage() {
       {!canEdit && <p style={{ fontSize: 13, color: '#b45309', margin: '-8px 0 14px' }}>Read-only — only a Quality head or an admin can change Quality settings.</p>}
       <ErrorBanner error={error} />
       <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 14px' }}>
-        Who approves — NCR dispositions (incl. the scrap value that needs a Partner), inspection plans, vendor blocks, CAPA D8 and
-        complaint closure — is set in Organization › Approval Workflows, not here.
+        Who approves is set in Organization › Approval Workflows, not here.
       </p>
 
       {groups.map((g) => (
@@ -174,7 +176,7 @@ export default function QualitySettingsPage() {
 
       <Section title="Quality roles" style={{ marginBottom: 16 }}>
         <p style={{ fontSize: 12, color: TEXT.muted, margin: 0 }}>
-          Roles are Permission Matrix sets. Usage decisions, plan approval, NCR disposition approvals and these settings need the role explicitly (admins always pass). Partner approval comes from Company Info → Partners; Design and Purchase approvals from module access.
+          Roles are Permission Matrix sets. Decisions on lots, checklist approval and these settings need the role explicitly (admins always pass). Partner approval comes from Company Info → Partners; Design and Purchase approvals from module access.
         </p>
         {user?.role === 'admin' && (
           <div><button type="button" style={primaryBtnStyle} onClick={() => { setSheetError(''); setGranting(true) }}>+ Grant role</button></div>

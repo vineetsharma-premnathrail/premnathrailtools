@@ -1,8 +1,9 @@
 'use client'
 
 // Record goods that reached the store before their purchase order exists.
-// FormSheet popup (same standard as PM "Create Task"). No stock is posted here —
-// the GRN does that once Procurement's PO is approved.
+// FormSheet popup (same standard as PM "Create Task"). Saving puts the goods into the
+// store's stock at once (Free, or Quality for items needing a quality check); the GRN
+// against Procurement's PO later settles them without adding stock again.
 
 import { useEffect, useState } from 'react'
 import { storeApi, vendorsApi } from '@/lib/api'
@@ -18,8 +19,8 @@ import { useAuthStore } from '@/store/authStore'
 import DraftBanner from '@/components/shared/DraftBanner'
 import { FormSheet, SheetSection, SheetIcon, SheetError, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 
-type Line = { type: string; category: string; itemId: string; quantity: string; remarks: string }
-const emptyLine = (): Line => ({ type: '', category: '', itemId: '', quantity: '', remarks: '' })
+type Line = { type: string; category: string; itemId: string; quantity: string; rate: string; remarks: string }
+const emptyLine = (): Line => ({ type: '', category: '', itemId: '', quantity: '', rate: '', remarks: '' })
 // Item types a Before PO receipt may carry: the "stock" purpose's types (backend
 // p2p/purpose.py PURPOSE_ITEM_TYPES); types Store added beyond the standard five stay offered.
 const STANDARD_ITEM_TYPES = ['material', 'service', 'asset', 'consumable', 'tool_equipment']
@@ -46,7 +47,7 @@ export default function BeforePOReceiptForm({ onClose, onSaved }: { onClose: () 
   const draft = useFormDraft('store-before-po-receipt-new', { vendorId, receivedDate, locationId, challan, invoice, remarks, lines }, (d) => {
     setVendorId(d.vendorId ?? ''); setReceivedDate(d.receivedDate || new Date().toLocaleDateString('en-CA')); setLocationId(d.locationId ?? '')
     setChallan(d.challan ?? ''); setInvoice(d.invoice ?? ''); setRemarks(d.remarks ?? '')
-    setLines(d.lines?.length ? d.lines : [emptyLine()])
+    setLines(d.lines?.length ? d.lines.map((l: Partial<Line>) => ({ ...emptyLine(), ...l })) : [emptyLine()])
   })
 
   useEffect(() => {
@@ -82,8 +83,8 @@ export default function BeforePOReceiptForm({ onClose, onSaved }: { onClose: () 
     setError('')
     if (!vendorId) { setError('Pick the vendor the goods came from — Procurement makes the PO to this vendor.'); return }
     if (!receivedDate) { setError('Enter the date the goods were received.'); return }
-    if (!isAdmin && !lockedStore && !locationId) {
-      setError(ownStores.length ? 'Pick the store the goods are held in.'
+    if (!lockedStore && !locationId) {
+      setError(ownStores.length ? 'Pick the store the goods went into — the receipt puts them into that store\'s stock.'
         : 'No store is linked to you, so goods cannot be booked. Ask an admin to make you the manager of your store in Store › Settings › Stores.')
       return
     }
@@ -93,6 +94,7 @@ export default function BeforePOReceiptForm({ onClose, onSaved }: { onClose: () 
       const name = itemOf(l.itemId)?.item_name || 'A line'
       if (!l.itemId) { setError('Pick the Item Master item on every line, or remove the empty line.'); return }
       if (!(Number(l.quantity) > 0)) { setError(`${name}: enter the quantity received (above 0).`); return }
+      if (l.rate.trim() !== '' && !(Number.isFinite(Number(l.rate)) && Number(l.rate) > 0)) { setError(`${name}: the rate must be more than 0 — or leave it blank if you do not know it yet.`); return }
     }
     setBusy(true)
     try {
@@ -103,7 +105,7 @@ export default function BeforePOReceiptForm({ onClose, onSaved }: { onClose: () 
         delivery_challan_number: challan.trim() || undefined,
         vendor_invoice_number: invoice.trim() || undefined,
         remarks: remarks.trim() || undefined,
-        items: filled.map((l) => ({ store_item_id: Number(l.itemId), quantity: Number(l.quantity), remarks: l.remarks.trim() || undefined })),
+        items: filled.map((l) => ({ store_item_id: Number(l.itemId), quantity: Number(l.quantity), unit_rate: l.rate.trim() !== '' ? Number(l.rate) : undefined, remarks: l.remarks.trim() || undefined })),
       })
       // Files go up after the receipt exists; a failed upload doesn't undo the receipt.
       const notes: string[] = []
@@ -131,7 +133,7 @@ export default function BeforePOReceiptForm({ onClose, onSaved }: { onClose: () 
         <DraftBanner draft={draft} />
         <SheetError error={error} />
         <div role="note" style={{ padding: '10px 14px', marginBottom: 18, borderRadius: 10, background: 'rgba(234,88,12,0.08)', border: '1px solid rgba(234,88,12,0.25)', color: '#9a3412', fontSize: 13 }}>
-          Goods recorded here are held in store and are NOT in stock yet. Stock is added by the GRN once Procurement&apos;s PO is approved.
+          Goods go into stock as soon as this is saved — Free stock, or Quality stock for items that need a quality check. Rate is optional; the PO rate replaces it when the PO is received.
         </div>
 
         <SheetSection icon="building" title="Receipt">
@@ -146,12 +148,12 @@ export default function BeforePOReceiptForm({ onClose, onSaved }: { onClose: () 
               <DateField value={receivedDate} onChange={setReceivedDate} />
             </div>
             <div data-tour="store-bpo-location" style={{ flex: '0 1 220px', minWidth: 190 }}>
-              <label style={sheetLabel}>Store {isAdmin ? <Optional /> : <Req />}</label>
+              <label style={sheetLabel}>Store <Req /></label>
               {lockedStore ? (
                 <div title="Goods are booked into your own store" style={{ ...sheetInput, display: 'flex', alignItems: 'center', background: 'rgba(15,23,42,0.04)', color: SHEET.INK }}>{lockedStore.name}</div>
               ) : (
                 <Select style={sheetInput} value={locationId} onChange={(e) => setLocationId(e.target.value)}>
-                  <option value="">— where the goods are held —</option>
+                  <option value="">— store the goods go into —</option>
                   {ownStores.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
                 </Select>
               )}
@@ -227,6 +229,10 @@ export default function BeforePOReceiptForm({ onClose, onSaved }: { onClose: () 
                       <input type="number" min={0} step="any" style={sheetInput} value={line.quantity} onChange={(e) => setLine(idx, { quantity: e.target.value })} aria-label="Quantity received" />
                     </div>
                     <div style={{ flex: '0 0 44px', paddingBottom: 8, fontSize: 13, color: SHEET.MUTED }}>{it?.uom || ''}</div>
+                    <div data-tour={idx === 0 ? 'store-bpo-rate' : undefined} style={{ flex: '0 0 120px' }}>
+                      {idx === 0 && <label style={sheetLabel}>Rate (₹/unit) <Optional /></label>}
+                      <input type="number" min={0} step="any" style={sheetInput} value={line.rate} onChange={(e) => setLine(idx, { rate: e.target.value })} aria-label={`Rate per unit, line ${idx + 1}`} placeholder="If known" />
+                    </div>
                     <div style={{ flex: '1 1 140px', minWidth: 120 }}>
                       {idx === 0 && <label style={sheetLabel}>Remarks <Optional /></label>}
                       <input style={sheetInput} value={line.remarks} onChange={(e) => setLine(idx, { remarks: e.target.value })} aria-label="Line remarks" />
@@ -241,7 +247,7 @@ export default function BeforePOReceiptForm({ onClose, onSaved }: { onClose: () 
                 )
               })}
             </div>
-            <p style={sheetHint}>Pick the type, then the category, then the Item Master item, so Procurement&apos;s PO carries the same item. An item can be on one line only.</p>
+            <p style={sheetHint}>Pick the type, then the category, then the Item Master item, so Procurement&apos;s PO carries the same item. An item can be on one line only. Batch- or serial-controlled items cannot be booked here — record those with a GRN after the PO.</p>
           </SheetSection>
         </div>
       </div>

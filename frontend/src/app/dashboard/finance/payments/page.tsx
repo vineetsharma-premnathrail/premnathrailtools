@@ -31,7 +31,7 @@ import MessageDialog from '@/components/erp/MessageDialog'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import {
-  inputStyle, primaryBtnStyle, secondaryBtnStyle, linkBtnStyle, dangerLinkStyle, thStyle, tdStyle, numTd, numTh,
+  primaryBtnStyle, secondaryBtnStyle, linkBtnStyle, dangerLinkStyle, thStyle, tdStyle, numTd, numTh,
   inr, dmy, todayIso, fyStartIso, Field, ErrorBanner, InfoBanner, StatusPill, SubTabs, PageHeader, TableWrap, EmptyRow, ledgerOptions,
   RecordFacts,
 } from '@/components/finance/financeUi'
@@ -39,6 +39,7 @@ import { RowCount, DetailGroup, DetailRow } from '@/components/shared/ui'
 import { useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import Select from '@/components/shared/Select'
+import FilterMenu from '@/components/shared/FilterMenu'
 
 const TABS = ['All', 'Vendor Payments', 'Customer Receipts', 'Expense Payments', 'Other Receipts', 'Contra'] as const
 type Tab = typeof TABS[number]
@@ -860,15 +861,14 @@ function PaymentsPage() {
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 14 }}>
         <Field label="From" style={{ flex: '0 1 160px', minWidth: 150 }} tour="fin-pay-from"><DateField value={fromDate} onChange={setFromDate} /></Field>
         <Field label="To" style={{ flex: '0 1 160px', minWidth: 150 }} tour="fin-pay-to"><DateField value={toDate} onChange={setToDate} /></Field>
-        <Field label="Status" style={{ flex: '0 1 140px', minWidth: 130 }} tour="fin-pay-status">
-          <Select style={inputStyle} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-            <option value="">All</option>
-            <option value="posted">Posted</option>
-            <option value="pending_approval">Waiting approval</option>
-            <option value="rejected">Rejected</option>
-            <option value="cancelled">Cancelled</option>
-          </Select>
-        </Field>
+        <div style={{ marginBottom: 2 }}>
+          <FilterMenu
+            tourId="fin-pay-status"
+            fields={[{ key: 'status', label: 'Status', value: statusFilter, allLabel: 'All', options: [{ value: 'posted', label: 'Posted' }, { value: 'pending_approval', label: 'Waiting approval' }, { value: 'rejected', label: 'Rejected' }, { value: 'cancelled', label: 'Cancelled' }] }]}
+            onChange={(_k, v) => setStatusFilter(v)}
+            onClear={() => setStatusFilter('')}
+          />
+        </div>
       </div>
 
       <TableWrap minWidth={1350} tour="fin-pay-table">

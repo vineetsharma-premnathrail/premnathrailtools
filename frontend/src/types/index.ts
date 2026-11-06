@@ -4176,11 +4176,28 @@ export interface P2PReceivablePurchaseOrder {
   po_number: string
   vendor_name?: string
   p2p_number?: string
+  // The requisition behind the PO — shown on the receipt form.
+  pr_purpose?: string | null
+  pr_charged_to?: string | null
+  pr_requested_by?: string | null
+  pr_department?: string | null
+  pr_required_date?: string | null
+  pr_priority?: string | null
+  pr_project?: { code: string; name: string } | null
+  pr_line_projects?: string[]
+  pr_delivery_units?: string[]
+  pr_inhouse?: boolean
+  ship_to_location_id?: number | null
+  pre_po_store_location_id?: number | null
   status: string
   po_date?: string | null
   expected_delivery?: string | null
   items: ({ id: number; item_name: string; unit?: string; quantity: number; received_quantity: number; pending_quantity: number
-    store_item_id?: number | null; batch_controlled?: boolean; expiry_controlled?: boolean; serial_controlled?: boolean } & P2POrderProjectLineLink)[]
+    store_item_id?: number | null; batch_controlled?: boolean; expiry_controlled?: boolean; serial_controlled?: boolean
+    item_code?: string | null; make?: string | null; part_code?: string | null; specification?: string | null
+    delivery_date?: string | null; order_project_name?: string | null
+    // Already put into stock by a Before-PO receipt — the GRN settles it, no second posting.
+    pre_po_receipt_number?: string | null; pre_po_unsettled_qty?: number } & P2POrderProjectLineLink)[]
 }
 
 // ---- Quality ----
@@ -4332,7 +4349,7 @@ export interface QualityInspectionLot {
   lot_number: string
   inspection_type: QualityInspectionType
   status: QualityLotStatus
-  source_type: 'grn' | 'work_order' | 'ncr' | 'manual' | 'work_order_operation' | 'material_return'
+  source_type: 'grn' | 'work_order' | 'ncr' | 'manual' | 'work_order_operation' | 'material_return' | 'pre_po_receipt'
   source_reference?: string | null
   ncr_id?: number | null
   // Sales › Order Projects link (the vehicle / lot this lot inspects).
@@ -4967,6 +4984,7 @@ export interface QualityDocument {
 
 export interface QualityDashboardKpis {
   lots_waiting: number
+  lots_in_inspection: number
   lots_overdue: number
   lot_waiting_days: number
   open_ncrs: number

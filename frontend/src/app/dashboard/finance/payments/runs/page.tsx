@@ -24,9 +24,10 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
 import Select from '@/components/shared/Select'
+import FilterMenu from '@/components/shared/FilterMenu'
 import {
   inputStyle, primaryBtnStyle, secondaryBtnStyle, linkBtnStyle, dangerLinkStyle, thStyle, tdStyle, numTd, numTh,
-  inr, dmy, todayIso, Field, ErrorBanner, StatusPill, PageHeader, TableWrap, EmptyRow,
+  inr, dmy, todayIso, ErrorBanner, StatusPill, PageHeader, TableWrap, EmptyRow,
 } from '@/components/finance/financeUi'
 import { RowCount } from '@/components/shared/ui'
 
@@ -218,12 +219,11 @@ export default function PaymentRunsPage() {
       )}
 
       <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
-        <Field label="Status" style={{ flex: '0 1 200px', minWidth: 180 }}>
-          <Select style={inputStyle} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-            <option value="">All</option>
-            {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </Select>
-        </Field>
+        <FilterMenu
+          fields={[{ key: 'status', label: 'Status', value: statusFilter, allLabel: 'All', options: Object.entries(STATUS_LABELS).map(([k, v]) => ({ value: k, label: v })) }]}
+          onChange={(_k, v) => setStatusFilter(v)}
+          onClear={() => setStatusFilter('')}
+        />
       </div>
 
       <TableWrap minWidth={1100}>

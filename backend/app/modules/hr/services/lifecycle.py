@@ -34,7 +34,8 @@ from app.modules.main.models.user import User
 from app.modules.organization.models.branch import Branch
 from app.modules.organization.models.department import Department
 from app.modules.organization.services.department_heads import is_same_unit
-from app.modules.p2p.models.p2p_request import P2PRequest, P2P_CATEGORY_AUTO_BUYERS
+from app.modules.p2p.models.p2p_request import P2PRequest
+from app.modules.p2p.buyer_responsibility import buyer_duties
 from app.modules.p2p.models.p2p_request_item import P2PRequestItem
 from app.modules.p2p.models.rfq import RFQ
 from app.utils.notifications import broadcast_notification, notify_user
@@ -418,12 +419,14 @@ def compute_impact(db: Session, event: HrLifecycleEvent) -> dict[str, Any]:
             "the buyer and approvers carry on; ask the department to take them over."
         )
 
-    auto_buyer = sorted(code for code, email in P2P_CATEGORY_AUTO_BUYERS.items() if user and email.lower() == (user.email or "").lower())
-    if auto_buyer:
+    duties = buyer_duties(db, uid) if user else {"categories": [], "item_types": [], "default": False}
+    owns = [*[f"the {c} category" for c in duties["categories"]], *[f"{t} items" for t in duties["item_types"]],
+            *(["the default buyer"] if duties["default"] else [])]
+    if owns:
         warnings.append(
-            f"This person is the hard-coded auto-assigned buyer for P2P categories {', '.join(auto_buyer)} "
-            "(P2P_CATEGORY_AUTO_BUYERS in app/modules/p2p/models/p2p_request.py). New PRs in those categories will keep "
-            "auto-assigning to them until that mapping is changed and redeployed."
+            f"{user.name or user.email} is the buyer of {', '.join(owns)} — pick another buyer in Procurement › Settings › "
+            "Buyer responsibility (categories) and Buyer for each item type (item types, default buyer) before they leave. "
+            "Until then new requisition lines for these go to the next buyer in line or to nobody."
         )
 
     needs_handover = bool(reportees or depts or hr_approvals or workflow_approvals or p2p or buyer_rows or other_items or templates)
@@ -467,7 +470,7 @@ def compute_impact(db: Session, event: HrLifecycleEvent) -> dict[str, Any]:
         "templates_owned": [{"id": t.id, "title": t.title, "event_type": t.event_type} for t in templates],
         "own_open_requests": own,
         "own_open_p2p_requests": [{"id": pr.id, "p2p_number": pr.p2p_number, "status": pr.status} for pr in own_p2p],
-        "auto_buyer_categories": auto_buyer,
+        "auto_buyer_categories": duties["categories"],  # name kept for the frontend type; now the Item Master categories this person buys
         "apps": apps,
         "permission_grants_count": permission_grants_count,
         "is_admin": bool(user and user.role == "admin"),

@@ -196,8 +196,11 @@ def money(v) -> str:
         return ""
 
 
-def _context_value(db: Session, meta: dict, value) -> str:
+def _context_value(db: Session, meta: dict, value, tt=None, name: str | None = None) -> str:
     kind = meta.get("type")
+    if kind == "choice" and tt is not None and name:
+        from app.modules.organization.services import approval_engine as engine
+        return engine.choice_label(db, tt, name, value)
     if kind == "bool":
         return "Yes" if value else "No"
     if kind == "user":
@@ -231,7 +234,7 @@ def summary(db: Session, req: ApprovalRequest, step: ApprovalRequestStep, reader
         value = ctx.get(name)
         if name == "amount" or value is None or value == "" or value == []:
             continue
-        shown = _context_value(db, meta, value)
+        shown = _context_value(db, meta, value, tt, name)
         if shown:
             fields.append((meta.get("label") or name, shown))
     fields = [(k, v) for k, v in fields if v]

@@ -417,3 +417,21 @@ def test_subject_cannot_edit_cancel_or_trim_own_event(client, db, masters):
     assert r.status_code == 403
     r = client.post(f"{LC}/events/{ev['id']}/cancel", json={"reason": "raised by mistake"}, headers=hdr(m["hr"]))
     assert r.status_code == 200, r.text
+
+
+def test_exit_impact_warns_when_leaver_is_a_buyer(client, db, leaver_world):
+    from app.modules.main.models.module_setting import ModuleSetting
+    from app.modules.store.models.category import StoreItemCategory
+
+    w = leaver_world
+    cat = StoreItemCategory(name="Electrical", code="ELE", item_type="material", is_active=True)
+    db.add(cat)
+    db.commit()
+    db.add(ModuleSetting(module_key="p2p", key="buyer_responsibility", value={str(cat.id): w["leaver"].id}))
+    db.add(ModuleSetting(module_key="p2p", key="default_buyer", value=w["leaver"].id))
+    db.commit()
+    ev = raise_exit(client, w)
+    impact = client.get(f"{LC}/events/{ev['id']}/exit-impact", headers=hdr(w["hr"])).json()
+    assert impact["auto_buyer_categories"] == ["Electrical"]
+    warn = next(x for x in impact["warnings"] if "buyer of" in x)
+    assert "the Electrical category" in warn and "the default buyer" in warn and "Buyer responsibility" in warn

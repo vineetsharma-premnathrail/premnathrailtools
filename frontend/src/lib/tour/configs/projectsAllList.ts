@@ -24,15 +24,11 @@ const config: TourConfig = {
       validExample: 'PEW-39  or  IRCON',
     },
     {
-      target: 'pm-all-status-filter',
-      title: 'Status filter',
-      purpose: 'Shows only projects with one workflow status (On hold, Cancelled, Closed ...); past machines have no status and are hidden while it is set. The Stage column shows where the work stands (Planned → ... → Closed / Delivered).',
-      options: [{ value: 'All statuses', meaning: 'No filter.' }, ...PROJECT_STATUS_OPTIONS],
-    },
-    {
-      target: 'pm-all-stage-filter',
-      title: 'Stage filter',
-      purpose: 'Shows only projects at one lifecycle stage: Planned, Design, Manufacturing, Assembly, Testing, Ready for Dispatch, Dispatched, Commissioning, Handover or Closed / Delivered.',
+      target: 'pm-all-filter-btn',
+      title: 'Filter',
+      purpose: 'Opens the Filter menu with Status and Stage. Status shows only projects with one workflow status (On hold, Cancelled, Closed ...); past machines have no status and are hidden while it is set. Stage shows only projects at one lifecycle stage: Planned, Design, Manufacturing, Assembly, Testing, Ready for Dispatch, Dispatched, Commissioning, Handover or Closed / Delivered. The number on the button shows how many filters are on.',
+      options: [{ value: 'All statuses', meaning: 'No status filter.' }, ...PROJECT_STATUS_OPTIONS],
+      after: 'The list updates as soon as you pick a value; Clear filters resets both.',
     },
     {
       target: 'pm-all-table',

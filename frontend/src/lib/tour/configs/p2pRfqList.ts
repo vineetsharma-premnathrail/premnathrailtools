@@ -16,8 +16,8 @@ const config: TourConfig = {
     },
     {
       target: 'rfq-filter-btn',
-      title: 'Filters',
-      purpose: 'Opens the Filters popup. Choose, then press Apply Filters; the button shows how many filters are on and a Clear button appears next to it.',
+      title: 'Filter',
+      purpose: 'Opens the Filter panel. Choices apply at once; the button shows how many filters are on and a Clear button appears next to it.',
       options: [
         { value: 'RFQ status', meaning: 'RFQ pending (requisition waiting for its RFQ), Draft, or Closed - vendor chosen.' },
         { value: 'Vendors', meaning: 'Requests sent: one vendor only, or several vendors.' },

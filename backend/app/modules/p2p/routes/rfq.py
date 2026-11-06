@@ -1160,8 +1160,15 @@ async def upload_po(
 
         # Goods the store took before this PO existed (Before PO): the receipt now has its PO.
         from app.modules.store.models.pre_po_receipt import StorePrePoReceipt
+        # Locked and re-read, so a Store cancel at the same moment can't slip between the check and the link.
         receipt = (db.query(StorePrePoReceipt)
-                   .filter(StorePrePoReceipt.p2p_request_id == pr.id, StorePrePoReceipt.status == "pending_po").first())
+                   .filter(StorePrePoReceipt.p2p_request_id == pr.id, StorePrePoReceipt.status.in_(("pending_po", "cancelled")))
+                   .with_for_update().populate_existing().first())
+        if receipt is not None and receipt.status == "cancelled":
+            raise HTTPException(status_code=409, detail=(
+                f"Before-PO receipt {receipt.receipt_number} was cancelled by Store while this PO was being uploaded - its goods went "
+                "back out of stock, so there is nothing to order on it. Nothing was saved; check with Store, and record a new "
+                "Before-PO receipt if the goods did arrive."))
         if receipt is not None:
             receipt.status = "po_created"
             receipt.purchase_order_id = po.id

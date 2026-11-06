@@ -77,7 +77,7 @@ export const sampleGrns: P2PGoodsReceipt[] = [
 
 /** Approved POs awaiting delivery (GRN list "Upcoming" tab) and the one the GRN form preview receives against. */
 export const sampleReceivablePos: P2PReceivablePurchaseOrder[] = [
-  { id: -1, po_number: 'PO-2026-0008', vendor_name: 'Sample Steels', p2p_number: 'P2P-2026-0001', status: 'issued', po_date: '2026-10-25', expected_delivery: '2026-11-10',
+  { id: -1, po_number: 'PO-2026-0008', vendor_name: 'Sample Steels', p2p_number: 'P2P-2026-0001', pr_requested_by: 'Sample Engineer', pr_department: 'Production', pr_purpose: 'Project', pr_charged_to: 'PEW-78', pr_required_date: '2026-11-08', status: 'issued', po_date: '2026-10-25', expected_delivery: '2026-11-10',
     items: [
       { id: -21, item_name: 'Mild steel rod 12 mm', unit: 'KG', quantity: 500, received_quantity: 0, pending_quantity: 500, store_item_id: -1, batch_controlled: true },
       { id: -22, item_name: 'Hydraulic hose 1/2 in', unit: 'MTR', quantity: 50, received_quantity: 20, pending_quantity: 30, store_item_id: -2 },

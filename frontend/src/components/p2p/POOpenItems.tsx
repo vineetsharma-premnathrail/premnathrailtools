@@ -10,12 +10,12 @@ import { poReportsApi } from '@/lib/api'
 import { useCan } from '@/lib/permissions'
 import { TEXT, BORDER } from '@/lib/theme'
 import { inputStyle, RowCount, secondaryBtnStyle, segmentBtnStyle, Pill, pillStyle, StatChip } from '@/components/shared/ui'
-import Checkbox from '@/components/Checkbox'
-import { FiltersButton, FiltersSheet, PO_CARD, PO_TD, PO_TH, clip, clip2 } from '@/components/p2p/POTrackingShared'
+import FilterMenu from '@/components/shared/FilterMenu'
+import { PO_CARD, PO_TD, PO_TH, clip, clip2 } from '@/components/p2p/POTrackingShared'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
-import { FormSheet, SHEET, sheetBtn, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
+import { FormSheet, SHEET, sheetBtn } from '@/components/shared/FormSheet'
 
 type Row = {
   po_id: number; po_number: string; po_date: string; po_status: string; p2p_number?: string | null; vendor_name?: string | null
@@ -112,8 +112,6 @@ export default function POOpenItems({ lead }: { lead?: React.ReactNode }) {
   const [overdueOnly, setOverdueOnly] = useState(false)
   const [allLines, setAllLines] = useState(false)
   const [historyFor, setHistoryFor] = useState<number | null>(null)
-  const [showFilters, setShowFilters] = useState(false)
-  const [draft, setDraft] = useState({ vendor: '', overdue: false, all: false })
 
   const params = () => ({ vendor_name: vendor.trim() || undefined, po_number: poNumber.trim() || undefined, overdue_only: overdueOnly, open_only: !allLines })
 
@@ -150,9 +148,7 @@ export default function POOpenItems({ lead }: { lead?: React.ReactNode }) {
 
   const summary = group === 'vendor' ? byVendor : byItem
   const activeFilterCount = (vendor.trim() ? 1 : 0) + (overdueOnly ? 1 : 0) + (allLines ? 1 : 0)
-  const openFilters = () => { setDraft({ vendor, overdue: overdueOnly, all: allLines }); setShowFilters(true) }
-  const applyFilters = () => { setVendor(draft.vendor); setOverdueOnly(draft.overdue); setAllLines(draft.all); setShowFilters(false) }
-  const clearFilters = () => { setVendor(''); setOverdueOnly(false); setAllLines(false); setShowFilters(false) }
+  const clearFilters = () => { setVendor(''); setOverdueOnly(false); setAllLines(false) }
   return (
     <div>
       <MessageDialog open={!!error} variant="error" title="Open PO Items" message={error} onClose={() => setError('')} />
@@ -173,28 +169,25 @@ export default function POOpenItems({ lead }: { lead?: React.ReactNode }) {
         {lead}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           <input style={{ ...inputStyle, width: 280, maxWidth: '100%' }} placeholder="PO number..." aria-label="Search by PO number" data-tour="po-open-search" value={poNumber} onChange={(e) => setPoNumber(e.target.value)} />
-          <FiltersButton count={activeFilterCount} onOpen={openFilters} tour="po-open-filter-btn" />
+          <FilterMenu
+            tourId="po-open-filter-btn"
+            fields={[
+              { key: 'delivery', label: 'Delivery', value: overdueOnly ? 'overdue' : '', allLabel: 'Any delivery date', options: [{ value: 'overdue', label: 'Overdue only' }] },
+              { key: 'lines', label: 'Lines', value: allLines ? 'all' : '', allLabel: 'Open lines only', options: [{ value: 'all', label: 'Include fully delivered lines' }] },
+            ]}
+            onChange={(key, v) => { if (key === 'delivery') setOverdueOnly(v === 'overdue'); else setAllLines(v === 'all') }}
+            onClear={clearFilters}
+            extraActive={vendor.trim() ? 1 : 0}
+          >
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, fontWeight: 600, color: '#57534e' }}>
+              Vendor
+              <input style={inputStyle} placeholder="Vendor name" aria-label="Vendor" value={vendor} onChange={(e) => setVendor(e.target.value)} data-tour="po-open-vendor-filter" />
+            </label>
+          </FilterMenu>
           {activeFilterCount > 0 && <button type="button" onClick={clearFilters} style={secondaryBtnStyle} data-tour="po-open-clear-btn">Clear</button>}
           {can('p2p', 'purchase_orders', 'export') && seePrices && <button type="button" onClick={exportExcel} style={secondaryBtnStyle} data-tour="po-open-export-btn">Export</button>}
         </div>
       </div>
-      {showFilters && (
-        <FiltersSheet subtitle="Narrow the open PO lines, then press Apply." tour="po-open-filter-sheet" applyTour="po-open-apply-btn" onClose={() => setShowFilters(false)} onClear={clearFilters} onApply={applyFilters}>
-          <div>
-            <label style={sheetLabel}>Vendor</label>
-            <input style={sheetInput} placeholder="Vendor name" value={draft.vendor} onChange={(e) => setDraft((d) => ({ ...d, vendor: e.target.value }))} data-tour="po-open-vendor-filter" />
-          </div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: '#57534e', cursor: 'pointer' }}>
-            <Checkbox checked={draft.overdue} onChange={(e) => setDraft((d) => ({ ...d, overdue: e.target.checked }))} />
-            Overdue only
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: '#57534e', cursor: 'pointer' }}>
-            <Checkbox checked={draft.all} onChange={(e) => setDraft((d) => ({ ...d, all: e.target.checked }))} />
-            Include fully delivered lines
-          </label>
-        </FiltersSheet>
-      )}
-
       <div style={wrap}>
         {group === 'po' ? (
           <table data-tour="po-open-table" style={{ width: '100%', borderCollapse: 'collapse' }}>

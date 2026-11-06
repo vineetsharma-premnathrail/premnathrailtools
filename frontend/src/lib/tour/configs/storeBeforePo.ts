@@ -8,18 +8,18 @@ const config: TourConfig = {
       target: 'store-sub-before-po',
       title: 'Inward › Before PO',
       purpose: 'Where the store records material that arrived before its purchase order was made. Procurement then sees it, makes a requisition for the same vendor and items and uploads the Tally PO on it.',
-      why: 'The goods are real and must be on record, but they enter stock only through the GRN against an approved PO, so value and the invoice match stay correct.',
+      why: 'The goods are real and in the store, so they are in stock the moment the receipt is saved and can be issued. The GRN against the approved PO later settles the receipt without adding the stock again.',
     },
     {
       target: 'store-bpo-banner',
-      title: 'Held, not in stock',
-      purpose: 'Goods recorded here are held in store and are NOT in stock yet. Stock is added by the GRN once Procurement\'s PO is approved.',
+      title: 'In stock as soon as saved',
+      purpose: 'Goods go into stock as soon as a receipt is saved — Free stock, or Quality stock for items that need a quality check. The GRN against Procurement\'s PO later settles the receipt; stock is not added a second time.',
     },
     {
       target: 'store-bpo-new-btn',
       title: '+ Before PO receipt',
-      purpose: 'Opens the form: vendor from the vendor master, received date, your own store (set for you), challan and invoice numbers, and the items with quantities — each line picks the type, then the category, then the Item Master item.',
-      after: 'The receipt shows as "PO pending" and appears in Procurement › Purchase Orders › Before PO.',
+      purpose: 'Opens the form: vendor from the vendor master, received date, the store the goods went into (your own store is set for you), challan and invoice numbers, and the items with quantities and an optional rate — each line picks the type, then the category, then the Item Master item.',
+      after: 'The goods are in stock. The receipt shows as "PO pending" with an "In stock" tag and appears in Procurement › Purchase Orders › Before PO.',
     },
     {
       target: 'store-bpo-stats',
@@ -29,7 +29,7 @@ const config: TourConfig = {
     {
       target: 'store-bpo-table',
       title: 'Receipts',
-      purpose: 'Sorted by receipt number. Click a row to see its items, the linked PR and PO numbers, and to cancel it (with a reason) while the PO is still pending.',
+      purpose: 'Sorted by receipt number. Click a row to see its items — rate, where the stock went (Free stock or the Quality lot) and how much a GRN has settled — the linked PR and PO numbers, and to cancel it (with a reason) while the PO is still pending. Cancelling takes the stock back out, and is refused if any of it was already issued.',
     },
   ],
 }

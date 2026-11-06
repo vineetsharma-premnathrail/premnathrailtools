@@ -11,6 +11,15 @@ from app.modules.quality.models.masters import QualitySetting, QualityMasterValu
 
 # key -> spec. type: int | float | str | choice. group = section on the page.
 QUALITY_SETTING_SPECS: dict[str, dict] = {
+    # Inspection rules (what the Quality module enforces / raises automatically)
+    "first_article_on_new_vendor": {"group": "rules", "label": "First article before accepting a new item / vendor / drawing revision", "type": "choice",
+                                    "default": "off", "choices": [["off", "Off"], ["on", "On"]],
+                                    "help": "On: the first receipt of an item from a vendor (or a new drawing revision) opens a first article inspection, and later lots of it "
+                                            "can't be accepted until that first article is approved. Off: every receipt is a normal incoming lot."},
+    "ncr_auto_raise": {"group": "rules", "label": "Raise a non-conformance report (NCR) when a lot is rejected or accepted with deviation", "type": "choice",
+                       "default": "off", "choices": [["off", "Off"], ["on", "On"]],
+                       "help": "On: every rejected quantity (and a deviation acceptance) gets an NCR and the rejected stock is held under it. "
+                               "Off: rejected quantity is moved to Blocked stock and the decision is the record."},
     # Numbering
     "lot_number_prefix": {"group": "numbering", "label": "Inspection lot number prefix", "type": "str", "default": "IL",
                           "help": "Lots are numbered <prefix>-<year>-<0001>."},
@@ -84,7 +93,7 @@ QUALITY_SETTING_SPECS: dict[str, dict] = {
 }
 
 QUALITY_SETTING_GROUPS = {
-    "numbering": "Numbering", "thresholds": "Thresholds", "kpi": "KPI targets", "sampling": "Sampling defaults",
+    "rules": "Inspection rules", "numbering": "Numbering", "thresholds": "Thresholds", "kpi": "KPI targets", "sampling": "Sampling defaults",
 }
 
 # Seed values for the simple master lists (inserted by the migration and
@@ -146,6 +155,11 @@ def get_setting(db: Session, key: str):
     if row is not None and row.value is not None:
         return row.value
     return QUALITY_SETTING_SPECS[key]["default"]
+
+
+def setting_on(db: Session, key: str) -> bool:
+    """An on / off Quality setting (stored as the choice 'on' or 'off')."""
+    return str(get_setting(db, key)).lower() == "on"
 
 
 def get_all_settings(db: Session) -> dict:

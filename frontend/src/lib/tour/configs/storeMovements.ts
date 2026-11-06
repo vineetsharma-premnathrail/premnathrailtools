@@ -22,13 +22,14 @@ const config: TourConfig = {
     },
     {
       target: 'movements-store-filter',
-      title: 'Store filter',
-      purpose: 'Shows only postings at one store. "All stores" shows every store.',
-    },
-    {
-      target: 'movements-category-filter',
-      title: 'Category filter',
-      purpose: 'Shows only items of one category (e.g. Raw Material, Consumables).',
+      title: 'Filter',
+      purpose: 'One Filter button holds the dropdown filters: Store, Category, Movement type and User. The orange number on the button shows how many are on.',
+      options: [
+        { value: 'Store', meaning: 'Shows only postings at one store. "All stores" shows every store.' },
+        { value: 'Category', meaning: 'Shows only items of one category (e.g. Raw Material, Consumables).' },
+        { value: 'Movement type', meaning: 'Shows only one kind of posting, e.g. a GRN receipt or an issue.' },
+        { value: 'User', meaning: 'Shows only postings made by one person.' },
+      ],
     },
     {
       target: 'movements-date-from',

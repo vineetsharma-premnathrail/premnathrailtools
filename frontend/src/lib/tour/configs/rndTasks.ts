@@ -63,8 +63,14 @@ const config: TourConfig = {
     },
     {
       target: 'rnd-tasks-filter-btn',
-      title: 'Filters',
-      purpose: 'Project (Prototype, All Projects) / requirement, assigned user, department (the assignee\'s department in Organization), type, status, priority, due-date range and completion progress (0, 1–49, 50–99, 100%). Tiles, the table and the grouped views all use the same filters; Clear resets them.',
+      title: 'Filter',
+      purpose: 'Opens the Filter menu: Project (Prototype, All Projects) / requirement, assigned user, department (the assignee\'s department in Organization), type, status, priority and completion progress (0, 1–49, 50–99, 100%). It applies as soon as you pick a value; the number on the button shows how many filters are on. Tiles, the table and the grouped views all use the same filters; Clear resets them.',
+    },
+    {
+      target: 'rnd-tasks-due-range',
+      title: 'Due date range',
+      purpose: 'Due from / Due to: shows only tasks due inside this range. Leave both empty for every due date.',
+      validExample: '01-11-2026 to 30-11-2026',
     },
     {
       target: 'rnd-tasks-views',

@@ -9,7 +9,8 @@ import app.modules.p2p.access  # noqa: F401 — registers the data scopes (GRN: 
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
-from app.modules.p2p.models.p2p_request import P2PRequest, P2P_ROLE_LABELS
+from app.modules.p2p.models.p2p_request import P2PRequest, P2P_PURPOSES, P2P_ROLE_LABELS
+from app.modules.p2p.models.p2p_request_item import P2PRequestItem
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder, P2PPurchaseOrderItem
 from app.modules.p2p.models.goods_receipt import P2PGoodsReceipt, P2PGoodsReceiptItem, P2P_GRN_QUALITY_STATUSES
 from app.modules.p2p.schemas.goods_receipt import (
@@ -20,11 +21,15 @@ from app.modules.p2p.schemas.goods_receipt import (
 )
 from app.modules.p2p.service import generate_grn_number
 from app.modules.store.models.item import StoreItem
+from app.modules.projects.models.project import PmProject
 from app.modules.store.models.location import StoreLocation
 from app.modules.store.services.plant_access import ensure_location_allowed, filter_by_location, visible_location_ids
 from app.modules.store.services.stock_ledger import post_stock_transaction
 from app.modules.store.services.posting_period import stock_posting_block_reason
-from app.modules.p2p.grn_posting import post_quality_inspection, receive_into_free, reverse_quality_line
+from app.modules.p2p.grn_posting import (
+    post_quality_inspection, receive_into_free, release_settlement, reverse_quality_line, settle_fully_received, settle_line,
+)
+from app.modules.p2p.pre_po import grn_settlement_plan, receipt_for_po, receipts_for_pos, unsettled_for_receipt
 from app.modules.store.services.valuation import ledger_sort_key
 from app.utils.notifications import notify_user
 from app.modules.quality.services.lots import needs_inspection_on_receipt, create_lot_for_grn_line, LotError
@@ -257,9 +262,25 @@ def _to_response(db: Session, grn: P2PGoodsReceipt) -> P2PGoodsReceiptResponse:
     from app.modules.store.models.bin import StoreBin
     bin_ids = {it.bin_id for it in resp.items} - {None}
     bin_codes = {b.id: b.code for b in db.query(StoreBin).filter(StoreBin.id.in_(bin_ids)).all()} if bin_ids else {}
+    # Quality status per line (read-only for Store): one query for every lot of this GRN's lines.
+    from app.modules.quality.models.inspection_lot import QualityInspectionLot
+    lots_by_line: dict[int, list] = {}
+    for lot in db.query(QualityInspectionLot).filter(
+        QualityInspectionLot.grn_item_id.in_([i.id for i in resp.items] or [-1]),
+        QualityInspectionLot.status != "cancelled",
+    ).order_by(QualityInspectionLot.lot_number.asc()).all():
+        lots_by_line.setdefault(lot.grn_item_id, []).append(lot)
     for it in resp.items:
         it.batches = batches.get(it.id, [])
         it.bin_code = bin_codes.get(it.bin_id)
+        line_lots = lots_by_line.get(it.id, [])
+        if line_lots:
+            it.quality_lots = [{"id": l.id, "lot_number": l.lot_number, "status": l.status, "decision": l.decision,
+                                "quantity": l.quantity} for l in line_lots]
+            it.quality_lot_number = ", ".join(l.lot_number for l in line_lots)
+            # An open lot wins: Store should read "in quality check" while any heat is still waiting.
+            lead = next((l for l in line_lots if l.status in ("created", "in_inspection", "results_recorded")), line_lots[0])
+            it.quality_lot_id, it.quality_lot_status, it.quality_lot_decision = lead.id, lead.status, lead.decision
     return resp
 
 
@@ -379,26 +400,87 @@ async def list_goods_receipts(
 @router.get("/pending-purchase-orders")
 async def list_pending_purchase_orders(
     db: Session = Depends(get_db),
-    _user: User = Depends(_grn_tab("view")),
+    user: User = Depends(_grn_tab("view")),
 ):
     """POs that still have quantity outstanding to receive — feeds the
-    "start a new GRN" picker on the frontend."""
-    pos = db.query(P2PPurchaseOrder).options(selectinload(P2PPurchaseOrder.items)).filter(
+    "start a new GRN" picker on the frontend. Store-only users see only POs for their plant's stores
+    (the PO's ship-to store, on the header or any line, or the store a Before-PO receipt holds its goods in)."""
+    pos = db.query(P2PPurchaseOrder).options(selectinload(P2PPurchaseOrder.items).selectinload(P2PPurchaseOrderItem.store_item)).filter(
         P2PPurchaseOrder.status.in_(_RECEIVABLE_PO_STATUSES)
     ).order_by(P2PPurchaseOrder.po_date.desc()).all()
+    # One query each instead of one per PO: requisitions, their requesters, Before-PO receipts (+ lots), projects.
+    po_ids = [po.id for po in pos]
+    prs = {p.id: p for p in db.query(P2PRequest).filter(P2PRequest.id.in_({po.p2p_request_id for po in pos if po.p2p_request_id} or {-1})).all()}
+    requesters = {u.id: u for u in db.query(User).filter(User.id.in_({p.requested_by_id for p in prs.values() if p.requested_by_id} or {-1})).all()}
+    # PR lines: the plant unit each line is delivered to, and the project (if any) each line is bought for.
+    pr_lines: dict[int, list[P2PRequestItem]] = {}
+    for li in db.query(P2PRequestItem).filter(P2PRequestItem.p2p_request_id.in_(set(prs) or {-1})).all():
+        pr_lines.setdefault(li.p2p_request_id, []).append(li)
+    receipts = receipts_for_pos(db, po_ids)
+    scope = _grn_store_scope(db, user)
+    projects: dict[int, dict | None] = {
+        p.id: {"code": p.project_code, "name": p.name}
+        for p in db.query(PmProject).filter(PmProject.id.in_(
+            {p.order_project_id for p in prs.values() if p.order_project_id}
+            | {i.order_project_id for po in pos for i in po.items if i.order_project_id} or {-1})).all()}
+
+    def _project(pid: int | None) -> dict | None:
+        if not pid:
+            return None
+        if pid not in projects:
+            p = db.get(PmProject, pid)
+            projects[pid] = {"code": p.project_code, "name": p.name} if p is not None else None
+        return projects[pid]
+
     result = []
     for po in pos:
         if _po_approval_block_reason(db, po):
             continue
         if all(i.category == "service" for i in po.items):
             continue  # a services-only PO has nothing to receive on a GRN
-        pr = db.query(P2PRequest).filter(P2PRequest.id == po.p2p_request_id).first()
+        bpo = receipts.get(po.id)
+        ship_to = po.ship_to_location_id or next((i.ship_to_location_id for i in po.items if i.ship_to_location_id), None)
+        if scope is not None:
+            stores = {po.ship_to_location_id, *(i.ship_to_location_id for i in po.items), bpo.store_location_id if bpo else None} - {None}
+            if not stores & scope:
+                continue  # another plant's PO: Store → Plant Access applies to store-only users
+        pr = prs.get(po.p2p_request_id) if po.p2p_request_id else None
         received = _received_by_po_item(db, po.id)
+        requester = requesters.get(pr.requested_by_id) if pr and pr.requested_by_id else None
+        pr_project = _project(pr.order_project_id) if pr else None
+        lines = pr_lines.get(pr.id, []) if pr else []
+        # No project on the PR header: the projects its lines are bought for (one PR may serve several).
+        line_projects = [] if pr_project else [
+            p for p in dict.fromkeys(_project(li.order_project_id)["code"] for li in lines
+                                     if li.order_project_id and _project(li.order_project_id)) if p]
+        ship_units = list(dict.fromkeys(li.ship_to.strip() for li in lines if li.ship_to and li.ship_to.strip()))
+        # Goods a Before-PO receipt already put into stock: receiving them here settles them (no second posting).
+        pre_po_number, pre_po_left = unsettled_for_receipt(db, po, bpo)
         result.append({
             "id": po.id,
             "po_number": po.po_number,
             "vendor_name": po.vendor_name,
             "p2p_number": pr.p2p_number if pr else None,
+            # Who asked for these goods and what for — the store keeper sees it
+            # while receiving, so the material goes to the right person / project.
+            "pr_purpose": P2P_PURPOSES.get(pr.purpose or "") if pr else None,
+            "pr_charged_to": pr.project_label if pr else None,
+            "pr_requested_by": (requester.name or requester.email) if requester else None,
+            "pr_department": pr.department if pr else None,
+            "pr_required_date": pr.required_date if pr else None,
+            "pr_priority": pr.priority if pr else None,
+            "pr_project": pr_project,
+            "pr_line_projects": line_projects,
+            # Plant unit(s) the requester asked the goods to be delivered to.
+            "pr_delivery_units": ship_units,
+            # Every line marked Inhouse and no project anywhere: bought for the company itself.
+            "pr_inhouse": bool(lines) and not pr_project and not line_projects
+                and all((li.project_inhouse or "").lower() == "inhouse" for li in lines),
+            # Store the PO asks the goods to be delivered to — pre-fills the receiving store.
+            "ship_to_location_id": ship_to,
+            # The store the Before-PO receipt holds its goods in, while some of them are still to be settled: the GRN
+            # must be received into it, so the form pre-fills it.
+            "pre_po_store_location_id": bpo.store_location_id if bpo is not None and pre_po_left else None,
             "status": po.status,
             "po_date": po.po_date,
             "expected_delivery": po.expected_delivery,
@@ -414,13 +496,54 @@ async def list_pending_purchase_orders(
                  "serial_controlled": bool(i.store_item is not None and i.store_item.serial_controlled),
                  # Order Project vehicle / lot the line is bought for (Store tags the stock with it).
                  "order_project_id": i.order_project_id, "order_project_element_id": i.order_project_element_id,
-                 "order_project_number": i.order_project_number, "order_project_element_no": i.order_project_element_no,
-                 "order_project_element_label": i.order_project_element_label}
+                 # A project without units (one project = one machine) has no element —
+                 # fall back to the project itself so the line still shows what it is for.
+                 "order_project_number": i.order_project_number or (_project(i.order_project_id) or {}).get("code"),
+                 "order_project_name": (_project(i.order_project_id) or {}).get("name"),
+                 "order_project_element_no": i.order_project_element_no,
+                 "order_project_element_label": i.order_project_element_label,
+                 "item_code": i.store_item.item_code if i.store_item is not None else None,
+                 "make": i.make, "part_code": i.part_code, "specification": i.specification,
+                 "pre_po_receipt_number": pre_po_number if pre_po_left.get(i.id) else None,
+                 "pre_po_unsettled_qty": pre_po_left.get(i.id, 0.0),
+                 "delivery_date": i.delivery_date}
                 # Service lines are confirmed on a service entry, never on a GRN.
                 for i in po.items if i.category != "service"
             ],
         })
     return result
+
+
+@router.get("/print-inward-register")
+async def print_gate_inward_register(
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    location_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(_grn_tab("print")),
+):
+    """F/STR/02 Gate Inward Register (owner's ISO format) as Excel: one row per
+    GRN line and Before-PO receipt line received in the date range
+    (store/services/iso_registers.py). Before-PO lines need the Before PO tab."""
+    from fastapi.responses import Response
+    from app.core.permission_registry import can_feature
+    from app.modules.store.services.iso_registers import (
+        XLSX_MEDIA_TYPE, RegisterError, build_inward_register, stream_name,
+    )
+    if location_id is not None:
+        if not db.get(StoreLocation, location_id):
+            raise HTTPException(status_code=404, detail="Store not found — it may have been removed. Reload the page and pick the store again.")
+        ensure_location_allowed(db, user, location_id, _grn_store_scope(db, user))
+        stores = {location_id}
+    else:
+        stores = _grn_store_scope(db, user)
+    try:
+        content = build_inward_register(db, user, date_from=date_from, date_to=date_to, location_ids=stores,
+                                        include_before_po=can_feature(user, "store", "grn", "before_po", "view"))
+    except RegisterError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return Response(content=content, media_type=XLSX_MEDIA_TYPE, headers={
+        "Content-Disposition": f'attachment; filename="{stream_name("F-STR-02_Gate_Inward_Register", date_from, date_to)}"'})
 
 
 @router.get("/{grn_id}", response_model=P2PGoodsReceiptResponse)
@@ -534,6 +657,21 @@ async def create_goods_receipt(
                 detail=f"Received quantity for '{po_item.item_name}' exceeds what's still outstanding on the PO ({remaining} remaining)",
             )
 
+    # A Before-PO receipt that already put its goods into stock: up to its unsettled quantity of each item the
+    # GRN only SETTLES it (no stock posted again, no new inspection lot); only the excess posts.
+    bpo = receipt_for_po(db, po, lock=True)
+    settle_by_idx = grn_settlement_plan(
+        db, bpo,
+        [(idx, po_items_by_id[p.po_item_id].store_item_id if po_items_by_id[p.po_item_id].category == "stock" else None, p.received_quantity)
+         for idx, p in enumerate(payload.items)],
+        payload.store_location_id)
+    for idx in settle_by_idx:
+        if payload.items[idx].batches or line_serials[idx]:
+            name = po_items_by_id[payload.items[idx].po_item_id].item_name
+            raise HTTPException(status_code=422, detail=(
+                f"'{name}' came in on Before-PO receipt {bpo.receipt_number} without heat / batch or serial numbers, so this GRN can't "
+                "add them for the same goods. Receive it without batches / serials, or ask the Store manager to correct the item."))
+
     grn = P2PGoodsReceipt(
         grn_number=generate_grn_number(db),
         purchase_order_id=po.id,
@@ -582,13 +720,27 @@ async def create_goods_receipt(
     # (apply_quality_decision below) — the lot is the single source of truth.
     # Every other stock item goes straight into FREE stock and counts as
     # accepted: the Item Master flag alone decides who needs a quality check.
-    for line in db.query(P2PGoodsReceiptItem).filter(P2PGoodsReceiptItem.goods_receipt_id == grn.id).all():
+    settle_by_line = {line.id: settle_by_idx[idx] for idx, (_p, line) in enumerate(new_lines) if idx in settle_by_idx}
+    # Valuation locks are taken in (item, store) order, like every multi-line posting.
+    for line in sorted(db.query(P2PGoodsReceiptItem).filter(P2PGoodsReceiptItem.goods_receipt_id == grn.id).all(),
+                       key=lambda l: ledger_sort_key(l.store_item_id, grn.store_location_id)):
         store_item = db.get(StoreItem, line.store_item_id)
         if po_items_by_id[line.po_item_id].category == "asset":
             # Asset (item category A): received and inspected on the GRN, but
             # capitalised by Finance — never store stock quantity or value.
             line.receipt_posting = "none"
             continue
+        settled = settle_by_line.get(line.id, 0.0)
+        if settled > 0:
+            try:
+                settle_line(db, grn, line, bpo, settled, user.id)
+            except ValueError as e:
+                db.rollback()
+                raise HTTPException(status_code=409, detail=f"'{line.item_name}' can't be settled against Before-PO receipt {bpo.receipt_number}, so the GRN was not saved: {e}")
+            if settled >= line.received_quantity - 1e-9:
+                # All of it is in stock already (Free, or Quality under the receipt's own lot).
+                settle_fully_received(line)
+                continue
         if needs_inspection_on_receipt(db, store_item, "incoming"):
             line.receipt_posting = "lot"
             try:
@@ -596,17 +748,19 @@ async def create_goods_receipt(
                 heats = line_batches(db, line.id) or [None]
                 lots = [create_lot_for_grn_line(db, grn, line, store_item, po.vendor_name, user.id,
                                                 unit_cost=_po_rate(po_items_by_id[line.po_item_id]),
-                                                quantity=b.received_qty if b else None, batch_number=b.batch_number if b else None,
+                                                quantity=b.received_qty if b else (line.received_quantity - settled if settled else None),
+                                                batch_number=b.batch_number if b else None,
                                                 tc_reference=b.tc_number if b else None) for b in heats]
             except LotError as e:
                 raise HTTPException(status_code=e.status, detail=str(e))
             line.quality_status = "in_quality"
-            line.remarks = ("Incoming inspection lot " if len(lots) == 1 else "Incoming inspection lots ") + ", ".join(l.lot_number for l in lots)
+            lot_note = ("Incoming inspection lot " if len(lots) == 1 else "Incoming inspection lots ") + ", ".join(l.lot_number for l in lots)
+            line.remarks = f"{line.remarks}; {lot_note}" if settled and line.remarks else lot_note
         else:
             # No quality check for this item: straight into Free stock, line
             # accepted as received (grn_posting.py). Serial units go in stock too.
             try:
-                receive_into_free(db, grn, line, user.id)
+                receive_into_free(db, grn, line, user.id, settled=settled)
                 if line.serial_numbers:
                     from app.modules.store.services.serials import inspect_grn_line
                     inspect_grn_line(db, grn=grn, line=line, item=store_item, rejected_serials=None, user_id=user.id)
@@ -842,6 +996,8 @@ def apply_quality_decision(db: Session, *, grn_item_id: int, accepted: float, re
         for lt in lots:
             if lt.batch_number in heats:
                 heats[lt.batch_number].accepted_qty = lt.accepted_qty or 0
+    # Part of the line a Before-PO receipt already put into stock was settled, not inspected here: it counts as accepted.
+    accepted += line.pre_po_qty or 0.0
     line.accepted_quantity = accepted
     line.rejected_quantity = rejected
     line.quality_status = "passed" if rejected <= 1e-9 else "failed" if accepted <= 1e-9 else "partial"
@@ -891,7 +1047,9 @@ async def reverse_goods_receipt(
     grn = _get_grn_or_404(db, grn_id, for_update=True, user=user)
     if grn.status == "reversed":
         raise HTTPException(status_code=409, detail=f"GRN {grn.grn_number} is already reversed.")
-    po = db.query(P2PPurchaseOrder).filter(P2PPurchaseOrder.id == grn.purchase_order_id).first()
+    # Lock order (same as recording a GRN): the GRN, then its PO, then the Before-PO receipt - all before any stock posting.
+    po = db.query(P2PPurchaseOrder).filter(P2PPurchaseOrder.id == grn.purchase_order_id).with_for_update().first()
+    bpo = receipt_for_po(db, po, lock=True)
 
     line_ids = [i.id for i in grn.items]
     lot_numbers = [n for (n,) in db.query(QualityInspectionLot.lot_number).filter(QualityInspectionLot.grn_item_id.in_(line_ids or [-1])).all()]
@@ -917,12 +1075,14 @@ async def reverse_goods_receipt(
 
     # Take the accepted stock back out, at the PO rate it was received at.
     if grn.store_location_id:
-        posted = [i for i in grn.items if i.quality_status in _DECIDED_LINE_STATUSES and (i.accepted_quantity or 0) > 0 and i.store_item_id
-                  and i.receipt_posting != "none"]
+        # The part settled by a Before-PO receipt (pre_po_qty) was never posted by this GRN, so it is not taken out:
+        # it stays in stock under that receipt.
+        posted = [i for i in grn.items if i.quality_status in _DECIDED_LINE_STATUSES and (i.accepted_quantity or 0) - (i.pre_po_qty or 0) > 1e-9
+                  and i.store_item_id and i.receipt_posting != "none"]
         for it in sorted(posted, key=lambda l: ledger_sort_key(l.store_item_id, grn.store_location_id)):
             rate = _po_rate(it.po_item)
             try:
-                for batch_no, part in grn_line_splits(db, it, it.accepted_quantity):
+                for batch_no, part in grn_line_splits(db, it, it.accepted_quantity - (it.pre_po_qty or 0)):
                     from app.modules.store.services.bins import bin_if_covered
                     post_stock_transaction(
                         db, item_id=it.store_item_id, location_id=grn.store_location_id, transaction_type="return_out",
@@ -957,6 +1117,12 @@ async def reverse_goods_receipt(
     for it in grn.items:
         if it.serial_numbers:
             reverse_grn_line(db, grn=grn, line=it, user_id=user.id, reason=reason)
+    # Goods a Before-PO receipt had put into stock stay there; the receipt's settled quantity is given back.
+    try:
+        release_settlement(db, grn, bpo, list(grn.items), user.id)
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=f"GRN {grn.grn_number} can't be reversed: {e}")
     grn.status = "reversed"
     grn.reversed_by_id = user.id
     grn.reversed_at = datetime.now(timezone.utc)

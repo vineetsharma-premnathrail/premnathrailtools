@@ -134,7 +134,7 @@ def test_settings_list_buyer_for_each_item_type(client, db):
     assert r.status_code == 200, r.text
     d = r.json()
     keys = {s["key"] for s in d["specs"] if s["group"] == "line_buyers"}
-    assert keys == {f"buyer_type_{t}" for t in ("material", "consumable", "tool_equipment", "service", "asset", "other")}
+    assert keys == {f"buyer_type_{t}" for t in ("material", "consumable", "tool_equipment", "service", "asset", "other")} | {"default_buyer"}
     assert "line_buyers" in [g["key"] for g in d["groups"]]
     assert all(k in d["values"] for k in keys)
 

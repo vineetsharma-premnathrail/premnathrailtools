@@ -227,15 +227,26 @@ def test_c43_cancelling_pr_at_po_drafted_cancels_the_draft_po(client, db, env):
 
 
 def test_c43_rejecting_at_po_raised_cancels_the_po(client, db, env):
+    """A PO still on the old approval route is first moved into the workflow (409); the workflow's
+    approver then rejects it there, which cancels the PO."""
     pr, po, _ = _approved_po(db, env, pr_status="po_raised")
-    pr.director_approved_at = None  # legacy chain: Director slot still pending
-    db.commit()
-    director = _user(db, "open.p2p.director@premnathrail.com", is_director=True)
-    r = client.post(f"{PR_BASE}/{pr.id}/reject", json={"reason": "Price too high"}, headers=_h(director))
+    partner = _user(db, "open.p2p.partner@premnathrail.com", is_partner=True)
+    r = client.post(f"{PR_BASE}/{pr.id}/reject", json={"reason": "Price too high"}, headers=_h(partner))
+    assert r.status_code == 409 and "old approval route" in r.json()["detail"], r.text
+    r = client.post(f"{PR_BASE}/{pr.id}/reject", json={"reason": "Price too high", "po_id": po.id}, headers=_h(partner))
     assert r.status_code == 200, r.text
-    assert r.json()["status"] == "rejected"
     db.expire_all()
     assert db.query(P2PPurchaseOrder).filter_by(id=po.id).one().status == "cancelled"
+
+
+def test_moving_a_legacy_po_names_the_reason_when_the_workflow_has_nobody_to_approve(client, db, env):
+    pr, po, _ = _approved_po(db, env, pr_status="po_raised")   # no active Partner exists
+    director = _user(db, "open.p2p.director@premnathrail.com", is_director=True)
+    r = client.post(f"{PR_BASE}/{pr.id}/reject", json={"reason": "Price too high"}, headers=_h(director))
+    assert r.status_code == 422, r.text
+    assert "old approval route" in r.json()["detail"] and "No active Partner" in r.json()["detail"] and "Approval Workflows" in r.json()["detail"]
+    db.expire_all()
+    assert db.query(P2PPurchaseOrder).filter_by(id=po.id).one().status == "issued"
 
 
 # ── Legacy create-po bypass ─────────────────────────────────────────────────

@@ -43,6 +43,8 @@ class QualityLotResultResponse(BaseModel):
 
     defect_code_label: str | None = None
     recorded_by_name: str | None = None
+    # What the characteristic must be (e.g. "As per MTC") — from the characteristic master, filled by the route.
+    specification: str | None = None
 
 
 class QualityInspectionLotCreate(BaseModel):

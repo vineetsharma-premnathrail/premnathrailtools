@@ -26,6 +26,7 @@ import { RowCount } from '@/components/shared/ui'
 import { recordHref } from '@/lib/recordRef'
 import { CapitalisationTab, RetirementsTab, AssetReconciliationTab, TaxDepreciationTab } from '@/components/finance/AssetAccountingTabs'
 import Select from '@/components/shared/Select'
+import FilterMenu from '@/components/shared/FilterMenu'
 
 const TABS = ['Register', 'Depreciation', 'Capitalisation', 'Retirements', 'Reconciliation', 'Tax Depreciation'] as const
 type Tab = typeof TABS[number]
@@ -163,19 +164,17 @@ function RegisterTab({ canManage }: { canManage: boolean }) {
   }
 
   const totals = assets.reduce((t, a) => ({ cost: t.cost + a.cost, acc: t.acc + a.accumulated_depreciation, bv: t.bv + a.book_value }), { cost: 0, acc: 0, bv: 0 })
-  const short = (n: number): React.CSSProperties => ({ flex: `0 1 ${n}px`, minWidth: n - 20 })
 
   return (
     <div>
       <ErrorBanner error={error} />
       <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', marginBottom: 16 }}>
-        <Field label="Show" style={short(170)} tour="fin-fa-status-filter">
-          <Select style={inputStyle} value={statusFilter} onChange={(e) => { setLoading(true); setStatusFilter(e.target.value as 'active' | 'disposed' | '') }}>
-            <option value="active">Active</option>
-            <option value="disposed">Disposed</option>
-            <option value="">All</option>
-          </Select>
-        </Field>
+        <FilterMenu
+          tourId="fin-fa-status-filter"
+          fields={[{ key: 'status', label: 'Show', value: statusFilter, defaultValue: 'active', allLabel: 'Active', options: [{ value: 'disposed', label: 'Disposed' }, { value: '', label: 'All' }] }]}
+          onChange={(_k, v) => { setLoading(true); setStatusFilter(v as 'active' | 'disposed' | '') }}
+          onClear={() => { setLoading(true); setStatusFilter('active') }}
+        />
         {!showForm && can('accounts', 'fixed_assets', 'create') && <button data-tour="fin-fa-new-btn" style={primaryBtnStyle} onClick={() => setShowForm(true)}>+ Register asset</button>}
       </div>
 

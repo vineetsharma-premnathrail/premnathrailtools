@@ -23,8 +23,8 @@ const config: TourConfig = {
     },
     {
       target: 'rnd-proj-filter-btn',
-      title: 'Filters',
-      purpose: 'Opens the filters popup: Stage, Status, Priority and Origin. Press Apply to filter the list; the number on the button shows how many filters are on, and Clear removes them. Clicking a stage on the R&D Dashboard opens this list already filtered by that stage.',
+      title: 'Filter',
+      purpose: 'Opens the Filter menu: Stage, Status, Priority and Origin. The list updates as soon as you pick a value; the number on the button shows how many filters are on, and Clear filters removes them. Clicking a stage on the R&D Dashboard opens this list already filtered by that stage.',
       options: [
         { value: 'Stage', meaning: 'All stages, or one of: ' + RND_STAGE_OPTIONS.map((o) => o.value).join(', ') + '.' },
         { value: 'Status', meaning: 'All statuses, or one of: ' + RND_STATUS_OPTIONS.map((o) => o.value).join(', ') + '.' },

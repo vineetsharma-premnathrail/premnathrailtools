@@ -1,6 +1,5 @@
 'use client'
 
-import Select from '@/components/shared/Select'
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -13,10 +12,8 @@ import { erpApi } from '@/lib/api'
 import { formatDate } from '@/lib/format'
 import { Project, ServiceRequest, SRStatus } from '@/types'
 import ErpNav from '@/components/erp/ErpNav'
-import { Funnel } from '@phosphor-icons/react'
+import FilterMenu from '@/components/shared/FilterMenu'
 import { inputStyle, secondaryBtnStyle, RowCount, Pill, pillStyle, StatChip } from '@/components/shared/ui'
-import { FormSheet, SheetIcon, SHEET, sheetBtn, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
-import Checkbox from '@/components/Checkbox'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import BulkImportDialog from '@/components/erp/BulkImportDialog'
@@ -112,10 +109,8 @@ export default function ServiceRequestsPage() {
   const [serviceTypeFilter, setServiceTypeFilter] = useState('all')
   const [overdueOnly, setOverdueOnly] = useState(false)
   // Status picked by clicking a count chip: narrows the loaded rows on screen only (so the other chips keep their counts).
-  // The Filters sheet shows it as its Status and Apply turns it into the normal server-side status filter.
+  // The Filter menu shows it as its Status; picking a status there turns it into the normal server-side status filter.
   const [chipStatus, setChipStatus] = useState('')
-  const [showFilters, setShowFilters] = useState(false)
-  const [draft, setDraft] = useState({ status: 'all', priority: 'all', service_type: 'all', overdue: false })
   const [showImport, setShowImport] = useState(false)
   const [showExport, setShowExport] = useState(false)
 
@@ -165,7 +160,6 @@ export default function ServiceRequestsPage() {
     setServiceTypeFilter('all')
     setOverdueOnly(false)
     setChipStatus('')
-    setShowFilters(false)
   }
   // Count chips: click = show that status, click again = back to all. Works on top of the Status filter.
   const pickStatusChip = (value: string) => {
@@ -175,18 +169,6 @@ export default function ServiceRequestsPage() {
     setChipStatus(value)
   }
   const clearStatusChips = () => { setStatusFilter('all'); setChipStatus('') }
-  const applyFilters = () => {
-    setStatusFilter(draft.status)
-    setPriorityFilter(draft.priority)
-    setServiceTypeFilter(draft.service_type)
-    setOverdueOnly(draft.overdue)
-    setChipStatus('')
-    setShowFilters(false)
-  }
-  const openFilters = () => {
-    setDraft({ status: statusFilter !== 'all' ? statusFilter : chipStatus || 'all', priority: priorityFilter, service_type: serviceTypeFilter, overdue: overdueOnly })
-    setShowFilters(true)
-  }
   const activeFilterCount = [statusFilter, priorityFilter, serviceTypeFilter].filter((v) => v !== 'all').length + (overdueOnly ? 1 : 0) + (chipStatus && statusFilter === 'all' ? 1 : 0)
 
   const filteredSrs = useMemo(
@@ -274,12 +256,22 @@ export default function ServiceRequestsPage() {
             data-tour="erp-sr-search"
             style={{ ...inputStyle, width: 280, maxWidth: '100%' }}
           />
-          <button type="button" onClick={openFilters} data-tour="erp-sr-filter-btn" aria-label="Filters" title="Filters"
-            style={{ ...secondaryBtnStyle, display: 'inline-flex', alignItems: 'center', gap: 6, ...(activeFilterCount ? { borderColor: '#ea580c', color: '#c2410c' } : {}) }}>
-            <Funnel size={16} weight={activeFilterCount ? 'fill' : 'regular'} />
-            Filters
-            {activeFilterCount > 0 && <span style={{ minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, background: '#ea580c', color: '#fff', fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{activeFilterCount}</span>}
-          </button>
+          <FilterMenu
+            tourId="erp-sr-filter-btn"
+            fields={[
+              { key: 'status', label: 'Status', value: statusFilter !== 'all' ? statusFilter : chipStatus || 'all', defaultValue: 'all', allLabel: 'All Statuses', options: Object.entries(STATUS_LABELS).map(([v, l]) => ({ value: v, label: l })) },
+              { key: 'priority', label: 'Priority', value: priorityFilter, defaultValue: 'all', allLabel: 'All Priorities', options: [{ value: 'standard', label: 'Standard' }, { value: 'urgent', label: 'Urgent' }] },
+              { key: 'service_type', label: 'Service Type', value: serviceTypeFilter, defaultValue: 'all', allLabel: 'All Service Types', options: SERVICE_TYPES.map((t) => ({ value: t.value, label: t.label })) },
+              { key: 'overdue', label: 'Overdue', value: overdueOnly ? 'yes' : '', allLabel: 'All requests', options: [{ value: 'yes', label: 'Overdue only' }] },
+            ]}
+            onChange={(key, v) => {
+              if (key === 'status') { setChipStatus(''); setStatusFilter(v) }
+              else if (key === 'priority') setPriorityFilter(v)
+              else if (key === 'service_type') setServiceTypeFilter(v)
+              else setOverdueOnly(v === 'yes')
+            }}
+            onClear={clearFilters}
+          />
           {activeFilterCount > 0 && (
             <button type="button" onClick={clearFilters} style={secondaryBtnStyle} data-tour="erp-sr-clear-btn">Clear</button>
           )}
@@ -291,47 +283,6 @@ export default function ServiceRequestsPage() {
           )}
         </div>
       </div>
-
-      {showFilters && (
-        <FormSheet icon="search" title="Filters" subtitle="Narrow the service requests, then press Apply." width={560} busy={false} onClose={() => setShowFilters(false)} tour="erp-sr-filter-sheet"
-          footer={<>
-            <button type="button" onClick={clearFilters} style={sheetBtn('secondary', SHEET.INK)}>Clear Filters</button>
-            <button type="button" onClick={applyFilters} style={sheetBtn('primary', SHEET.BLUE)} data-tour="erp-sr-apply-btn"><SheetIcon name="check" size={16} />Apply Filters</button>
-          </>}>
-          <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div>
-              <label style={sheetLabel}>Status</label>
-              <Select value={draft.status} onChange={(e) => setDraft((d) => ({ ...d, status: e.target.value }))} style={sheetInput} data-tour="erp-sr-status-filter">
-                <option value="all">All Statuses</option>
-                {Object.entries(STATUS_LABELS).map(([v, l]) => (
-                  <option key={v} value={v}>{l}</option>
-                ))}
-              </Select>
-            </div>
-            <div>
-              <label style={sheetLabel}>Priority</label>
-              <Select value={draft.priority} onChange={(e) => setDraft((d) => ({ ...d, priority: e.target.value }))} style={sheetInput} data-tour="erp-sr-priority-filter">
-                <option value="all">All Priorities</option>
-                <option value="standard">Standard</option>
-                <option value="urgent">Urgent</option>
-              </Select>
-            </div>
-            <div>
-              <label style={sheetLabel}>Service Type</label>
-              <Select value={draft.service_type} onChange={(e) => setDraft((d) => ({ ...d, service_type: e.target.value }))} style={sheetInput} data-tour="erp-sr-type-filter">
-                <option value="all">All Service Types</option>
-                {SERVICE_TYPES.map((t) => (
-                  <option key={t.value} value={t.value}>{t.label}</option>
-                ))}
-              </Select>
-            </div>
-            <label data-tour="erp-sr-overdue" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: '#57534e', cursor: 'pointer' }}>
-              <Checkbox checked={draft.overdue} onChange={(e) => setDraft((d) => ({ ...d, overdue: e.target.checked }))} />
-              Overdue Only
-            </label>
-          </div>
-        </FormSheet>
-      )}
 
       <div style={{ borderRadius: 18, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', overflow: 'hidden', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <div style={{ overflow: 'auto', flex: 1, minHeight: 0 }}>

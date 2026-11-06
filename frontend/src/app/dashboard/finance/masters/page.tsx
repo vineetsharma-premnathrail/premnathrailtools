@@ -6,6 +6,7 @@
  *  bank & cash accounts, vendors, internal orders and the one-time
  *  opening-balance voucher. One component per sub-tab below. */
 import Select from '@/components/shared/Select'
+import FilterMenu from '@/components/shared/FilterMenu'
 import React, { useContext, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -656,16 +657,17 @@ function LedgersSection({ onGoOpening }: { onGoOpening: () => void }) {
         <Field label="Search" style={growW(220, 300)} tour="fin-ledgers-search">
           <input style={inputStyle} value={search} placeholder="Code or name" onChange={(e) => setSearch(e.target.value)} />
         </Field>
-        <Field label="Group (incl. sub-groups)" style={growW(260, 380)} tour="fin-ledgers-group-filter">
-          <SearchableSelect value={groupFilter} onChange={setGroupFilter} options={[{ value: '', label: 'All groups' }, ...groupOptions]} placeholder="All groups" />
-        </Field>
-        <Field label="Status" style={fixedW(130)} tour="fin-ledgers-status-filter">
-          <Select style={inputStyle} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-            <option value="all">All</option>
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-          </Select>
-        </Field>
+        <div style={{ marginBottom: 2 }}>
+          <FilterMenu
+            tourId="fin-ledgers-group-filter"
+            fields={[
+              { key: 'group', label: 'Group (incl. sub-groups)', value: groupFilter, allLabel: 'All groups', options: groupOptions },
+              { key: 'status', label: 'Status', value: statusFilter, defaultValue: 'all', allLabel: 'All', options: [{ value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }] },
+            ]}
+            onChange={(key, v) => { if (key === 'group') setGroupFilter(v); else setStatusFilter(v) }}
+            onClear={() => { setGroupFilter(''); setStatusFilter('all') }}
+          />
+        </div>
         <span style={{ ...mutedText, paddingBottom: 10 }}>{visible.length} of {accounts.length} ledgers</span>
       </div>
 
