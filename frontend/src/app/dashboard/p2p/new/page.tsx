@@ -7,6 +7,7 @@ import { organizationApi, p2pApi, storeApi, PrStockAvailability } from '@/lib/ap
 import { P2PPurposeMeta, P2PRequest, P2PRequestLineItemInput, StoreItem } from '@/types'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { itemOptionDetail } from '@/lib/itemOptions'
+import { matchesAllWords } from '@/lib/searchWords'
 import { ACCOUNT_ASSIGNMENTS, accountAssignmentApi } from '@/lib/mmLogisticsApi'
 
 import DateField from '@/components/erp/DateField'
@@ -640,8 +641,8 @@ export default function NewP2PRequestPage() {
                   const shown = masterItems.filter((i) =>
                     i.id === item.store_item_id
                     || ((lineType ? i.item_type === lineType : typeFits(i.item_type)) && (!lineCategory || i.category === lineCategory)
-                      && (!query || [i.item_code, i.item_name, i.part_number, i.manufacturer_part_number, i.make, i.description, i.specification]
-                        .filter(Boolean).join(' ').toLowerCase().includes(query))))
+                      && (!query || matchesAllWords([i.item_code, i.item_name, i.category, i.part_number, i.manufacturer_part_number, i.make, i.description, i.specification]
+                        .filter(Boolean).join(' '), query))))
                   return (
                   <tr key={idx} style={{ borderTop: idx ? `1px solid ${SHEET.LINE}` : undefined }}>
                     <td style={{ padding: '6px 8px', width: 70 }}>

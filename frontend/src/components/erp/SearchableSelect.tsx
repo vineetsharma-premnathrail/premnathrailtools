@@ -4,6 +4,7 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 're
 import { createPortal } from 'react-dom'
 import { inputStyle } from '@/components/shared/ui'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
+import { matchesAllWords } from '@/lib/searchWords'
 import { CaretDown, PencilSimple } from '@phosphor-icons/react'
 
 export interface SearchableOption {
@@ -193,8 +194,8 @@ export default function SearchableSelect({
 
   const filtered = useMemo(() => {
     if (onSearch || !query.trim()) return options
-    const q = query.toLowerCase()
-    return options.filter((o) => `${o.label} ${o.description || ''}`.toLowerCase().includes(q))
+    // Every typed word must match, in any order (e.g. "category name spec").
+    return options.filter((o) => matchesAllWords(`${o.label} ${o.description || ''}`, query))
   }, [options, query, onSearch])
 
   useEffect(() => {

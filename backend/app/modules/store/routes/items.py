@@ -29,13 +29,18 @@ router = APIRouter(prefix="/store/items", tags=["Store"])
 def apply_item_search(query, search: str | None):
     """Word-by-word search: every word (any order, extra spaces ignored) must
     appear in the item's name, code, legacy (v3 / Tally) code, part code,
-    description or category."""
+    category / sub-category or technical details (description, specification,
+    make, model, grade, manufacturer and its part no.) — so "category name
+    spec" typed in one go finds the item."""
     for word in (search or "").split():
         like = f"%{word}%"
         query = query.filter(
             StoreItem.item_name.ilike(like) | StoreItem.item_code.ilike(like) | StoreItem.legacy_code.ilike(like)
             | StoreItem.part_number.ilike(like)
             | StoreItem.description.ilike(like) | StoreItem.category.ilike(like)
+            | StoreItem.subcategory.ilike(like) | StoreItem.specification.ilike(like)
+            | StoreItem.make.ilike(like) | StoreItem.model.ilike(like) | StoreItem.material_grade.ilike(like)
+            | StoreItem.manufacturer.ilike(like) | StoreItem.manufacturer_part_number.ilike(like)
         )
     return query
 
