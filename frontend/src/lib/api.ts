@@ -1401,6 +1401,7 @@ export const vendorsApi = {
     const { data } = await apiClient.get(`/p2p/vendors/${id}/documents/${docId}/content`, { responseType: 'blob' })
     window.open(URL.createObjectURL(data), '_blank')
   },
+  remove: async (id: number) => { const { data } = await apiClient.delete(`/p2p/vendors/${id}`); return data },
   deleteDocument: async (id: number, docId: number) => { const { data } = await apiClient.delete(`/p2p/vendors/${id}/documents/${docId}`); return data },
   catalog: async (id: number): Promise<import('@/types').VendorCatalogRow[]> => { const { data } = await apiClient.get(`/p2p/vendors/${id}/catalog`); return data },
   addCatalogItem: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').VendorCatalogRow> => { const { data } = await apiClient.post(`/p2p/vendors/${id}/catalog`, payload); return data },

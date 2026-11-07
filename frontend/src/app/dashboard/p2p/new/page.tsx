@@ -641,7 +641,7 @@ export default function NewP2PRequestPage() {
                   const shown = masterItems.filter((i) =>
                     i.id === item.store_item_id
                     || ((lineType ? i.item_type === lineType : typeFits(i.item_type)) && (!lineCategory || i.category === lineCategory)
-                      && (!query || matchesAllWords([i.item_code, i.item_name, i.category, i.part_number, i.manufacturer_part_number, i.make, i.description, i.specification]
+                      && (!query || matchesAllWords([i.item_code, i.item_name, i.category, ...(i.unit_names || []).map((u) => u.name), i.part_number, i.manufacturer_part_number, i.make, i.description, i.specification]
                         .filter(Boolean).join(' '), query))))
                   return (
                   <tr key={idx} style={{ borderTop: idx ? `1px solid ${SHEET.LINE}` : undefined }}>

@@ -144,7 +144,7 @@ export default function StoreItemsPage() {
           data-tour="items-search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search code, name or specification"
+          placeholder="Search code, name, unit name or specification"
           style={{ ...inputStyle, flex: '1 1 360px', minWidth: 260, width: undefined, maxWidth: 520, background: 'rgba(255,255,255,.7)' }}
         />
         {/* One Filter button (shared FilterMenu) instead of a row of dropdowns. Type → Category →
@@ -199,7 +199,15 @@ export default function StoreItemsPage() {
                 <VisTd vis={vis} table="items" k="type" style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{(item.item_type && ITEM_TYPE_LABELS[item.item_type]) || item.item_type || '—'}</VisTd>
                 <VisTd vis={vis} table="items" k="category" style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{item.category || '—'}</VisTd>
                 <VisTd vis={vis} table="items" k="subcategory" style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{item.subcategory || '—'}</VisTd>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{item.item_name}</td>
+                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>
+                  {item.item_name}
+                  {/* Unit-wise internal names under the invoice name. */}
+                  {!!item.unit_names?.length && (
+                    <span style={{ display: 'block', marginTop: 2, fontSize: 11.5, color: TEXT.muted }}>
+                      {item.unit_names.map((u) => `${u.unit || 'Unit'}: ${u.name}`).join(' · ')}
+                    </span>
+                  )}
+                </td>
                 <VisTd vis={vis} table="items" k="uom" style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{item.uom || '—'}</VisTd>
                 <VisTd vis={vis} table="items" k="description" title={item.description || ''} style={{ padding: '12px 16px', fontSize: 12.5, color: TEXT.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.description || '—'}</VisTd>
                 <td style={{ padding: '12px 16px' }}>

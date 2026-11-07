@@ -336,7 +336,7 @@ def trace(db: Session, b: StoreBatch) -> dict:
     pids = {i.erp_project_id for _, i in issue_rows if i.erp_project_id}
     if pids:
         from app.modules.erp.models.project import Project
-        projects = {p.id: " — ".join(x for x in (p.serial_number, p.model_name, p.client_company) if x)
+        projects = {p.id: p.serial_number
                     for p in db.query(Project).filter(Project.id.in_(pids)).all()}
     out["issues"] = [{"issue_id": i.id, "issue_number": i.issue_number, "issue_date": i.issue_date, "issue_type": i.issue_type,
                       "quantity": line.quantity, "work_order": i.project_or_work_order, "project": projects.get(i.erp_project_id),

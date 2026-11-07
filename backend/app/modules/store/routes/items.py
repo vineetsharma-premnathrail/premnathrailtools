@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import and_, case, func
+from sqlalchemy import Text, and_, case, cast, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -14,7 +14,7 @@ from app.modules.store.models.stock_transaction import StoreStockTransaction
 from app.modules.store.models.valuation import StoreItemValuation
 from app.modules.store.routes.item_types import check_item_type, type_options
 from app.modules.store.models.location import StoreLocation
-from app.modules.store.schemas.item import StoreItemCreate, StoreItemUpdate, StoreItemResponse
+from app.modules.store.schemas.item import StoreItemCreate, StoreItemUnitName, StoreItemUpdate, StoreItemResponse
 from app.modules.store.service import generate_item_code, preview_item_code
 from app.modules.store.routes.uoms import uom_options
 from app.modules.store.services.stock_values import sees_standard_cost, sees_stock_values
@@ -22,6 +22,7 @@ from app.modules.store.services.item_accounts import LEDGER_PURPOSES, check_item
 from app.modules.accounts.models.gl_account import GLAccount
 from app.modules.accounts.models.settings import GSTRate
 from app.modules.accounts.models.vendor import Vendor
+from app.modules.organization.models.branch import Branch
 
 router = APIRouter(prefix="/store/items", tags=["Store"])
 
@@ -41,6 +42,7 @@ def apply_item_search(query, search: str | None):
             | StoreItem.subcategory.ilike(like) | StoreItem.specification.ilike(like)
             | StoreItem.make.ilike(like) | StoreItem.model.ilike(like) | StoreItem.material_grade.ilike(like)
             | StoreItem.manufacturer.ilike(like) | StoreItem.manufacturer_part_number.ilike(like)
+            | cast(StoreItem.unit_names, Text).ilike(like)
         )
     return query
 
@@ -83,7 +85,41 @@ def _prefetch(db: Session, items: list[StoreItem]) -> dict:
         # Loaded into the session so db.get() below is served from the identity map.
         "vendors": db.query(Vendor).filter(Vendor.id.in_(vendor_ids)).all() if vendor_ids else [],
         "gls": db.query(GLAccount).filter(GLAccount.id.in_(gl_ids)).all() if gl_ids else [],
+        "units": _unit_labels(db) if any(i.unit_names for i in items) else {},
     }
+
+
+def _unit_labels(db: Session) -> dict[int, str]:
+    return {b.id: b.name for b in db.query(Branch).all()}
+
+
+def _unit_names_out(item: StoreItem, units: dict[int, str]) -> list[StoreItemUnitName] | None:
+    if not item.unit_names:
+        return None
+    return [StoreItemUnitName(branch_id=u["branch_id"], name=u["name"], unit=units.get(u["branch_id"])) for u in item.unit_names]
+
+
+def _clean_unit_names(db: Session, value) -> list[dict] | None:
+    """Unit-wise names from the form: blanks dropped, one name per unit, the
+    unit must exist. Stored as [{"branch_id", "name"}] (None when empty)."""
+    if not value:
+        return None
+    units = _unit_labels(db)
+    out, seen = [], set()
+    for u in value:
+        bid, name = int(u["branch_id"]), (u.get("name") or "").strip()
+        if not name:
+            continue
+        if bid not in units:
+            raise HTTPException(status_code=422, detail="A unit-wise name points to a unit / plant that no longer exists — "
+                                                        "refresh the page and enter the names again.")
+        if bid in seen:
+            raise HTTPException(status_code=422, detail=f"{units[bid]} has two names — keep one name per unit.")
+        if len(name) > 200:
+            raise HTTPException(status_code=422, detail=f"The name at {units[bid]} is longer than 200 characters — shorten it.")
+        seen.add(bid)
+        out.append({"branch_id": bid, "name": name})
+    return out or None
 
 
 def _to_response(item: StoreItem, db: Session, detail: bool = False, user: User | None = None,
@@ -100,7 +136,8 @@ def _to_response(item: StoreItem, db: Session, detail: bool = False, user: User 
               "last_receipt_date": val.last_receipt_date if val else None,
               "preferred_vendor_name": f"{vendor.name} ({vendor.code})" if vendor else None,
               "purchase_gl_account_name": ledger_label(db, item.purchase_gl_account_id),
-              "sales_gl_account_name": ledger_label(db, item.sales_gl_account_id)}
+              "sales_gl_account_name": ledger_label(db, item.sales_gl_account_id),
+              "unit_names": _unit_names_out(item, pre["units"] if pre is not None else (_unit_labels(db) if item.unit_names else {}))}
     if detail:
         # Which ledger will actually be used (item -> category -> Finance default).
         for purpose in LEDGER_PURPOSES:
@@ -307,6 +344,13 @@ async def next_item_code(
     return {"item_code": preview_item_code(db)}
 
 
+@router.get("/units")
+async def item_units(db: Session = Depends(get_db), _user: User = Depends(require_store_lookup())):
+    """Units / plants an item can carry its own name at (Add / Edit Item form)."""
+    return [{"id": b.id, "name": b.name, "code": b.code}
+            for b in db.query(Branch).filter(Branch.status == "active").order_by(Branch.name).all()]
+
+
 @router.get("/{item_id}", response_model=StoreItemResponse)
 async def get_item(
     item_id: int,
@@ -424,6 +468,7 @@ async def create_item(
         code = generate_item_code(db)
     data["item_code"] = code
     data["item_name"] = data["item_name"].strip()
+    data["unit_names"] = _clean_unit_names(db, data.get("unit_names"))
     item = StoreItem(**data)
     db.add(item)
     db.commit()
@@ -462,6 +507,8 @@ async def update_item(
         changes["part_number"] = (changes["part_number"] or "").strip() or None
     _clean_planning_fields(db, changes, item.id)
     _clean_erp_fields(db, changes, item)
+    if "unit_names" in changes:
+        changes["unit_names"] = _clean_unit_names(db, changes["unit_names"])
     # The quality-check flags decide whether a GRN bypasses Quality, so every
     # flip is on the audit trail with who / old / new.
     for flag, label in (("inspection_on_receipt", "Quality check on receipt"), ("test_certificate_required", "Test certificate required")):

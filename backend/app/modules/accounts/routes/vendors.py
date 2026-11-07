@@ -181,17 +181,13 @@ async def delete_vendor(
     if not vendor:
         raise HTTPException(status_code=404, detail="Vendor not found")
     ensure_can_delete(user, vendor, "accounts", "vendors", what="vendor")
-    from app.modules.accounts.models.vendor_invoice import VendorInvoice
-    from app.modules.accounts.models.journal_entry import JournalEntryLine
-    if (db.query(VendorInvoice).filter(VendorInvoice.vendor_id == vendor_id).first()
-            or db.query(JournalEntryLine).filter(JournalEntryLine.vendor_id == vendor_id).first()):
-        raise HTTPException(status_code=409, detail=f"Vendor '{vendor.name}' has invoices or ledger entries, so it can't be deleted — set its status to inactive or blocked instead.")
-    # The vendor master is shared with Purchase: a PO keeps vendor_id (no FK),
-    # so deleting the vendor would orphan the PO and its later invoice.
-    from app.modules.p2p.models.purchase_order import P2PPurchaseOrder
-    po = db.query(P2PPurchaseOrder).filter(P2PPurchaseOrder.vendor_id == vendor_id).first()
-    if po:
-        raise HTTPException(status_code=409, detail=f"Vendor '{vendor.name}' is on purchase order '{po.po_number}', so it can't be deleted — set its status to inactive or blocked instead.")
+    # Shared master: any document anywhere (PO, RFQ, invoice, receipt, quality,
+    # ledger ...) that names the vendor blocks the delete.
+    from app.modules.accounts.services.vendor_usage import vendor_in_use_message, vendor_usage
+    used_in = vendor_usage(db, vendor_id)
+    if used_in:
+        raise HTTPException(status_code=409, detail=vendor_in_use_message(vendor.name, used_in))
+    write_audit(db, "vendor", vendor.id, "deleted", user, f"{user.name or user.email} deleted vendor {vendor.code or ''} {vendor.name}.".replace("  ", " "))
     db.delete(vendor)
     db.commit()
     return {"ok": True}

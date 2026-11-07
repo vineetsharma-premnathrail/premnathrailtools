@@ -597,7 +597,7 @@ async def list_projects_for_picker(
     return [
         {
             "id": p.id,
-            "label": f"{p.serial_number} — {p.model_name}" if p.model_name else p.serial_number,
+            "label": p.serial_number,  # project number only (owner, 2026-11-07)
             "serviceable": p.lifecycle_stage in SERVICEABLE_STAGES,
         }
         for p in projects

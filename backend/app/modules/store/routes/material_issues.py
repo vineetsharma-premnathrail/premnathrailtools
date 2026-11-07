@@ -109,7 +109,7 @@ def _against_label(db: Session, issue: StoreMaterialIssue, resp) -> str | None:
 
 
 def _project_label(p) -> str:
-    return " — ".join(x for x in (p.serial_number, p.model_name, p.client_company, f"PO {p.po_number}" if p.po_number else None) if x)
+    return p.serial_number or ""  # project number only (owner, 2026-11-07)
 
 
 @router.get("", response_model=list[StoreMaterialIssueResponse])
@@ -194,8 +194,7 @@ async def dispatch_project_options(
 
     # The picker shows only the project: number + name (owner, 2026-11-05) — not customer / PO.
     def short(p) -> str:
-        name = pm_names.get(p.pm_project_id) or p.model_name
-        return " — ".join(x for x in (p.serial_number, name) if x)
+        return p.serial_number or pm_names.get(p.pm_project_id) or ""  # project number only (owner, 2026-11-07)
 
     return [{"id": p.id, "label": short(p), "third_party_inspection_required": bool(p.third_party_inspection_required),
              "inspection_agency": p.inspection_agency} for p in rows]

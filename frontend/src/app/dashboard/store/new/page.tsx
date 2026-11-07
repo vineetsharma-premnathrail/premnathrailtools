@@ -2,6 +2,7 @@
 
 import UomSelect from '@/components/erp/UomSelect'
 import ItemPhoto from '@/components/store/ItemPhoto'
+import ItemUnitNames from '@/components/store/ItemUnitNames'
 import ItemTypeSelect, { ItemTypeOption } from '@/components/store/ItemTypeSelect'
 import CategorySelect from '@/components/store/CategorySelect'
 import SubcategorySelect from '@/components/store/SubcategorySelect'
@@ -11,7 +12,7 @@ import DraftBanner from '@/components/shared/DraftBanner'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { storeApi } from '@/lib/api'
-import { StoreItemCategory, StoreItemMeta } from '@/types'
+import { StoreItemCategory, StoreItemMeta, StoreItemUnitName } from '@/types'
 import { ItemErpForm, ItemErpValues, EMPTY_ERP_VALUES, erpPayload } from '@/components/store/ItemErpSections'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import StoreNav from '@/components/store/StoreNav'
@@ -31,6 +32,7 @@ export default function NewStoreItemPage() {
   const [codePreview, setCodePreview] = useState('')
   const [uoms, setUoms] = useState<{ value: string; label: string }[]>([])
   const [itemName, setItemName] = useState('')
+  const [unitNames, setUnitNames] = useState<StoreItemUnitName[]>([])
   const [itemType, setItemType] = useState('material')
   const [itemTypes, setItemTypes] = useState<ItemTypeOption[]>([])
   const [category, setCategory] = useState('')
@@ -49,9 +51,9 @@ export default function NewStoreItemPage() {
   const [errors, setErrors] = useState<string[]>([])
   // Role editor preview: nothing is saved, no draft, module nav / Back left out.
   const draft = useFormDraft(vis.preview ? null : 'store-item-new',
-    { itemName, itemType, category, subcategory, description, partCode, leadTime, legacyCode, uom, erp },
+    { itemName, unitNames, itemType, category, subcategory, description, partCode, leadTime, legacyCode, uom, erp },
     (d) => {
-      setItemName(d.itemName ?? ''); setItemType(d.itemType || 'material'); setCategory(d.category ?? ''); setSubcategory(d.subcategory ?? '')
+      setItemName(d.itemName ?? ''); setUnitNames(d.unitNames ?? []); setItemType(d.itemType || 'material'); setCategory(d.category ?? ''); setSubcategory(d.subcategory ?? '')
       setDescription(d.description ?? ''); setPartCode(d.partCode ?? ''); setLeadTime(d.leadTime ?? ''); setLegacyCode(d.legacyCode ?? '')
       setUom(d.uom ?? ''); setErp({ ...EMPTY_ERP_VALUES, ...(d.erp ?? {}) })
     })
@@ -99,6 +101,7 @@ export default function NewStoreItemPage() {
     try {
       const item = await storeApi.createItem({
         item_name: itemName.trim(),
+        unit_names: unitNames.filter((u) => u.name.trim()),
         item_type: itemType,
         category: category || undefined,
         subcategory: subcategory || undefined,
@@ -166,8 +169,9 @@ export default function NewStoreItemPage() {
                 </div>
               </div>
             </div>
-            <label style={sheetLabel}>Item Name <Req /></label>
+            <label style={sheetLabel}>Item Name (as on invoice) <Req /></label>
             <input data-tour="item-name" style={sheetInput} value={itemName} onChange={(e) => setItemName(e.target.value)} placeholder="Mild Steel Rod 12mm" />
+            <ItemUnitNames value={unitNames} onChange={setUnitNames} />
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginTop: 14 }}>
               <div style={{ flex: '0 1 200px', minWidth: 160 }}>
                 <label style={sheetLabel}>UOM <Req /></label>

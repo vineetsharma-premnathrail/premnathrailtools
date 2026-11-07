@@ -73,6 +73,19 @@ def _reset_rate_store():
 
 
 @pytest.fixture(autouse=True)
+def _approval_workflows_on(request, monkeypatch):
+    """Approval workflows start OFF in the app (owner 2026-11-07). Tests written
+    before that exercise the approval flow, so a new workflow starts ON here
+    unless a test is marked `approvals_default_off`."""
+    if request.node.get_closest_marker("approvals_default_off"):
+        yield
+        return
+    from app.modules.organization.services import approval_engine
+    monkeypatch.setattr(approval_engine, "WORKFLOWS_ON_BY_DEFAULT", True)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _finance_proof_rules_off(request, monkeypatch):
     """Finance › Settings › Supporting documents makes a vendor bill / journal
     working compulsory by default. Tests written before that rule post bills

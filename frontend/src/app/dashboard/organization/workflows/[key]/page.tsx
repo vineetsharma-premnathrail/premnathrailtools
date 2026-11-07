@@ -266,7 +266,7 @@ export default function WorkflowEditorPage() {
       setHistory(null)
       setPreview(null)
       setCheckError('')
-      setNotice('Workflow reset to the module default. It is live now for documents submitted from now on; documents already waiting keep their approvers.')
+      setNotice('Workflow reset to the module default stages and switched OFF (approval is off by default). Turn on "Approval required" and save when this document type should need approval; documents already waiting keep their approvers.')
     } catch (e) {
       setError(extractErrorMessages(e, 'Could not reset the workflow.').join(' '))
     }
@@ -413,7 +413,7 @@ export default function WorkflowEditorPage() {
         message={`Replace the ${wf?.stages.length || 0} stage(s) on screen with “${template?.label}”? Nothing is saved until you click Save workflow.`}
         onConfirm={applyTemplate} onCancel={() => setAskTemplate(false)} />
       <ConfirmDialog open={askReset} title="Reset to default now?" confirmLabel="Reset now"
-        message="This replaces the saved workflow straight away for documents submitted from now on, and discards your unsaved edits. Documents already waiting keep their approvers."
+        message="This puts back the default stages and switches approval OFF straight away (approvals are off by default) — documents submitted from now on need no approval until you turn it on again. Your unsaved edits are discarded; documents already waiting keep their approvers."
         onConfirm={reset} onCancel={() => setAskReset(false)} />
       <ConfirmDialog open={leaveTo !== null} danger={false} title="Leave without saving?" confirmLabel="Leave"
         message="Your changes to this workflow have not been saved."

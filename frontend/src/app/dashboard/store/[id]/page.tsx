@@ -2,6 +2,7 @@
 
 import UomSelect from '@/components/erp/UomSelect'
 import ItemPhoto from '@/components/store/ItemPhoto'
+import ItemUnitNames from '@/components/store/ItemUnitNames'
 import ItemTypeSelect, { ItemTypeOption } from '@/components/store/ItemTypeSelect'
 import CategorySelect from '@/components/store/CategorySelect'
 import SubcategorySelect from '@/components/store/SubcategorySelect'
@@ -110,6 +111,7 @@ export default function StoreItemDetailPage() {
     try {
       const updated = await storeApi.updateItem(itemId, {
         item_name: form.item_name.trim(),
+        unit_names: (form.unit_names || []).filter((u) => u.name.trim()),
         item_type: form.item_type,
         // null (not undefined) so a cleared field is saved as cleared — the PATCH skips missing keys.
         category: form.category || null,
@@ -196,8 +198,9 @@ export default function StoreItemDetailPage() {
                   </div>
                 </div>
               </div>
-              <label style={sheetLabel}>Item Name <Req /></label>
+              <label style={sheetLabel}>Item Name (as on invoice) <Req /></label>
               <input data-tour="item-edit-name" style={sheetInput} value={form.item_name || ''} onChange={(e) => setForm({ ...form, item_name: e.target.value })} />
+              <ItemUnitNames value={form.unit_names || []} onChange={(unit_names) => setForm({ ...form, unit_names })} />
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginTop: 14 }}>
                 <div style={{ flex: '0 1 200px', minWidth: 160 }}>
                   <label style={sheetLabel}>UOM <Req /></label>
@@ -315,6 +318,7 @@ export default function StoreItemDetailPage() {
                 <DetailRow label="Item Type">{typeLabel(item.item_type)}</DetailRow>
                 <DetailRow label="Category">{item.category ? `${item.category}${item.subcategory ? ` › ${item.subcategory}` : ''}` : null}</DetailRow>
                 <DetailRow label="UOM">{item.uom}</DetailRow>
+                {(item.unit_names || []).map((u) => <DetailRow key={u.branch_id} label={`Name at ${u.unit || 'unit'}`}>{u.name}</DetailRow>)}
                 <DetailRow label="Technical Specification">{item.description}</DetailRow>
               </DetailGroup></VisSection>
             </div>

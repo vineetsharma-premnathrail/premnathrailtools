@@ -390,6 +390,23 @@ def update_vendor(vendor_id: int, payload: VendorPayload, db: Session = Depends(
     return _row(v, docs.get(v.id, 0), items.get(v.id, 0), vendor_people(db, [v])[v.id])
 
 
+@router.delete("/{vendor_id}")
+def delete_vendor(vendor_id: int, db: Session = Depends(get_db), user: User = Depends(_view)):
+    """Delete a vendor that no document uses yet (e.g. created by mistake or a
+    duplicate). Its own catalog and document list go with it. A vendor already
+    on a PO / RFQ / invoice / receipt etc. is kept — set it Inactive or Blocked."""
+    v = _get(db, vendor_id)
+    ensure_can_delete(user, v, "p2p", "vendors", what="vendor")
+    from app.modules.accounts.services.vendor_usage import vendor_in_use_message, vendor_usage
+    used_in = vendor_usage(db, vendor_id)
+    if used_in:
+        raise HTTPException(status_code=409, detail=vendor_in_use_message(v.name, used_in))
+    _audit(db, v.id, "deleted", user, f"{user.name or user.email} deleted vendor {v.code or ''} {v.name}.".replace("  ", " "))
+    db.delete(v)
+    db.commit()
+    return {"ok": True}
+
+
 # ---------------------------------------------------------------- documents
 
 def _doc_row(d: VendorDocument) -> dict:

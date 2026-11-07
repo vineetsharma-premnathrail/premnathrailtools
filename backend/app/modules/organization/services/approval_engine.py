@@ -45,6 +45,11 @@ from app.modules.organization.models.approval import (
     ApprovalDelegation, ApprovalRequest, ApprovalRequestStep, ApprovalWorkflow, ApprovalWorkflowStage,
 )
 
+# A workflow row is created the first time a document type is opened or
+# submitted. Owner 2026-11-07: every approval is OFF until an admin switches
+# it on in Organization › Approval workflows (or "Reset to default").
+WORKFLOWS_ON_BY_DEFAULT = False
+
 
 # ── Transaction type registry ────────────────────────────────────────────
 
@@ -339,6 +344,7 @@ def ensure_workflow(db: Session, key: str) -> ApprovalWorkflow:
         wf = ApprovalWorkflow(
             key=key, module_key=tt.module_key, name=tt.label, allow_self_approval=tt.allow_self_approval,
             distinct_approvers=tt.distinct_approvers, require_permission=tt.require_permission,
+            is_active=WORKFLOWS_ON_BY_DEFAULT,
         )
         wf.stages = _stage_rows(tt, [s.__dict__ for s in tt.default_stages], db)
         try:
@@ -379,7 +385,7 @@ def save_workflow(db: Session, key: str, payload: dict, actor: User) -> Approval
 def reset_workflow(db: Session, key: str, actor: User) -> ApprovalWorkflow:
     tt = get_type(key)
     return save_workflow(db, key, {
-        "stages": [s.__dict__ for s in tt.default_stages], "is_active": True,
+        "stages": [s.__dict__ for s in tt.default_stages], "is_active": WORKFLOWS_ON_BY_DEFAULT,
         "allow_self_approval": tt.allow_self_approval, "distinct_approvers": tt.distinct_approvers,
         "require_permission": tt.require_permission,
     }, actor)

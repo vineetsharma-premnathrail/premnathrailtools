@@ -3,6 +3,14 @@ from datetime import date
 from pydantic import BaseModel
 
 
+class StoreItemUnitName(BaseModel):
+    """The item's own name at one unit / plant (branch)."""
+    branch_id: int
+    name: str
+    # Response only: the unit's name.
+    unit: str | None = None
+
+
 class StoreItemCreate(BaseModel):
     # Leave blank to auto-generate the next global number 01, 02 … (service.generate_item_code).
     item_code: str | None = None
@@ -20,6 +28,7 @@ class StoreItemCreate(BaseModel):
     hsn_sac_code: str | None = None
     material_grade: str | None = None
     specification: str | None = None
+    unit_names: list[StoreItemUnitName] | None = None
     make: str | None = None
     model: str | None = None
     batch_controlled: bool = False
@@ -63,6 +72,7 @@ class StoreItemUpdate(BaseModel):
     hsn_sac_code: str | None = None
     material_grade: str | None = None
     specification: str | None = None
+    unit_names: list[StoreItemUnitName] | None = None
     make: str | None = None
     model: str | None = None
     batch_controlled: bool | None = None
@@ -112,6 +122,7 @@ class StoreItemResponse(BaseModel):
     hsn_sac_code: str | None = None
     material_grade: str | None = None
     specification: str | None = None
+    unit_names: list[StoreItemUnitName] | None = None
     make: str | None = None
     model: str | None = None
     batch_controlled: bool

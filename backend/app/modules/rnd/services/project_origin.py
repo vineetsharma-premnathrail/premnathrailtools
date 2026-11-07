@@ -150,7 +150,7 @@ def _machine(db: Session, machine_id: int):
 
 
 def machine_label(m) -> str:
-    return " — ".join(x for x in (m.serial_number, m.model_name, m.client_company) if x)
+    return m.serial_number or ""  # project number only (owner, 2026-11-07)
 
 
 def resolve(db: Session, user: User, data: dict, *, creating: bool, attachment_count: int = 0) -> dict:

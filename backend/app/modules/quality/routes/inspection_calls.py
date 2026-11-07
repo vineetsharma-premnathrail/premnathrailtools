@@ -42,7 +42,7 @@ MAX_CERT_BYTES = 15 * 1024 * 1024
 def _project_label(p: Project | None) -> str | None:
     if not p:
         return None
-    return " — ".join(x for x in (p.serial_number, p.model_name, p.client_company, f"PO {p.po_number}" if p.po_number else None) if x)
+    return p.serial_number or ""  # project number only (owner, 2026-11-07)
 
 
 def _agencies(db: Session) -> dict[str, str]:

@@ -386,7 +386,7 @@ function OverviewTab({ sr, project, projectError, canModify, onPatch, onRequestS
   invoiceCreate: boolean
 }) {
   const d = (v?: string | null) => (v ? formatDate(v) : null)
-  const machineLabel = project ? `${project.serial_number}${project.model_name ? ` — ${project.model_name}` : ''}` : null
+  const machineLabel = project ? project.serial_number : null
   // Role Visibility (core/features/erp.py, screen "Service Request page"): the Overview blocks a role may hide.
   const vis = useVisibility('erp:service_requests')
   return (

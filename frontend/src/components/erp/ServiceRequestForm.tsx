@@ -268,7 +268,7 @@ export default function ServiceRequestForm({
                       placeholder="Select a vehicle..."
                       options={projects.map((p) => ({
                         value: String(p.id),
-                        label: `${p.serial_number}${p.model_name ? ` — ${p.model_name}` : ''}${p.client_company ? ` (${p.client_company})` : ''}`,
+                        label: p.serial_number,
                       }))}
                     />
                   )}

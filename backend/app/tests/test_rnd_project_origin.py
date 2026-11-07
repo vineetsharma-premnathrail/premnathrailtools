@@ -68,7 +68,7 @@ def test_improvement_rules(client, db):
         r = _post(client, h, origin="existing_projects", machine_id=m.id, improvement_reason=reason)
         assert r.status_code == 200, (reason, r.text)
     body = r.json()
-    assert body["project_type"] == "product_improvement" and body["machine_label"] == "PEW-31 — Battery Shunter — CR"
+    assert body["project_type"] == "product_improvement" and body["machine_label"] == "PEW-31"
     assert body["improvement_reason_label"] == "Production difficulty" and body["source_kind"] is None
     opts = client.get(f"{BASE}/source-options", params={"kind": "machine", "q": "pew-31"}, headers=h).json()
     assert [o["id"] for o in opts] == [m.id]

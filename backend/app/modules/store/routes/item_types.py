@@ -6,6 +6,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core import visibility
+from app.core.permission_registry import is_admin_user
 from app.core.permissions import ensure_can_delete, require_tab_access, require_tab_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
@@ -83,6 +84,13 @@ def _clean(db: Session, payload: ItemTypeIn, current: StoreItemType | None = Non
 
 
 # Cross-module lookup (item pickers in other modules read the type list).
+def _admin_only(user: User) -> None:
+    """Item types drive item codes and PR purposes - only a portal admin adds, changes or removes one (owner, 2026-11-07)."""
+    if not is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Only a portal admin can add, change or delete item types - they decide item codes "
+                            "and which items a PR may buy. Ask an admin to make the change.")
+
+
 @router.get("")
 async def list_item_types(db: Session = Depends(get_db), user: User = Depends(require_store_lookup())):
     return type_options(db, user)
@@ -90,6 +98,7 @@ async def list_item_types(db: Session = Depends(get_db), user: User = Depends(re
 
 @router.post("")
 async def create_item_type(payload: ItemTypeIn, db: Session = Depends(get_db), _user: User = Depends(require_tab_action("store", "item_types", "create"))):
+    _admin_only(_user)
     item_types(db)
     label, prefix = _clean(db, payload)
     value = re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_")[:50] or "type"
@@ -103,6 +112,7 @@ async def create_item_type(payload: ItemTypeIn, db: Session = Depends(get_db), _
 
 @router.put("/{value}")
 async def update_item_type(value: str, payload: ItemTypeIn, db: Session = Depends(get_db), _user: User = Depends(require_tab_action("store", "item_types", "edit"))):
+    _admin_only(_user)
     """Renames the type / changes its code prefix. The stored value (what items
     point at) never changes; a new prefix applies to items created from now on."""
     t = db.query(StoreItemType).filter(StoreItemType.value == value).first()
@@ -116,6 +126,7 @@ async def update_item_type(value: str, payload: ItemTypeIn, db: Session = Depend
 @router.delete("/{value}")
 async def delete_item_type(value: str, db: Session = Depends(get_db), user: User = Depends(require_tab_access("store", "item_types"))):
     """Removes an item type no item or category uses yet."""
+    _admin_only(user)
     from app.modules.store.models.category import StoreItemCategory
     from app.modules.store.models.item import StoreItem
 

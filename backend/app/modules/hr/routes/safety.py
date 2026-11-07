@@ -158,7 +158,7 @@ def _out(db: Session, inc: HrSafetyIncident, viewer: User) -> HrSafetyIncidentRe
     if inc.erp_project_id:
         from app.modules.erp.models.project import Project as ErpProject
         p = db.get(ErpProject, inc.erp_project_id)
-        project_label = f"{p.serial_number} — {getattr(p, 'client_company', None) or p.model_name or ''}".rstrip(" —") if p else None
+        project_label = p.serial_number if p else None
     blockers = svc.closure_blockers(inc) if inc.status in ("under_investigation", "actions_open") else []
     return HrSafetyIncidentResponse.model_validate(inc).model_copy(update={
         "persons": persons, "actions": actions, "attachments": atts,
@@ -310,7 +310,7 @@ async def safety_meta(db: Session = Depends(get_db), _user: User = Depends(get_c
         "employees": [{"id": u.id, "name": u.name, "email": u.email}
                       for u in db.query(User).filter(User.is_active.is_(True)).order_by(User.name).all()],
         "assets": [{"id": a.id, "label": f"{a.asset_code} — {a.name}"} for a in assets],
-        "projects": [{"id": p.id, "label": f"{p.serial_number}{' — ' + p.model_name if p.model_name else ''}"} for p in projects],
+        "projects": [{"id": p.id, "label": p.serial_number} for p in projects],
     }
 
 

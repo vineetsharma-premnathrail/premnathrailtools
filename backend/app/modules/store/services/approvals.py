@@ -126,6 +126,7 @@ def ensure_return_workflow(db: Session) -> ApprovalWorkflow:
     wf = ApprovalWorkflow(
         key=RETURN_KEY, module_key=tt.module_key, name=tt.label, allow_self_approval=tt.allow_self_approval,
         distinct_approvers=tt.distinct_approvers, require_permission=tt.require_permission,
+        is_active=engine.WORKFLOWS_ON_BY_DEFAULT,
     )
     wf.stages = [
         ApprovalWorkflowStage(sequence=i + 1, name=s.name, approver_rule=s.approver_rule, rule_config=s.rule_config,

@@ -138,7 +138,7 @@ async def list_workflows(db: Session = Depends(get_db), _user: User = Depends(_c
         stages = wf.stages if wf else None
         out.append({
             **_type_out(db, tt),
-            "is_active": wf.is_active if wf else True,
+            "is_active": wf.is_active if wf else engine.WORKFLOWS_ON_BY_DEFAULT,
             # A row also exists for a type that was only opened or submitted once
             # (created from the defaults); it is customised only once someone saved it.
             "customised": wf is not None and wf.updated_by_id is not None,
@@ -180,7 +180,7 @@ async def save_workflow(key: str, payload: WorkflowPayload, background_tasks: Ba
 async def reset_workflow(key: str, background_tasks: BackgroundTasks, db: Session = Depends(get_db),
                          actor: User = Depends(require_feature_action("organization", "workflows", "reset", "edit"))):
     tt = engine.get_type(key)
-    _ensure_may_change_flags(db, key, {"is_active": True, "allow_self_approval": tt.allow_self_approval,
+    _ensure_may_change_flags(db, key, {"is_active": engine.WORKFLOWS_ON_BY_DEFAULT, "allow_self_approval": tt.allow_self_approval,
                                        "distinct_approvers": tt.distinct_approvers,
                                        "require_permission": tt.require_permission}, actor)
     wf = engine.reset_workflow(db, key, actor)

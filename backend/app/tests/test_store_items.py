@@ -157,7 +157,16 @@ def test_search_matches_words_across_name_and_description(client, h):
     assert len(client.get(API, params={"search": "Bearing 6205-2RS "}, headers=h).json()) == 2
 
 
-def test_item_types_can_be_added_and_renamed(client, h):
+def test_item_types_can_be_added_and_renamed(client, h, db):
+    # Only a portal admin adds / changes / deletes item types (owner, 2026-11-07).
+    refused = client.post("/api/v1/store/item-types", json={"label": "Spare Kit", "prefix": "sk"}, headers=h)
+    assert refused.status_code == 403 and "Only a portal admin" in refused.json()["detail"]
+    assert client.delete("/api/v1/store/item-types/material", headers=h).status_code == 403
+    admin = User(email="admin.it@premnathrail.com", name="admin.it", role="admin", is_active=True, assigned_apps=["store"])
+    db.add(admin)
+    db.commit()
+    db.refresh(admin)
+    h = {"Authorization": f"Bearer {create_access_token({'sub': str(admin.id), 'email': admin.email, 'role': admin.role})}"}
     added = client.post("/api/v1/store/item-types", json={"label": "Spare Kit", "prefix": "sk"}, headers=h)
     assert added.status_code == 200 and {"value": "spare_kit", "label": "Spare Kit", "prefix": "SK"} in added.json()
     assert client.post("/api/v1/store/item-types", json={"label": "spare kit"}, headers=h).status_code == 409

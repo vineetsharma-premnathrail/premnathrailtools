@@ -270,10 +270,13 @@ export default function MyLinesPage() {
               const youCanRaise = canRaiseRfq && g.states.includes('to_quote') && g.buyer_id != null && (groupMine || canWorkAll)
               const lineActions = g.lines.some((l) => l.open_to_order > 1e-6 && (canMove || (canShortClose && (mine(l) || canWorkAll))))
               const n = g.lines.length
-              const mixedTitle = 'The lines use different units — open the row to see each line'
-              const qty = (v: number | null, bold = false) => (
+              // Lines in different units (NOS + PCS) can't be added up — the group
+              // row then counts the items that have a quantity in that column.
+              const mixedTitle = 'These items use different units, so their quantities are not added up — open the row to see each item'
+              const items = (k: number) => (k === 0 ? '0' : `${k} item${k === 1 ? '' : 's'}`)
+              const qty = (v: number | null, field: 'open_to_order' | 'ordered_qty' | 'accepted_qty' | 'pending_receipt', bold = false) => (
                 <td style={{ ...numTdStyle, fontWeight: bold ? 700 : 400, color: bold ? TEXT.heading : undefined }} title={v == null ? mixedTitle : undefined}>
-                  {v == null ? 'mixed' : fmtQty(v)}
+                  {v == null ? items(g.lines.filter((l) => (l[field] || 0) > 1e-6).length) : fmtQty(v)}
                 </td>
               )
               return (
@@ -291,11 +294,11 @@ export default function MyLinesPage() {
                         </div>
                       </button>
                     </td>
-                    <td style={numTdStyle} title={g.buy_qty == null ? mixedTitle : undefined}>{g.buy_qty == null ? 'mixed' : `${fmtQty(g.buy_qty)} ${g.unit || ''}`}</td>
-                    {qty(g.open_to_order, hasOpen)}
-                    {qty(g.ordered_qty)}
-                    {qty(g.accepted_qty)}
-                    {qty(g.pending_receipt)}
+                    <td style={numTdStyle} title={g.buy_qty == null ? mixedTitle : undefined}>{g.buy_qty == null ? items(n) : `${fmtQty(g.buy_qty)} ${g.unit || ''}`}</td>
+                    {qty(g.open_to_order, 'open_to_order', hasOpen)}
+                    {qty(g.ordered_qty, 'ordered_qty')}
+                    {qty(g.accepted_qty, 'accepted_qty')}
+                    {qty(g.pending_receipt, 'pending_receipt')}
                     <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}><div style={{ display: 'inline-flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
                         {g.states.map((st) => <Pill key={st} label={STATE_LABEL[st] || st} hex={STATE_HEX[st] || '#64748b'} />)}
                         {g.po_rejected && <Pill label="PO rejected — upload again" hex="#d97706" title="The PO made for a line here was rejected in approval. The vendor stays chosen; the buyer uploads a corrected PO." />}

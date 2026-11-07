@@ -3597,6 +3597,13 @@ export interface StorePhysicalCount {
   items: StorePhysicalCountLine[]
 }
 
+export interface StoreItemUnitName {
+  branch_id: number
+  name: string
+  /** Response only: the unit's name. */
+  unit?: string | null
+}
+
 export interface StoreItem {
   id: number
   item_code: string
@@ -3616,6 +3623,8 @@ export interface StoreItem {
   specification?: string | null
   make?: string | null
   model?: string | null
+  /** The item's own name at each unit / plant; item_name is the name as on the invoice. */
+  unit_names?: StoreItemUnitName[] | null
   batch_controlled: boolean
   serial_controlled: boolean
   expiry_controlled: boolean

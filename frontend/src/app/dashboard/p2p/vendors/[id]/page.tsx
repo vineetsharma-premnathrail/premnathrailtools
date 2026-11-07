@@ -7,7 +7,7 @@ import { useCan } from '@/lib/permissions'
 import { vendorsApi } from '@/lib/api'
 import { ProcurementVendor, VendorCatalogRow, VendorDocumentRow } from '@/types'
 import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
-import { inputStyle, primaryBtnStyle, secondaryBtnStyle, smallSecondaryBtnStyle, smallDangerBtnStyle, RowCount, Pill, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
+import { inputStyle, primaryBtnStyle, secondaryBtnStyle, smallSecondaryBtnStyle, smallDangerBtnStyle, dangerBtnStyle, RowCount, Pill, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import P2PNav from '@/components/p2p/P2PNav'
 import VendorFormDialog from '@/components/p2p/VendorFormDialog'
 import ImportDialog, { saveBlob } from '@/components/shared/ImportDialog'
@@ -65,7 +65,7 @@ export default function VendorDetailPage() {
   const [itemError, setItemError] = useState('')
   const [itemSaving, setItemSaving] = useState(false)
   const [showImport, setShowImport] = useState(false)
-  const [confirm, setConfirm] = useState<{ kind: 'doc' | 'item'; id: number; name: string } | null>(null)
+  const [confirm, setConfirm] = useState<{ kind: 'doc' | 'item' | 'vendor'; id: number; name: string } | null>(null)
   const [reload, setReload] = useState(0)
 
   useEffect(() => {
@@ -118,10 +118,15 @@ export default function VendorDetailPage() {
     setConfirm(null)
     if (!c) return
     try {
+      if (c.kind === 'vendor') {
+        await vendorsApi.remove(id)
+        router.push('/dashboard/p2p/vendors')
+        return
+      }
       if (c.kind === 'doc') await vendorsApi.deleteDocument(id, c.id)
       else await vendorsApi.deleteCatalogItem(id, c.id)
       setReload((x) => x + 1)
-    } catch (err) { fail(err, 'Could not delete — try again.') }
+    } catch (err) { fail(err, 'Could not delete — check your connection and try again.') }
   }
 
   return (
@@ -134,6 +139,8 @@ export default function VendorDetailPage() {
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {vendor && canEditVendor && <button type="button" style={primaryBtnStyle} onClick={() => setEditing(true)}>Edit</button>}
+          {/* Only a vendor no document uses yet — the server says where it is used otherwise. */}
+          {vendor && canDelete('p2p', 'vendors', vendor.created_by_id ?? null) && <button type="button" style={dangerBtnStyle} onClick={() => setConfirm({ kind: 'vendor', id: vendor.id, name: vendor.name })}>Delete</button>}
           <button type="button" style={secondaryBtnStyle} onClick={() => router.push('/dashboard/p2p/vendors')}>← Back</button>
         </div>
       </div>
@@ -321,8 +328,10 @@ export default function VendorDetailPage() {
           }}
           onClose={() => setShowImport(false)} onImported={() => setReload((x) => x + 1)} />
       )}
-      <ConfirmDialog open={!!confirm} title={confirm?.kind === 'doc' ? 'Delete document?' : 'Delete catalog item?'}
-        message={`Remove "${confirm?.name || ''}" from ${vendor?.name || 'this vendor'}?`} onConfirm={doDelete} onCancel={() => setConfirm(null)} />
+      <ConfirmDialog open={!!confirm} title={confirm?.kind === 'vendor' ? 'Delete vendor?' : confirm?.kind === 'doc' ? 'Delete document?' : 'Delete catalog item?'}
+        message={confirm?.kind === 'vendor'
+          ? `Delete vendor "${confirm.name}" with its catalog and document list? This works only if no PO, RFQ, invoice, receipt or other document uses it — otherwise set it Inactive or Blocked.`
+          : `Remove "${confirm?.name || ''}" from ${vendor?.name || 'this vendor'}?`} onConfirm={doDelete} onCancel={() => setConfirm(null)} />
     </div>
   )
 }

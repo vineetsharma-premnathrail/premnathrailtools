@@ -113,7 +113,8 @@ def seed_workflow(db: Session, key: str) -> None:
         return
     tt = engine.get_type(key)
     wf = ApprovalWorkflow(key=key, module_key=tt.module_key, name=tt.label, allow_self_approval=tt.allow_self_approval,
-                          distinct_approvers=tt.distinct_approvers, require_permission=tt.require_permission)
+                          distinct_approvers=tt.distinct_approvers, require_permission=tt.require_permission,
+                          is_active=engine.WORKFLOWS_ON_BY_DEFAULT)
     wf.stages = [ApprovalWorkflowStage(sequence=1, name=tt.default_stages[0].name, approver_rule="specific_users",
                                        rule_config={"user_ids": ids}, approval_mode="any", conditions=[])]
     db.add(wf)

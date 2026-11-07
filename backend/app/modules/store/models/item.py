@@ -4,6 +4,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 from app.db.mixins import TimestampMixin
 from sqlalchemy import Numeric
+from sqlalchemy.dialects.postgresql import JSONB
 
 # What the item is used for — drives which downstream doc types (Purchase,
 # Manufacturing BOM) it can be picked into. Free text, not an enum column in
@@ -110,6 +111,10 @@ class StoreItem(Base, TimestampMixin):
     lead_time_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Code of this item in the v3 sheet / Tally (searchable, unique when set).
     legacy_code: Mapped[str | None] = mapped_column(String(50), nullable=True, unique=True, index=True)
+    # The item's own name at each unit / plant (owner, 2026-11-07): item_name is
+    # the name as on the vendor's invoice; this is what Unit 1, Unit 2 … call it
+    # inside — [{"branch_id": 1, "name": "…"}]. Searchable; shown in pickers.
+    unit_names: Mapped[list[dict] | None] = mapped_column(JSONB, nullable=True)
     # Smallest quantity the vendor sells (in the item UOM) — MRP rounds up to it.
     min_order_qty: Mapped[float | None] = mapped_column(Float, nullable=True)
 
