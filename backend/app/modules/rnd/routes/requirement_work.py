@@ -570,16 +570,46 @@ async def list_tasks(source: Source, record_id: int, db: Session = Depends(get_d
     (a Design / Electrical / Hydraulic & Pneumatic assignee) sees the tasks
     assigned to them, the tasks they gave, and the sub-tasks under those."""
     _record(db, source, record_id)
+    _access, tasks = _visible_tasks(db, user, source, record_id)
+    return _serialize_tasks(db, tasks)
+
+
+def _visible_tasks(db: Session, user: User, source: str, record_id: int) -> tuple[dict, list[RndRequirementTask]]:
+    """The requirement's tasks this user may see (see list_tasks) and their access."""
     access = ra.ensure(db, user, source, record_id, "view")
     if ra.is_rnd_side(user):
         ensure_feature_action(user, "rnd", "requirements", "tasks", "view")
     tasks = db.query(RndRequirementTask).filter(
         RndRequirementTask.source == source, RndRequirementTask.record_id == record_id,
     ).order_by(RndRequirementTask.id.desc()).all()
-    if not access["is_rnd_side"] and not access["is_head"]:
+    if not access["sees_all"]:
+        # Outside R&D, or R&D with an Own / Own + assigned R&D data scope: own tasks only.
         mine = {t.id for t in tasks if user.id in (t.assigned_to_id, t.created_by_id)}
         tasks = [t for t in tasks if t.id in mine or t.parent_task_id in mine]
-    return _serialize_tasks(db, tasks)
+    return access, tasks
+
+
+@router.get("/tasks/{task_id}/detail")
+async def task_detail(task_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """One requirement task on its own page (R&D › R&D Tasks › task): the task, its
+    main task and its sub-tasks (as far as the user may see them), a one-line
+    requirement header, and whether the user may also open the requirement page."""
+    task = _task(db, task_id)
+    record = _record(db, task.source, task.record_id)
+    access, tasks = _visible_tasks(db, user, task.source, task.record_id)
+    if task.id not in {t.id for t in tasks}:
+        raise HTTPException(status_code=403, detail="This task isn't yours — you see only the tasks assigned to you, the ones you gave, "
+                            "and their sub-tasks. Ask the R&D head if you need to work on it.")
+    family = [t for t in tasks if t.id in (task.id, task.parent_task_id) or t.parent_task_id == task.id]
+    req = intake.get(db, task.source, task.record_id)
+    title = (record.product if task.source == "inquiry" else record.tender_name) or record.universal_id
+    return {
+        "tasks": _serialize_tasks(db, family),
+        "parent": {"kind": "requirement", "source": task.source, "id": task.record_id,
+                   "ref": (req.rd_number if req else None) or _ref(task.source, record), "title": title},
+        "can_manage": bool(access["is_head"]),
+        "can_open_parent": bool(access["view"]),
+    }
 
 
 @router.get("/{source}/{record_id}/assignees")

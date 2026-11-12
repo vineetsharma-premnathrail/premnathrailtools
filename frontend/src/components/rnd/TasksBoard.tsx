@@ -533,7 +533,7 @@ export interface TaskRights { create?: boolean; edit?: boolean; approve?: boolea
 const ALL_RIGHTS: Required<TaskRights> = { create: true, edit: true, approve: true, cancel: true }
 
 /** One task opened: header with its actions, then Overview · Sub-tasks · Files · Approvals · Activity tabs. */
-function TaskView({
+export function TaskView({
   task, all, userId, canManage, rights = ALL_RIGHTS, api, labels, people, team, startPanel, onChanged, onCreated, onOpen, onClose, prevId, nextId,
 }: {
   task: RndTask
@@ -549,7 +549,8 @@ function TaskView({
   onChanged: (t: RndTask) => void
   onCreated: () => void
   onOpen: (id: number) => void
-  onClose: () => void
+  /** Omit on the task's own page: hides prev / next / close. */
+  onClose?: () => void
   prevId?: number
   nextId?: number
 }) {
@@ -683,9 +684,12 @@ function TaskView({
         </div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
           {canEdit && <button type="button" data-tour="rnd-task-edit-btn" disabled={busy} onClick={() => choose('edit')} style={sheetBtn('secondary', INK, busy)}><SheetIcon name="edit" size={15} /> Edit</button>}
-          <button type="button" aria-label="Previous task" disabled={prevId === undefined} onClick={() => prevId !== undefined && onOpen(prevId)} style={{ ...sheetBtn('secondary', INK, prevId === undefined), padding: '8px 9px' }}><SheetIcon name="left" size={15} /></button>
-          <button type="button" aria-label="Next task" disabled={nextId === undefined} onClick={() => nextId !== undefined && onOpen(nextId)} style={{ ...sheetBtn('secondary', INK, nextId === undefined), padding: '8px 9px' }}><SheetIcon name="right" size={15} /></button>
-          <button type="button" aria-label="Close task" title="Back to the task table" onClick={onClose} style={sheetBtn('ghost', MUTED)}><SheetIcon name="x" size={18} /></button>
+          {/* No onClose = the task's own page (R&D › R&D Tasks › task): no prev / next / close there. */}
+          {onClose && (<>
+            <button type="button" aria-label="Previous task" disabled={prevId === undefined} onClick={() => prevId !== undefined && onOpen(prevId)} style={{ ...sheetBtn('secondary', INK, prevId === undefined), padding: '8px 9px' }}><SheetIcon name="left" size={15} /></button>
+            <button type="button" aria-label="Next task" disabled={nextId === undefined} onClick={() => nextId !== undefined && onOpen(nextId)} style={{ ...sheetBtn('secondary', INK, nextId === undefined), padding: '8px 9px' }}><SheetIcon name="right" size={15} /></button>
+            <button type="button" aria-label="Close task" title="Back to the task table" onClick={onClose} style={sheetBtn('ghost', MUTED)}><SheetIcon name="x" size={18} /></button>
+          </>)}
         </div>
       </div>
 

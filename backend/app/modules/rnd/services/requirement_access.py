@@ -172,6 +172,44 @@ def has_any_task(db: Session, user: User) -> bool:
     ).first() is not None
 
 
+_WIDE_SCOPES = ("department", "plant", "multi_plant", "organization")
+
+
+def rnd_scope(user: User) -> str:
+    """The user's R&D data scope (Organization › Role & Permissions › Data access)."""
+    from app.core.data_scope import user_scope  # local: data_scope imports models lazily
+    return user_scope(user, RND)
+
+
+def _scope_label(level: str) -> str:
+    from app.core.data_scope import SCOPE_LABELS
+    return SCOPE_LABELS.get(level, level)
+
+
+def sees_every_requirement(db: Session, user: User) -> bool:
+    """Every requirement and every task on it: admins, the R&D head(s), the
+    Technical Offer team, and R&D-side people whose R&D data scope is
+    Department or wider. With "Own records" / "Own + assigned" an R&D person
+    sees only the requirements they hold (or gave) a task on, and only those
+    tasks — the data scope wins over "R&D sees everything" (owner, 2026-11-12)."""
+    if user.role == "admin" or is_head(db, user) or can_view_technical_offer(db, user):
+        return True
+    return is_rnd_side(user) and rnd_scope(user) in _WIDE_SCOPES
+
+
+def _task_keys(db: Session, user: User, *, include_given: bool) -> set[tuple[str, int]]:
+    """(source, record_id) of requirements where the user holds a task — and,
+    with `include_given` (Own + assigned scope), where they gave one."""
+    from sqlalchemy import or_
+    cond = RndRequirementTask.assigned_to_id == user.id
+    if include_given:
+        cond = or_(cond, RndRequirementTask.created_by_id == user.id)
+    rows = db.query(RndRequirementTask.source, RndRequirementTask.record_id).filter(
+        cond, RndRequirementTask.status != "cancelled",
+    ).distinct().all()
+    return {(s, r) for s, r in rows}
+
+
 def has_requirement_side(db: Session, user: User) -> bool:
     """May reach the requirement routes at all: the R&D side, or someone who
     holds a task on a requirement (what they may open is checked per record)."""
@@ -219,18 +257,24 @@ def access_for(db: Session, user: User, source: str, record_id: int) -> dict:
     create_technical_offer} for this user on this requirement."""
     head = is_head(db, user)
     rnd_side = is_rnd_side(user)
+    sees_all = sees_every_requirement(db, user)
     out = {
         "view": False, "download": False, "upload": False, "respond": False,
         "is_head": head, "is_rnd_side": rnd_side, "can_review": can_accept(db, user) or can_return(db, user),
         "create_technical_offer": can_create_technical_offer(db, user),
+        # False = the Tasks tab lists only the user's own tasks (held / given) and their sub-tasks.
+        "sees_all": sees_all,
     }
     if head:
         out.update({p: True for p in PERMS})
         return out
     row = _row(db, user, source, record_id)
-    if rnd_side:
-        # R&D-side users with View on Requirements see every requirement.
+    if rnd_side and (sees_all or (source, record_id) in _task_keys(db, user, include_given=True)):
+        # R&D side: every requirement with a Department+ R&D data scope; with
+        # Own / Own + assigned only the ones they hold or gave a task on.
         out.update(view=True, download=True, upload=True, respond=bool(row and row.can_respond))
+    elif rnd_side:
+        out["view"] = out["download"] = bool(row and row.can_view)
     else:
         task = has_task(db, user, source, record_id)
         out["view"] = task or bool(row and row.can_view)
@@ -252,6 +296,13 @@ def _head_names(db: Session) -> str:
 def ensure(db: Session, user: User, source: str, record_id: int, perm: str) -> dict:
     access = access_for(db, user, source, record_id)
     if not access[perm]:
+        if not access["view"] and access["is_rnd_side"]:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Your R&D data access is '{_scope_label(rnd_scope(user))}', so you see only the requirements you hold or gave a task on. "
+                       f"Ask the R&D head ({_head_names(db)}) for a task on it, or an admin to set R&D data access to Department "
+                       "or wider in Organization › Role & Permissions.",
+            )
         if not access["view"]:
             raise HTTPException(
                 status_code=403,
@@ -303,16 +354,13 @@ def ensure_can_review(db: Session, user: User, action: str) -> None:
 
 
 def visible_keys(db: Session, user: User) -> set[tuple[str, int]] | None:
-    """(source, record_id) pairs the user may see; None = all (R&D side, head,
-    Technical Offer team, admin)."""
-    if is_rnd_side(user) or is_head(db, user) or can_view_technical_offer(db, user):
+    """(source, record_id) pairs the user may see; None = all (head, Technical
+    Offer team, admin, R&D side with a Department+ R&D data scope)."""
+    if sees_every_requirement(db, user):
         return None
     keys = {
         (r.source, r.record_id)
         for r in db.query(RndRequirementAccess).filter(RndRequirementAccess.user_id == user.id, RndRequirementAccess.can_view == True).all()  # noqa: E712
     }
-    keys |= {
-        (t.source, t.record_id)
-        for t in db.query(RndRequirementTask).filter(RndRequirementTask.assigned_to_id == user.id, RndRequirementTask.status != "cancelled").all()
-    }
+    keys |= _task_keys(db, user, include_given=is_rnd_side(user))
     return keys

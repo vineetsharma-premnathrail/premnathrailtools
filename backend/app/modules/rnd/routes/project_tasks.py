@@ -392,13 +392,39 @@ async def my_project_tasks(include_done: bool = False, db: Session = Depends(get
     return out
 
 
-def _list(db: Session, project: TaskParent, user: User) -> list[dict]:
+def _visible(db: Session, project: TaskParent, user: User) -> list[RndProjectTask]:
     ensure_feature_action(user, "rnd", "projects", "tasks", "view")
     tasks = db.query(RndProjectTask).filter(project.task_filter()).order_by(RndProjectTask.id.desc()).all()
     if not project.can_manage(user):
         mine = {t.id for t in tasks if user.id in (t.assigned_to_id, t.created_by_id)}
         tasks = [t for t in tasks if t.id in mine or t.parent_task_id in mine]
-    return _serialize(db, tasks)
+    return tasks
+
+
+def _list(db: Session, project: TaskParent, user: User) -> list[dict]:
+    return _serialize(db, _visible(db, project, user))
+
+
+@router.get("/project-tasks/{task_id}/detail")
+async def project_task_detail(task_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """One project task on its own page (R&D › R&D Tasks › task): the task, its main task
+    and its sub-tasks (as far as the user may see them), a one-line project header, and
+    whether the user may also open the project page."""
+    task = _task(db, task_id)
+    project = _parent_of(db, task, user)
+    tasks = _visible(db, project, user)
+    if task.id not in {t.id for t in tasks}:
+        raise HTTPException(status_code=403, detail=f"This task isn't yours — on {project.project_number} you see only the tasks assigned to you, "
+                            f"the ones you gave, and their sub-tasks. Ask {project.manager_label} if you need to work on it.")
+    family = [t for t in tasks if t.id in (task.id, task.parent_task_id) or t.parent_task_id == task.id]
+    return {
+        "tasks": _serialize(db, family),
+        "parent": {"kind": "project" if project.kind == "rnd" else "pm_project", "id": project.id,
+                   "ref": project.project_number, "title": project.title},
+        "can_manage": project.can_manage(user),
+        # _parent_of already checked the user may open the project (R&D data scope / a task on the PM project).
+        "can_open_parent": True,
+    }
 
 
 @router.get("/projects/{project_id}/tasks")

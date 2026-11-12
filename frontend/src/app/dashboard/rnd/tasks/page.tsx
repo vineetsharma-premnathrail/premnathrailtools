@@ -129,15 +129,11 @@ export default function RndTasksPage() {
   const clear = () => { setApplied(EMPTY); setSearch('') }
   const set = (patch: Partial<Draft>) => setApplied((d) => ({ ...d, ...patch }))
 
-  // Opens the task's parent through a signed ref — never a raw id; an edited link shows "Invalid link".
+  // Opens the task on its own page (not its requirement / project) through a signed ref —
+  // never a raw id; an edited link shows "Invalid link".
   const openTask = (t: RndTaskRow) => {
-    const p = t.parent
     try {
-      router.push(p.kind === 'requirement'
-        ? `${recordPath(`/dashboard/rnd/requirements/${p.source || 'inquiry'}`, p, 'record_id')}?tab=tasks`
-        : p.kind === 'pm_project'
-          ? recordPath('/dashboard/rnd/project-tasks', p)
-          : `${recordPath('/dashboard/rnd/projects', p)}?tab=tasks`)
+      router.push(recordPath(`/dashboard/rnd/tasks/${t.parent.kind === 'requirement' ? 'requirement' : 'project'}`, t))
     } catch (err) {
       setError(extractErrorMessages(err, 'Could not open this task — reload the page and try again.'))
     }
