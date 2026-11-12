@@ -237,10 +237,13 @@ def _post_lines(client, inq, owner, lines):
     return client.post(f"/api/v1/crm/inquiries/{inq.id}/quotations", json={"items": lines}, headers=_auth(owner))
 
 
-def test_line_without_product_is_rejected(client, db):
+def test_line_without_product_needs_a_name(client, db):
+    # One-time item (2026-11-12): no product is fine when the line has a typed name.
     owner = _user(db, "q_prod1@premnathrail.com")
     inq = _inquiry(db, owner, uid="PRT-INQ-2026-0301")
-    r = _post_lines(client, inq, owner, [{"description": "Free text", "quantity": 1, "unit_price": 10}])
+    r = _post_lines(client, inq, owner, [{"description": "Road-Rail Truck", "quantity": 1, "unit_price": 10}])
+    assert r.status_code in (200, 201), r.text
+    r = _post_lines(client, inq, owner, [{"quantity": 1, "unit_price": 10}])
     assert r.status_code == 422 and "Line 1: pick the product" in r.json()["detail"]
 
 

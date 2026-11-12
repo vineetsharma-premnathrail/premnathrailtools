@@ -96,9 +96,11 @@ def prepare_quotation_lines(db: Session, items: list[QuotationLineItemPayload]) 
     kept = [it for it in items if not _line_is_blank(it)]
     for n, it in enumerate(kept, start=1):
         if not it.product_id:
-            raise HTTPException(status_code=422, detail=(
-                f"Line {n}: pick the product — every quotation line is chosen from the Product master (including Paid services). "
-                "Open the line and choose a Product; if it is missing, ask Products to add it."))
+            # One-time item (owner, 2026-11-12): not in the Product master, typed for this quotation only.
+            if not (it.description or "").strip():
+                raise HTTPException(status_code=422, detail=(
+                    f"Line {n}: pick the product from the list, or type the item name in the Product field (a name not in the list is used for this quotation only)."))
+            continue
         product = db.query(FinishedProduct).filter(FinishedProduct.id == it.product_id).first()
         if not product:
             raise HTTPException(status_code=422, detail=f"Line {n}: product #{it.product_id} does not exist — pick the product again from the list.")

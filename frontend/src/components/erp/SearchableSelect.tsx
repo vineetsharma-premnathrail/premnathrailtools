@@ -32,6 +32,7 @@ export default function SearchableSelect({
   onAdd,
   addLabel = '+ Add new',
   onEdit,
+  onKeepTyped,
   onSearch,
   searchable,
   typeIn = false,
@@ -54,6 +55,9 @@ export default function SearchableSelect({
   addLabel?: string
   /** Shows a pencil on each option to edit it. */
   onEdit?: (value: string) => void
+  /** Opt-in free text: called with the typed text on every keystroke, so what is typed stays as the
+   *  value (the caller shows it as an option). Picking an option still calls onChange. */
+  onKeepTyped?: (text: string) => void
   /** Server-side search: called with the typed text (debounce in the caller);
    *  `options` are then shown as given, without client-side filtering. Keep the
    *  selected option in `options` so its label stays visible. */
@@ -302,7 +306,7 @@ export default function SearchableSelect({
             // Closed: shows the picked value. Open: shows what is being typed (empty = whole list).
             value={open ? query : selectedLabel}
             placeholder={open && selectedLabel ? selectedLabel : shownPlaceholder}
-            onChange={(e) => { setQuery(e.target.value); queryRef.current = e.target.value; setActive(0); onSearch?.(e.target.value); if (!open) setOpen(true) }}
+            onChange={(e) => { setQuery(e.target.value); queryRef.current = e.target.value; onKeepTyped?.(e.target.value); setActive(0); onSearch?.(e.target.value); if (!open) setOpen(true) }}
             style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', background: 'transparent', padding: 0, margin: 0, font: 'inherit', color: '#1f1108', boxShadow: 'none', textOverflow: 'ellipsis' }}
           />
         ) : (

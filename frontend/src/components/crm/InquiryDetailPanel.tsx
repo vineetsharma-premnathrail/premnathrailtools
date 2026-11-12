@@ -453,7 +453,9 @@ function InfoTab({ inquiry, org, contact, revisions, selectedRevId, canModify, o
   )
 }
 
-const emptyLineItem = { product_id: '', application_id: '', description: '', model_number: '', details: '', quantity: '', unit_price: '', gst_percent: '', subtotal: '', total: '' }
+/** Dropdown value that turns a quotation line into a custom item: a typed name, this quotation only (no Product-master row). */
+const CUSTOM = '__custom__'
+const emptyLineItem = { custom: '', product_id: '', application_id: '', description: '', model_number: '', details: '', quantity: '', unit_price: '', gst_percent: '', subtotal: '', total: '' }
 
 // A valid Delivery Time must carry a unit, not just a bare number — "7" is ambiguous,
 // "7 days" isn't. Accepts day/week/month/hour in singular or plural, any case, with
@@ -596,6 +598,7 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
     // A different product drops the old product's price, so the new one's price fills in.
     setItems((rows) => rows.map((row, i) => i === idx ? {
       ...row,
+      custom: '',
       product_id: String(product.id),
       description: product.name,
       model_number: product.model_number || '',
@@ -687,6 +690,7 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
   const itemsOf = (q: QuotationItem) => {
     const str = (v?: number | null) => (v != null ? String(v) : '')
     return q.items.length ? q.items.map((it) => ({
+      custom: !it.product_id && it.description ? '1' : '',
       product_id: it.product_id ? String(it.product_id) : '', application_id: it.application_id ? String(it.application_id) : '',
       description: it.description || '', model_number: it.model_number || '', details: it.details || '',
       quantity: str(it.quantity), unit_price: str(it.unit_price), gst_percent: str(it.gst_percent), subtotal: str(it.subtotal), total: str(it.total),
@@ -798,7 +802,7 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
       if (isItemRowEmpty(it)) return
       anyFilledItem = true
       const rowErrs: QuotationItemErrors = {}
-      if (!it.product_id) rowErrs.product = 'Pick the Product — every line is chosen from the Product master.'
+      if (!it.product_id && !it.description.trim()) rowErrs.product = 'Pick the product from the list, or type the item name (a name not in the list is used for this quotation only).'
       if (it.quantity && Number(it.quantity) <= 0) rowErrs.quantity = 'Quantity must be more than 0 — enter a positive number or leave it blank.'
       if (!isLumpSum && it.unit_price && Number(it.unit_price) < 0) rowErrs.unit_price = 'Price/Unit cannot be negative — enter 0 or more, or leave it blank.'
       if (!isLumpSum && !isExport && it.gst_percent && (Number(it.gst_percent) < 0 || Number(it.gst_percent) > 100)) rowErrs.gst_percent = 'GST % must be between 0 and 100 — fix it or leave it blank.'
@@ -1038,11 +1042,23 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
                         <div {...(idx === 0 ? { 'data-tour': 'quot-item-name' } : {})}>
                           {/* Applications / attachments are quoted as their own line (owner, 2026-10-28). */}
                           <SearchableSelect
-                            value={row.product_id}
-                            onChange={(v) => { const p = [...quotationProducts, ...quotationApplications].find((pr) => String(pr.id) === v); if (p) pickProductForRow(idx, p) }}
-                            options={[...quotationProducts, ...quotationApplications].map((p) => ({ value: String(p.id), label: `${p.name}${p.model_number ? ` · ${p.model_number}` : ''}`, group: p.product_type === 'service' ? 'Paid services' : p.product_type === 'application' ? 'Applications / attachments' : 'Products' }))}
-                            placeholder="Product — pick from the Product master"
+                            // Typed name not in the list = custom item, this quotation only (owner, 2026-11-12).
+                            value={row.custom ? CUSTOM : row.product_id}
+                            onChange={(v) => {
+                              if (v === CUSTOM) return
+                              const p = [...quotationProducts, ...quotationApplications].find((pr) => String(pr.id) === v); if (p) pickProductForRow(idx, p)
+                            }}
+                            options={[
+                              ...(row.custom && row.description.trim() ? [{ value: CUSTOM, label: row.description }] : []),
+                              ...[...quotationProducts, ...quotationApplications].map((p) => ({ value: String(p.id), label: `${p.name}${p.model_number ? ` · ${p.model_number}` : ''}`, group: p.product_type === 'service' ? 'Paid services' : p.product_type === 'application' ? 'Applications / attachments' : 'Products' })),
+                            ]}
+                            placeholder="Product — pick or type a name"
                             triggerStyle={errInputStyle(!!rowErr?.product)}
+                            // Whatever is typed stays as the line's name (custom item) unless a product is picked.
+                            onKeepTyped={(text) => setItems((rows) => rows.map((r, i) => i !== idx ? r : !text.trim()
+                              ? (r.custom ? { ...r, custom: '', description: '' } : r)
+                              : r.product_id ? { ...r, custom: '1', product_id: '', description: text, model_number: '', unit_price: '', subtotal: '', total: '' }
+                              : { ...r, custom: '1', description: text }))}
                           />
                         </div>
                         <input {...(idx === 0 ? { 'data-tour': 'quot-item-model' } : {})} value={row.model_number} onChange={(e) => updateItemRow(idx, 'model_number', e.target.value)} placeholder="Model No." title="Model No. (from the product)" style={sheetInput} />
