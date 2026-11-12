@@ -74,7 +74,6 @@ export default function CameraCapture({
   // fixed backdrop inside itself instead of covering the screen.
   return createPortal(
     <div
-      onClick={onClose}
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}
     >
       <div

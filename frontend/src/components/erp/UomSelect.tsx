@@ -78,7 +78,7 @@ export default function UomSelect({
 
       {/* Portal to <body>: glass cards clip fixed overlays, and inside a form popup Enter must not submit the outer form. */}
       {mode && typeof document !== 'undefined' && createPortal(
-        <div onClick={close} className="dialog-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(20,14,8,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 16 }}>
+        <div className="dialog-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(20,14,8,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 16 }}>
           <div onClick={(e) => e.stopPropagation()} className="dialog-panel" style={{ width: '100%', maxWidth: 380, background: '#fff', borderRadius: 18, padding: 24, boxShadow: '0 24px 60px rgba(0,0,0,0.25)' }}>
             <p style={{ fontSize: 16, fontWeight: 700, color: '#1f1108', margin: '0 0 14px' }}>{mode === 'add' ? 'Add unit' : `Edit unit ${editing}`}</p>
             <label style={{ fontSize: 11, fontWeight: 700, color: '#57534e', textTransform: 'uppercase' }}>Code *</label>

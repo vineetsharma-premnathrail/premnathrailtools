@@ -194,7 +194,7 @@ export default function VisibilityRuleDialog({ open, entry, entryKey, roleName, 
   )
 
   return createPortal(
-    <div onClick={onClose} className="dialog-backdrop"
+    <div className="dialog-backdrop"
       style={{ position: 'fixed', inset: 0, background: 'rgba(20,14,8,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 16 }}>
       <div ref={panelRef} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={descId} onClick={(e) => e.stopPropagation()} className="dialog-panel"
         style={{ width: '100%', maxWidth: 560, maxHeight: '90vh', display: 'flex', flexDirection: 'column', background: '#fff', borderRadius: 18, boxShadow: '0 24px 60px rgba(0,0,0,0.25)', overflow: 'hidden' }}>

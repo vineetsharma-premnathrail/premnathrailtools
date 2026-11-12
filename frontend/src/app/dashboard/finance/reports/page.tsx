@@ -778,7 +778,7 @@ export default function FinanceReportsPage() {
 
       {/* Ledger statement drawer (Trial Balance drill-down) */}
       {ledgerRow && createPortal(
-        <div className="fin-no-print" onClick={() => setLedgerRow(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(20,14,8,0.3)', zIndex: 150, display: 'flex', justifyContent: 'flex-end' }}>
+        <div className="fin-no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(20,14,8,0.3)', zIndex: 150, display: 'flex', justifyContent: 'flex-end' }}>
           <div data-tour="fin-rep-ledger-drawer" onClick={(e) => e.stopPropagation()} style={{ width: 'min(860px, 100vw)', height: '100%', background: '#fff', boxShadow: '-12px 0 40px rgba(0,0,0,.18)', padding: 20, overflowY: 'auto', boxSizing: 'border-box' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
               <div>

@@ -269,7 +269,7 @@ export default function POTrackingDetail({ row, narrow, onClose }: { row: TrackR
     if (typeof document === 'undefined') return null
     // Phones / small laptops: a drawer over the page (portaled — the glass cards would clip a fixed overlay).
     return createPortal(
-      <div role="dialog" aria-modal="true" aria-label={`Purchase order ${row.po_number}`} style={{ position: 'fixed', inset: 0, zIndex: Z.sheet, background: 'rgba(28,25,23,0.35)', display: 'flex', justifyContent: 'flex-end' }} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div role="dialog" aria-modal="true" aria-label={`Purchase order ${row.po_number}`} style={{ position: 'fixed', inset: 0, zIndex: Z.sheet, background: 'rgba(28,25,23,0.35)', display: 'flex', justifyContent: 'flex-end' }}>
         <div ref={drawerRef} style={{ width: 'min(520px, 100vw)', height: '100%', background: '#fffaf5', boxShadow: '-12px 0 40px rgba(0,0,0,.18)' }}>{body}</div>
       </div>,
       document.body,

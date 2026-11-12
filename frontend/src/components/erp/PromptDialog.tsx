@@ -47,7 +47,6 @@ export default function PromptDialog({
   // fixed backdrop inside itself instead of covering the screen.
   return createPortal(
     <div
-      onClick={onCancel}
       className="dialog-backdrop"
       style={{
         position: 'fixed',

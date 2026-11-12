@@ -72,7 +72,7 @@ export default function ImportDialog({ title, intro, templateName, getTemplate, 
   // Portal to <body>: a glass card (backdrop-filter) would otherwise trap the
   // fixed backdrop inside itself instead of covering the screen.
   return createPortal(
-    <div onClick={close} className="dialog-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(20,14,8,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 16 }}>
+    <div className="dialog-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(20,14,8,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 16 }}>
       <div onClick={(e) => e.stopPropagation()} className="dialog-panel" style={{ width: '100%', maxWidth: result ? 760 : 560, maxHeight: '90vh', overflow: 'auto', background: '#fff', borderRadius: 18, padding: 24, boxShadow: '0 24px 60px rgba(0,0,0,0.25)' }}>
         <h2 style={{ fontSize: 18, fontWeight: 700, color: TEXT.heading, margin: '0 0 8px' }}>{title}</h2>
         <div style={{ fontSize: 13, color: TEXT.muted, margin: '0 0 14px' }}>{intro}</div>

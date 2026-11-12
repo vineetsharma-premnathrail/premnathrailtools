@@ -137,7 +137,7 @@ export const tdStyle: React.CSSProperties = { ...sharedTd, padding: '10px 14px',
 export function Modal({ open, title, onClose, children, width = 560, busy }: { open: boolean; title: string; onClose: () => void; children: React.ReactNode; width?: number; busy?: boolean }) {
   if (!open || typeof document === 'undefined') return null
   return createPortal(
-    <div onClick={() => !busy && onClose()} style={{ position: 'fixed', inset: 0, background: 'rgba(20,14,8,0.35)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 150, padding: '8vh 16px', overflowY: 'auto' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(20,14,8,0.35)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 150, padding: '8vh 16px', overflowY: 'auto' }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: width, background: '#fff', borderRadius: 18, boxShadow: '0 20px 50px rgba(0,0,0,.18)', padding: 22 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
           <h3 style={{ fontSize: 16, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{title}</h3>

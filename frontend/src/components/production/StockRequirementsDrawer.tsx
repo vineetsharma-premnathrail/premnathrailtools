@@ -44,7 +44,7 @@ export default function StockRequirementsDrawer({ itemId, branchId, onClose }: {
   if (itemId == null || typeof document === 'undefined') return null
 
   return createPortal(
-    <div onClick={onClose} className="dialog-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(20,14,8,0.35)', zIndex: 200, display: 'flex', justifyContent: 'flex-end' }}>
+    <div className="dialog-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(20,14,8,0.35)', zIndex: 200, display: 'flex', justifyContent: 'flex-end' }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: 'min(980px, 100vw)', height: '100%', background: '#fff', boxShadow: '-12px 0 40px rgba(0,0,0,0.2)', padding: 22, overflowY: 'auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 14 }}>
           <div>

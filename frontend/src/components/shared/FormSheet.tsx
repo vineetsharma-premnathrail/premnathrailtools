@@ -166,7 +166,7 @@ export function FormSheet({ icon, iconColor = BLUE, title, subtitle, onClose, bu
   useFocusTrap(true, panelRef, { fallback: '[data-sheet-title]' })
   if (typeof document === 'undefined') return null
   return createPortal(
-    <div onClick={() => !busy && onClose()} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 150, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '24px 16px', overflowY: 'auto' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 150, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '24px 16px', overflowY: 'auto' }}>
       <div ref={panelRef} data-tour={tour} data-form-sheet role="dialog" aria-modal="true" aria-labelledby={titleId} onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: width, maxHeight: 'calc(100vh - 48px)', display: 'flex', flexDirection: 'column', background: '#fff', borderRadius: 18, boxShadow: '0 24px 60px rgba(15,23,42,0.25)' }}>
         <div style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 14, padding: '20px 24px', borderBottom: `1px solid ${LINE}` }}>
           <span style={{ width: 42, height: 42, borderRadius: 12, background: iconColor, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><SheetIcon name={icon} size={22} color="#fff" /></span>

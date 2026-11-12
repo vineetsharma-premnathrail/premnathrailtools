@@ -47,7 +47,6 @@ export default function MessageDialog({
   // fixed backdrop inside itself instead of covering the screen.
   return createPortal(
     <div
-      onClick={onClose}
       className="dialog-backdrop"
       style={{
         position: 'fixed',

@@ -60,7 +60,7 @@ export default function AssigneeRuleDialog({ open, title, hint, rule, modes, dep
   ]
 
   return createPortal(
-    <div onClick={onClose} className="dialog-backdrop"
+    <div className="dialog-backdrop"
       style={{ position: 'fixed', inset: 0, background: 'rgba(20,14,8,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 16 }}>
       <div onClick={(e) => e.stopPropagation()} className="dialog-panel"
         style={{ width: '100%', maxWidth: 520, maxHeight: '90vh', overflowY: 'auto', background: '#fff', borderRadius: 18, padding: 24, boxShadow: '0 24px 60px rgba(0,0,0,0.25)' }}>
