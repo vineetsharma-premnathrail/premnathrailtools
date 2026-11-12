@@ -619,16 +619,14 @@ async def update_user(
     if payload.role is not None:
         if payload.role not in VALID_ROLES:
             raise HTTPException(status_code=400, detail="Invalid role")
-        # Making someone an admin (or taking it away) stays admin-only, whatever
-        # Organization permissions the caller holds.
-        if payload.role != target.role and not is_admin_user(admin):
+        # The portal admin is set only on the server (owner, 2026-11-12): nobody,
+        # not even an admin, can make or remove an admin from the portal.
+        if payload.role != target.role:
             raise HTTPException(
                 status_code=403,
-                detail="Only an admin can make a user an admin or remove admin rights. Ask an admin to make this change.",
+                detail="The portal admin can't be changed from the portal. It is the PORTAL_ADMIN_EMAIL setting "
+                       "on the server — ask the person who manages the server to change it and redeploy.",
             )
-        if target.id == admin.id and payload.role != "admin":
-            raise HTTPException(status_code=400, detail="Cannot change your own admin role")
-        target.role = payload.role
 
     if payload.assigned_apps is not None or payload.erp_permissions is not None:
         raise HTTPException(

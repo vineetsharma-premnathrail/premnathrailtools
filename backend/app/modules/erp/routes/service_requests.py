@@ -59,6 +59,7 @@ from app.modules.erp import access as erp_access
 from app.core.data_scope import apply_scope, ensure_in_scope
 from app.modules.organization.services import approval_engine as engine
 from app.auth.microsoft import get_app_graph_token
+from app.utils.value_diff import changed as value_changed
 
 router = APIRouter(prefix="/erp/service-requests", tags=["ERP - Service Requests"])
 
@@ -800,8 +801,8 @@ async def update_service_request(
     changed_labels: list[str] = []
     for field, new_val in changes.items():
         old_val = getattr(sr, field, None)
-        if str(old_val) != str(new_val):
-            label = _TRACKED_FIELDS.get(field, field)
+        if value_changed(old_val, new_val):
+            label = _TRACKED_FIELDS.get(field) or field.replace("_", " ").capitalize()
             _write_audit(
                 db, sr.id, "field_updated", user, request,
                 field_name=label,

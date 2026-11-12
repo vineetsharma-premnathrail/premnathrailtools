@@ -36,6 +36,7 @@ from app.core import visibility
 from app.modules.erp.models.service_request import SR_PRIORITIES, SR_SERVICE_TYPE_LABELS, SR_SERVICE_TYPES, ServiceRequest
 from app.modules.erp.routes.service_requests import _generate_sr_number, _recompute_billing, _write_audit
 from app.modules.erp.sensitive import SR_MONEY, sees_charges
+from app.modules.erp import warranty as sr_warranty
 from app.modules.erp.schemas.service_request import SR_PAYMENT_STATUSES, SR_STATUSES, ServiceRequestCreate
 from app.modules.main.models.user import User
 from app.utils.notifications import notify_user
@@ -292,10 +293,11 @@ async def import_service_requests(
                 sr.closed_at = _at_ist_noon(closed_on)
             db.add(sr)
             db.flush()
+            warranty_note = sr_warranty.fill_unchecked(db, sr, machine)
             _recompute_billing(db, sr)
             _write_audit(db, sr.id, "created", user, request,
                          summary=f"Service request {sr.request_number} imported from {file.filename} by {user.name or user.email}"
-                                 + (f" (old number {legacy})." if legacy else "."))
+                                 + (f" (old number {legacy})." if legacy else ".") + f" {warranty_note}")
             if lkey:
                 seen_legacy[lkey] = idx
             seen_issue[ikey] = idx

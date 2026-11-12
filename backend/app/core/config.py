@@ -57,6 +57,10 @@ class Settings(BaseSettings):
     AZURE_TENANT_ID: str = ""
     AZURE_REDIRECT_URI: str = "http://localhost:8000/auth/callback"
     DOMAIN_EMAIL: str = ""  # e.g., "@premnathrail.com" — empty means allow all domains
+    # The one portal admin (owner, 2026-11-12). Set in the server's environment
+    # only; applied on every start and when that person logs in. Empty = leave
+    # the admin as it is. See app/cli/set_admin.py.
+    PORTAL_ADMIN_EMAIL: str = ""
 
     # Cookies: Teams runs the app inside an iframe (top-level site is
     # teams.microsoft.com), so cross-site cookies need SameSite=None, which

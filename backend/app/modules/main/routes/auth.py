@@ -257,24 +257,22 @@ async def _refresh_azure_admin(db: Session, user: User) -> None:
         logger.warning("Azure admin lookup failed for %s: %s", user.email, e)
         return
     # Stored for information only: a tenant Global Administrator is NOT made a
-    # portal admin — portal admin is set in Users (owner, 2026-11-04).
+    # portal admin, not even on an empty database. The portal admin is the
+    # PORTAL_ADMIN_EMAIL server setting (owner, 2026-11-12; see _apply_env_admin).
     changed = user.is_azure_admin != is_admin
     user.is_azure_admin = is_admin
-    # First-install bootstrap only: with NO portal admin row at all (fresh or
-    # emptied database — active or not), the first active Global Administrator
-    # who signs in becomes portal admin, so someone can set up Users. Once any
-    # admin exists (even deactivated) this never fires again.
-    if is_admin and user.is_active and user.role != "admin" and not (
-        db.query(User.id).filter(User.role == "admin").first()
-    ):
-        from app.modules.main.models.audit_log import AuditLog
-        user.role = "admin"
-        db.add(AuditLog(entity_type="user", entity_id=user.id, action="role_changed", module_key="organization",
-                        summary=f"{user.name} made portal admin: no portal admin existed yet and they are a "
-                                "Microsoft tenant Global Administrator (first-install bootstrap)"))
-        changed = True
     if changed:
         db.commit()
+        db.refresh(user)
+
+
+def _apply_env_admin(db: Session, user: User) -> None:
+    """When the person in PORTAL_ADMIN_EMAIL logs in, make them the only admin
+    (needed on an empty database, where their account appears only now).
+    No-op for everyone else and when they already are; never blocks a login."""
+    from app.cli.set_admin import apply_from_env
+
+    if apply_from_env(db, only_for=user):
         db.refresh(user)
 
 
@@ -366,6 +364,7 @@ async def oauth_callback(request: Request, code: str, state: str, db: Session = 
             db.refresh(user)
 
         await _refresh_azure_admin(db, user)
+        _apply_env_admin(db, user)
 
         # Best-effort manager resolution — reading the manager relationship
         # needs more than the plain User.Read delegated scope this flow
@@ -522,6 +521,7 @@ async def teams_token_login(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=403, detail="Account deactivated")
 
     await _refresh_azure_admin(db, user)
+    _apply_env_admin(db, user)
     # On-Behalf-Of exchange: swap the Teams SSO token for a Graph delegated
     # token. Requires the Azure app to expose "access_as_user" and pre-authorize
     # the Teams desktop/web client IDs. If it fails, we still complete the

@@ -624,7 +624,7 @@ async def update_project(
                                ("warranty_start_date", "warranty_end_date", "extended_warranty", "extended_warranty_end")})
     if {"customer_id", "product_id"} & updates.keys():
         _apply_installed_base_links(db, updates, project)
-    changed_fields = [field for field, value in updates.items() if str(getattr(project, field, None)) != str(value)]
+    changed_fields = [field for field, value in updates.items() if value_changed(getattr(project, field, None), value)]
     for field, value in updates.items():
         setattr(project, field, value)
     if "serial_number" in updates:
@@ -1399,4 +1399,5 @@ managed_documents.register(managed_documents.DocumentAdapter(
 
 # Machine page history lists (store issues, purchases, tasks) — routes/machine_history.py
 from app.modules.erp.routes import machine_history as _machine_history_routes  # noqa: E402
+from app.utils.value_diff import changed as value_changed
 router.include_router(_machine_history_routes.router)

@@ -77,11 +77,13 @@ def test_login_refreshes_azure_admin_flag_without_promoting(db, monkeypatch):
     assert u.is_azure_admin is False and u.role == "user"
 
 
-def test_first_install_bootstrap_makes_first_azure_admin_portal_admin(db, monkeypatch):
+def test_azure_admin_never_made_portal_admin_even_on_empty_db(db, monkeypatch):
+    """Owner, 2026-11-12: no first-install bootstrap any more — the portal
+    admin is set only on the server (python -m app.cli.set_admin)."""
     import asyncio
     from app.modules.main.routes import auth
 
-    # No active portal admin at all (fresh / emptied database).
+    # No portal admin at all (fresh / emptied database).
     for other in db.query(User).filter(User.role == "admin").all():
         other.role = "user"
     db.commit()
@@ -91,13 +93,4 @@ def test_first_install_bootstrap_makes_first_azure_admin_portal_admin(db, monkey
         return {"az-boot"}
     monkeypatch.setattr(auth, "get_azure_admin_ids", admins)
     asyncio.run(auth._refresh_azure_admin(db, u))
-    assert u.role == "admin"
-
-    # Once an admin exists, the next Azure admin is not promoted.
-    v = _user(db, "second.tenant.admin@premnathrail.com", azure_id="az-boot2")
-
-    async def admins2():
-        return {"az-boot", "az-boot2"}
-    monkeypatch.setattr(auth, "get_azure_admin_ids", admins2)
-    asyncio.run(auth._refresh_azure_admin(db, v))
-    assert v.role == "user"
+    assert u.is_azure_admin is True and u.role == "user"

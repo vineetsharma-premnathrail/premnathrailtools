@@ -28,6 +28,7 @@ from app.utils.document_merge import merge_docx, merge_pdf
 from app.modules.rnd.models.technical_offer import RndTechnicalOffer
 from app.modules.rnd.services import technical_offers
 from app.modules.crm.services import quotation_status as qstatus
+from app.utils.value_diff import changed as value_changed
 
 QUOTATION_ENTITY = "crm_quotation"
 
@@ -628,7 +629,7 @@ async def update_quotation(inquiry_id: int, quot_id: int, payload: QuotationUpda
     for field, value in updates.items():
         old = getattr(quot, field, None)
         is_content = field not in QUOTATION_TRACKING_FIELDS and field not in ("technical_offer_number", "technical_offer_date")
-        if is_content and (old or None) != (value or None) and str(old) != str(value):
+        if is_content and value_changed(old, value):
             old_vals[field] = old
             new_vals[field] = value
         setattr(quot, field, value)
@@ -699,15 +700,15 @@ async def list_quotation_revisions(inquiry_id: int, quot_id: int, db: Session = 
     for seq, log in enumerate(logs, start=1):
         old_vals = json.loads(log.old_value) if log.old_value else {}
         new_vals = json.loads(log.new_value) if log.new_value else {}
+        # Older saves stored blank → blank (None vs "") as a change; skip those.
+        changes = [{"field": f, "old": old_vals.get(f), "new": new_vals.get(f)}
+                   for f in new_vals.keys() if value_changed(old_vals.get(f), new_vals.get(f))]
         result.append({
             "id": log.id,
             "revision_id": f"r{seq}",
             "performed_by": user_map.get(log.performed_by_id, "System") if log.performed_by_id else "System",
             "performed_at": log.performed_at.isoformat() if log.performed_at else None,
-            "changes": [
-                {"field": f, "old": old_vals.get(f), "new": new_vals.get(f)}
-                for f in new_vals.keys()
-            ],
+            "changes": changes,
         })
     result.reverse()
     if not sees_quotation_prices(_user):

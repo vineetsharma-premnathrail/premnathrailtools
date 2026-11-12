@@ -10,7 +10,7 @@ import { PermissionAction, useCan } from '@/lib/permissions'
 import { useAttachmentBlobUrl, openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 import { erpApi, storeApi } from '@/lib/api'
 import { formatDate, formatDateTime } from '@/lib/format'
-import { AuditEntry, Project, ServiceRequest, ServiceMaterial, ServiceMaterialAttachment, StoreItem } from '@/types'
+import { Project, ServiceRequest, ServiceMaterial, ServiceMaterialAttachment, StoreItem } from '@/types'
 import DateField from '@/components/erp/DateField'
 import ErpNav from '@/components/erp/ErpNav'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
@@ -33,6 +33,7 @@ import { sampleMachine, sampleServiceRequest } from '@/lib/erpPreviewSamples'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { IssueSpareDialog, ReturnSpareDialog } from '@/components/erp/SrSpareDialogs'
 import ServiceVisitsTab from '@/components/erp/ServiceVisitsTab'
+import ServiceRequestTimeline from '@/components/erp/ServiceRequestTimeline'
 import ContractChip from '@/components/erp/ContractChip'
 import { SERVICE_BILLING_ENABLED } from '@/lib/features'
 import { FormSheet, SHEET, SheetIcon, SheetSection, Optional, Req, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
@@ -259,7 +260,7 @@ export default function ServiceRequestDetailPage() {
         canRaisePr={canEdit && !sr.is_locked && feat('purchase_requisition', 'create')}
         canIssueSpares={feat('spare_issue', 'create')} canReturnSpares={feat('spare_issue', 'edit')} />}
       {tab === 'Attachments' && <AttachmentsTab sr={sr} canEdit={canEdit && feat('attachments', 'create')} canDelete={canEdit && feat('attachments', 'delete')} onRefresh={load} />}
-      {tab === 'Audit Trail' && <AuditTab srId={sr.id} />}
+      {tab === 'Audit Trail' && <ServiceRequestTimeline srId={sr.id} requestNumber={sr.request_number} status={sr.status} createdAt={sr.created_at} closedAt={sr.closed_at} />}
 
       <ConfirmDialog
         open={showDeleteConfirm}
@@ -391,56 +392,6 @@ function OverviewTab({ sr, project, projectError, canModify, onPatch, onRequestS
   const vis = useVisibility('erp:service_requests')
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <DetailCard style={{ marginBottom: 0 }}>
-        <VisSection vis={vis} k="detail_summary">
-        <DetailSummary
-          title={sr.issue_category ? `${sr.issue_category} issue` : 'Reported issue'}
-          text={sr.issue_description || 'No description was given when this request was raised.'}
-          meta={<>
-            <span>Reported {formatDate(sr.created_at)}{sr.reported_by_name ? ` by ${sr.reported_by_name}` : ''}</span>
-            <span>·</span>
-            <span>{sr.assigned_to_name ? `Engineer: ${sr.assigned_to_name}` : 'No engineer assigned yet'}</span>
-            {sr.is_locked && <><span>·</span><Pill label="Locked" hex="#64748b" /></>}
-          </>}
-        />
-        </VisSection>
-
-        <VisSection vis={vis} k="detail_machine_site">
-        <DetailGroup title="Machine & site">
-          <DetailRow label="Machine">
-            {project ? <Link href={recordPath('/dashboard/projects/service-projects', project)} style={{ color: '#2563eb', fontWeight: 600, textDecoration: 'none' }}>{machineLabel}</Link>
-              : projectError ? <span style={{ color: '#b91c1c' }}>{projectError}</span> : 'Loading…'}
-          </DetailRow>
-          <DetailRow label="Customer">{project?.client_company}</DetailRow>
-          <DetailRow label="Site / location">{project ? [project.site_name, project.site_location].filter(Boolean).join(', ') : null}</DetailRow>
-        </DetailGroup>
-        </VisSection>
-
-        <VisSection vis={vis} k="detail_reported_by">
-        <DetailGroup title="Reported by">
-          <DetailRow label="Name">{sr.reported_by_name}</DetailRow>
-          <DetailRow label="Phone">{sr.reported_by_phone}</DetailRow>
-          <DetailRow label="Email">{sr.reported_by_email}</DetailRow>
-        </DetailGroup>
-        </VisSection>
-
-        <VisSection vis={vis} k="detail_assignment_dates">
-        <DetailGroup title="Assignment & dates">
-          <DetailRow label="Engineer">{sr.assigned_to_name}</DetailRow>
-          <DetailRow label="Opened">{d(sr.opened_at)}</DetailRow>
-          <DetailRow label="Expected to attend">{d(sr.expected_date_to_attend)}</DetailRow>
-          <DetailRow label="Expected to close">{d(sr.expected_completion_date)}</DetailRow>
-          <DetailRow label="Closed">{d(sr.closed_at)}</DetailRow>
-        </DetailGroup>
-        </VisSection>
-
-        <VisSection vis={vis} k="detail_service_notes">
-        <DetailGroup title="Service notes" last>
-          <DetailRow label="Engineer's report">{sr.service_report_notes}</DetailRow>
-        </DetailGroup>
-        </VisSection>
-      </DetailCard>
-
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 340px), 1fr))', gap: 16, alignItems: 'start' }}>
         <VisSection vis={vis} k="detail_status_card">
         <Card title="Status, Type & Priority">
@@ -499,6 +450,60 @@ function OverviewTab({ sr, project, projectError, canModify, onPatch, onRequestS
           </VisSection>
         )}
       </div>
+
+      <DetailCard style={{ marginBottom: 0 }}>
+        <VisSection vis={vis} k="detail_summary">
+        <DetailSummary
+          title={sr.issue_title || 'Reported issue'}
+          text={<>
+            <span style={{ display: 'block', fontSize: 11.5, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: '#64748b', marginBottom: 2 }}>Description</span>
+            {sr.issue_description || 'No description was given when this request was raised.'}
+          </>}
+          meta={<>
+            {sr.issue_category && <><Pill label={sr.issue_category} hex="#7c3aed" /><span>·</span></>}
+            <span>Reported {formatDate(sr.created_at)}{sr.reported_by_name ? ` by ${sr.reported_by_name}` : ''}</span>
+            <span>·</span>
+            <span>{sr.assigned_to_name ? `Engineer: ${sr.assigned_to_name}` : 'No engineer assigned yet'}</span>
+            {sr.is_locked && <><span>·</span><Pill label="Locked" hex="#64748b" /></>}
+          </>}
+        />
+        </VisSection>
+
+        <VisSection vis={vis} k="detail_machine_site">
+        <DetailGroup title="Machine & site">
+          <DetailRow label="Machine">
+            {project ? <Link href={recordPath('/dashboard/projects/service-projects', project)} style={{ color: '#2563eb', fontWeight: 600, textDecoration: 'none' }}>{machineLabel}</Link>
+              : projectError ? <span style={{ color: '#b91c1c' }}>{projectError}</span> : 'Loading…'}
+          </DetailRow>
+          <DetailRow label="Customer">{project?.client_company}</DetailRow>
+          <DetailRow label="Site / location">{project ? [project.site_name, project.site_location].filter(Boolean).join(', ') : null}</DetailRow>
+        </DetailGroup>
+        </VisSection>
+
+        <VisSection vis={vis} k="detail_reported_by">
+        <DetailGroup title="Reported by">
+          <DetailRow label="Name">{sr.reported_by_name}</DetailRow>
+          <DetailRow label="Phone">{sr.reported_by_phone}</DetailRow>
+          <DetailRow label="Email">{sr.reported_by_email}</DetailRow>
+        </DetailGroup>
+        </VisSection>
+
+        <VisSection vis={vis} k="detail_assignment_dates">
+        <DetailGroup title="Assignment & dates">
+          <DetailRow label="Engineer">{sr.assigned_to_name}</DetailRow>
+          <DetailRow label="Opened">{d(sr.opened_at)}</DetailRow>
+          <DetailRow label="Expected to attend">{d(sr.expected_date_to_attend)}</DetailRow>
+          <DetailRow label="Expected to close">{d(sr.expected_completion_date)}</DetailRow>
+          <DetailRow label="Closed">{d(sr.closed_at)}</DetailRow>
+        </DetailGroup>
+        </VisSection>
+
+        <VisSection vis={vis} k="detail_service_notes">
+        <DetailGroup title="Service notes" last>
+          <DetailRow label="Engineer's report">{sr.service_report_notes}</DetailRow>
+        </DetailGroup>
+        </VisSection>
+      </DetailCard>
     </div>
   )
 }
@@ -1612,36 +1617,6 @@ function MaterialPhotoThumb({ srId, matId, attachment }: { srId: number; matId: 
   )
 }
 
-function AuditTab({ srId }: { srId: number }) {
-  const [entries, setEntries] = useState<AuditEntry[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    erpApi.getAuditTrail(srId)
-      .then(setEntries)
-      .catch((err) => setError(extractErrorMessages(err, 'Could not load the audit trail — check your connection and reload the page.').join(' ')))
-      .finally(() => setLoading(false))
-  }, [srId])
-
-  if (loading) return <p style={{ fontSize: 13, color: '#78716c' }}>Loading…</p>
-  if (error) return <p style={{ fontSize: 13, color: '#b91c1c' }}>{error}</p>
-  if (entries.length === 0) return <p style={{ fontSize: 13, color: '#a8a29e' }}>No audit history yet.</p>
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      {entries.map((e) => (
-        <div key={e.id} style={{ padding: '12px 16px', borderRadius: 12, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-            <span style={{ fontSize: 12.5, fontWeight: 600, color: '#1f1108' }}>{e.performed_by}</span>
-            <span style={{ fontSize: 11.5, color: '#a8a29e' }}>{e.performed_at ? formatDateTime(e.performed_at) : ''}</span>
-          </div>
-          <p style={{ fontSize: 13, color: '#57534e', margin: 0 }}>{e.summary || e.action}</p>
-        </div>
-      ))}
-    </div>
-  )
-}
 
 
 

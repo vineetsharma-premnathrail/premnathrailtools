@@ -22,6 +22,7 @@ from app.modules.projects import views, workflow as wf
 from app.modules.projects import access as pm_access
 from app.modules.organization.services import approval_engine as engine
 from app.core.data_scope import apply_scope, ensure_in_scope
+from app.utils.value_diff import changed as value_changed
 
 router = APIRouter(
     prefix="/projects/{project_id}/milestones", tags=["Project Management"],
@@ -240,7 +241,7 @@ async def update_milestone(project_id: int, milestone_id: int, payload: PmMilest
     added = {updates.get("lead_user_id", m.lead_user_id), *updates.get("assistant_user_ids", wf.assistant_ids(m))} - old_team - {None}
     for field, val in updates.items():
         old_val = getattr(m, field)
-        if old_val != val and field != "target_date":
+        if value_changed(old_val, val) and field != "target_date":
             wf.audit(db, project_id, user, "milestone_updated", f"WBS '{m.title}': {field.replace('_', ' ')} changed by {wf.user_label(user)}.",
                      field_name=field, old_value=str(old_val) if old_val is not None else None, new_value=str(val) if val is not None else None)
         setattr(m, field, val)

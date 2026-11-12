@@ -44,6 +44,7 @@ from app.modules.projects.schemas.task import (
 from app.modules.projects import views, workflow as wf
 from app.modules.projects import access as pm_access
 from app.core.data_scope import apply_scope, ensure_in_scope
+from app.utils.value_diff import changed as value_changed
 
 router = APIRouter(prefix="/pm-work", tags=["Project Management — Department work"])
 
@@ -521,7 +522,7 @@ async def update_task(task_id: int, payload: PmTaskUpdatePayload, db: Session = 
             assignee_rules.ensure_allowed(db, user, TASK_RULE_KEY, new_assignee)
     for field, val in updates.items():
         old_val = getattr(t, field)
-        if old_val != val:
+        if value_changed(old_val, val):
             wf.audit(db, t.project_id, user, "task_updated", f"Task '{t.title}': {field.replace('_', ' ')} changed by {wf.user_label(user)}.",
                      subtab_key="tasks", field_name=field, old_value=str(old_val) if old_val is not None else None, new_value=str(val) if val is not None else None)
         setattr(t, field, val)

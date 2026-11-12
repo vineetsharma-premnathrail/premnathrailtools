@@ -14,7 +14,8 @@ class CurrentUserResponse(BaseModel):
     name: str
     role: str
     is_active: bool
-    # Azure Global Administrator: admin everywhere like role == "admin".
+    # Azure tenant Global Administrator: information only, grants nothing in the
+    # portal (the portal admin is role == "admin", set only on the server).
     is_azure_admin: bool = False
     designation: str | None = None
     department: str | None = None

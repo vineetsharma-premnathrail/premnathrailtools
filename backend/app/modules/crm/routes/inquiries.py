@@ -35,6 +35,7 @@ from app.utils.email import send_technical_offer_request_email
 from app.auth.jwt_handler import create_document_share_token
 from app.core.config import settings
 from app.core.record_ref import encode_ref
+from app.utils.value_diff import changed as value_changed
 from fastapi.responses import Response
 
 router = APIRouter(prefix="/crm/inquiries", tags=["CRM - Inquiries"])
@@ -369,7 +370,7 @@ async def update_inquiry(
         taken_back = requirement_movement.take_back_on_move_back(
             db, module="inquiry", record=inquiry, user=user, label="inquiry",
             reason=payload.stage_reason or (f"status changed to {updates['status']}" if status_back else None))
-    changed = [f for f, v in updates.items() if str(getattr(inquiry, f, None)) != str(v)]
+    changed = [f for f, v in updates.items() if value_changed(getattr(inquiry, f, None), v)]
     # Stage changes get their own timeline entry (_log_stage below) — everything else
     # that changed in this single save is combined into ONE info-update entry, so a
     # multi-field edit shows as one timeline row instead of one per field.
@@ -586,16 +587,18 @@ async def list_inquiry_spec_revisions(
             new_vals = {f: v for f, v in new_vals.items() if f in REQUIREMENT_REVISION_FIELDS}
             if not new_vals:
                 continue
+        # Older saves stored blank → blank (None vs "") as a change; skip those.
+        changes = [{"field": f, "old": old_vals.get(f), "new": new_vals.get(f)}
+                   for f in new_vals.keys() if value_changed(old_vals.get(f), new_vals.get(f))]
+        if not changes:
+            continue
         seq += 1
         result.append({
             "id": log.id,
             "revision_id": f"Rev-{seq}",
             "performed_by": user_map.get(log.performed_by_id, "System") if log.performed_by_id else "System",
             "performed_at": log.performed_at.isoformat() if log.performed_at else None,
-            "changes": [
-                {"field": f, "old": old_vals.get(f), "new": new_vals.get(f)}
-                for f in new_vals.keys()
-            ],
+            "changes": changes,
         })
     result.reverse()
     return mask_revision_changes(_user, result, INQUIRY_MONEY_FIELDS)

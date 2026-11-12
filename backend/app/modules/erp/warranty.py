@@ -159,6 +159,26 @@ def apply_warranty_check(
     return note
 
 
+def fill_unchecked(db: Session, sr: ServiceRequest, project: Project) -> str:
+    """Warranty check for an SR that never had one (Excel import, or raised
+    before the check existed). Sets the cover on the reported date and — only
+    where nobody decided by hand and no invoice exists — the default
+    free / chargeable. Contract linking is left out on purpose: tying old jobs
+    to a running AMC now would use up its included visits. Returns the audit
+    sentence."""
+    status = warranty_status_on(db, project, reported_day(sr), exclude_sr_id=sr.id)
+    sr.warranty_status = status
+    note = f"Warranty checked for the reported date {reported_day(sr):%d-%m-%Y}: machine {WARRANTY_LABELS[status].lower()}"
+    if status == "unknown":
+        return note + "; free / chargeable not decided — add the machine's commissioning or handover date, then pick the Service Type again."
+    if sr.ar_transaction_id or sr.chargeable_reason:
+        return note + "; free / chargeable left as it was (" + ("invoice exists" if sr.ar_transaction_id else "set by hand with a reason") + ")."
+    chargeable = False if sr.service_type == "warranty" else default_chargeable(sr.service_type, status)
+    sr.is_chargeable = chargeable
+    sr.billing_status = "to_bill" if chargeable else "not_billable"
+    return note + f"; {'chargeable' if chargeable else 'free of charge'}."
+
+
 def on_sr_closed(db: Session, sr: ServiceRequest, actor_id: int | None = None) -> str | None:
     """Closing an Installation & Commissioning SR is the commissioning event:
     the machine gets its commissioning date (the SR's actual completion

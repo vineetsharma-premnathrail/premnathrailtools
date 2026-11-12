@@ -33,17 +33,70 @@ def test_list_users_as_admin(client, db):
     assert "someone@premnathrail.com" in emails
 
 
-def test_admin_can_update_user_role(client, db):
+def test_admin_cannot_be_made_or_removed_from_the_portal(client, db):
+    """Owner, 2026-11-12: the portal admin is set only on the server."""
     admin = make_user(db, "admin2@premnathrail.com", role="admin")
     target = make_user(db, "target@premnathrail.com", role="user")
 
-    response = client.patch(
-        f"/api/v1/users/{target.id}",
-        json={"role": "admin"},
-        headers=auth_header(admin),
-    )
-    assert response.status_code == 200
-    assert response.json()["role"] == "admin"
+    response = client.patch(f"/api/v1/users/{target.id}", json={"role": "admin"}, headers=auth_header(admin))
+    assert response.status_code == 403
+    assert "PORTAL_ADMIN_EMAIL" in response.json()["detail"]
+    db.refresh(target)
+    assert target.role == "user"
+
+    other_admin = make_user(db, "admin2b@premnathrail.com", role="admin")
+    response = client.patch(f"/api/v1/users/{other_admin.id}", json={"role": "user"}, headers=auth_header(admin))
+    assert response.status_code == 403
+
+    # Sending the role a user already has (e.g. a full form save) is fine.
+    response = client.patch(f"/api/v1/users/{target.id}", json={"role": "user", "name": "Target"}, headers=auth_header(admin))
+    assert response.status_code == 200 and response.json()["name"] == "Target"
+
+
+def test_env_admin_makes_one_admin_and_tells_partners(db, monkeypatch):
+    """PORTAL_ADMIN_EMAIL (server env) is the only way to set the admin (owner, 2026-11-12)."""
+    from app.cli import set_admin
+    from app.core.config import settings
+    from app.modules.main.models.audit_log import AuditLog
+    from app.modules.main.models.notification import Notification
+
+    old = make_user(db, "old.admin@premnathrail.com", role="admin")
+    new = make_user(db, "New.Owner@premnathrail.com")
+    partner = make_user(db, "partner.one@premnathrail.com")
+    partner.is_partner = True
+    db.commit()
+
+    monkeypatch.setattr(settings, "PORTAL_ADMIN_EMAIL", "  new.owner@PREMNATHRAIL.com ")
+    # At login, someone else logging in changes nothing.
+    assert set_admin.apply_from_env(db, only_for=partner) is False
+    assert set_admin.apply_from_env(db) is True
+    assert new.role == "admin" and old.role == "user"
+    assert db.query(User).filter(User.role == "admin").count() == 1
+    assert db.query(AuditLog).filter(AuditLog.entity_type == "user", AuditLog.entity_id == new.id,
+                                     AuditLog.action == "role_changed").count() == 1
+    assert db.query(Notification).filter(Notification.user_id == partner.id,
+                                         Notification.notification_type == set_admin.NOTIFICATION_TYPE).count() == 1
+
+    # Every later restart / login: nothing written, nobody told again.
+    assert set_admin.apply_from_env(db) is False
+    assert set_admin.apply_from_env(db, only_for=new) is False
+
+
+def test_env_admin_bad_setting_never_breaks_start_or_login(db, monkeypatch):
+    from app.cli import set_admin
+    from app.core.config import settings
+
+    admin = make_user(db, "keep.admin@premnathrail.com", role="admin")
+    for value in ("", "a@premnathrail.com, b@premnathrail.com", "nobody@premnathrail.com"):
+        monkeypatch.setattr(settings, "PORTAL_ADMIN_EMAIL", value)
+        assert set_admin.apply_from_env(db) is False
+    gone = make_user(db, "gone@premnathrail.com")
+    gone.is_active = False
+    db.commit()
+    monkeypatch.setattr(settings, "PORTAL_ADMIN_EMAIL", "gone@premnathrail.com")
+    assert set_admin.apply_from_env(db) is False
+    db.refresh(admin)
+    assert admin.role == "admin"  # a wrong setting leaves the admin as it is
 
 
 def test_admin_cannot_set_invalid_role(client, db):
@@ -321,13 +374,13 @@ def test_update_user_writes_audit_diff(client, db):
 
     admin = make_user(db, "admin14@premnathrail.com", role="admin")
     target = make_user(db, "target14@premnathrail.com")
-    r = client.patch(f"/api/v1/users/{target.id}", json={"role": "admin", "is_director": True},
+    r = client.patch(f"/api/v1/users/{target.id}", json={"name": "Target Fourteen", "is_director": True},
                      headers=auth_header(admin))
     assert r.status_code == 200
     row = db.query(AuditLog).filter(AuditLog.entity_type == "user", AuditLog.entity_id == target.id).one()
     assert row.action == "updated" and row.performed_by_id == admin.id
-    assert _json.loads(row.new_value) == {"is_director": True, "role": "admin"}
-    assert _json.loads(row.old_value)["role"] == "user"
+    assert _json.loads(row.new_value) == {"is_director": True, "name": "Target Fourteen"}
+    assert _json.loads(row.old_value)["is_director"] is False
 
 
 def test_list_users_not_capped_at_100(client, db):

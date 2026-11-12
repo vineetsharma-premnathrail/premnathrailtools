@@ -36,6 +36,7 @@ from app.utils.email import send_technical_offer_request_email
 from app.auth.jwt_handler import create_document_share_token
 from app.core.config import settings
 from app.core.record_ref import encode_ref
+from app.utils.value_diff import changed as value_changed
 from fastapi.responses import Response
 
 router = APIRouter(prefix="/crm/tenders", tags=["CRM - Tenders"])
@@ -328,7 +329,7 @@ async def update_tender(
     # refused once R&D has started (tasks / documents / offer). Owner, 2026-11-03.
     taken_back = requirement_movement.take_back_on_move_back(
         db, module="tender", record=tender, user=user, reason=payload.stage_reason, label="tender") if moved_back else None
-    changed = [f for f, v in updates.items() if str(getattr(tender, f, None)) != str(v)]
+    changed = [f for f, v in updates.items() if value_changed(getattr(tender, f, None), v)]
     spec_old = {f: getattr(tender, f, None) for f in changed if f not in TENDER_SPEC_EXCLUDE}
     spec_new = {f: updates[f] for f in changed if f not in TENDER_SPEC_EXCLUDE}
     for field, value in updates.items():
@@ -512,18 +513,22 @@ async def list_tender_spec_revisions(
         for u in db.query(User).filter(User.id.in_(user_ids)).all():
             user_map[u.id] = u.name or u.email or f"User #{u.id}"
     result = []
-    for seq, log in enumerate(logs, start=1):
+    seq = 0
+    for log in logs:
         old_vals = json.loads(log.old_value) if log.old_value else {}
         new_vals = json.loads(log.new_value) if log.new_value else {}
+        # Older saves stored blank → blank (None vs "") as a change; skip those.
+        changes = [{"field": f, "old": old_vals.get(f), "new": new_vals.get(f)}
+                   for f in new_vals.keys() if value_changed(old_vals.get(f), new_vals.get(f))]
+        if not changes:
+            continue
+        seq += 1
         result.append({
             "id": log.id,
             "revision_id": f"Rev-{seq}",
             "performed_by": user_map.get(log.performed_by_id, "System") if log.performed_by_id else "System",
             "performed_at": log.performed_at.isoformat() if log.performed_at else None,
-            "changes": [
-                {"field": f, "old": old_vals.get(f), "new": new_vals.get(f)}
-                for f in new_vals.keys()
-            ],
+            "changes": changes,
         })
     result.reverse()
     return mask_revision_changes(_user, result, TENDER_MONEY_FIELDS)

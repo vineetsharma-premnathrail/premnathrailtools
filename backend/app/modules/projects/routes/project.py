@@ -449,7 +449,7 @@ async def update_project(
     old_pm = project.project_manager_id
     for field, val in updates.items():
         old_val = getattr(project, field)
-        if old_val != val:
+        if value_changed(old_val, val):
             wf.audit(db, project.id, user, "updated", f"{field.replace('_', ' ').capitalize()} changed by {wf.user_label(user)}.",
                      subtab_key="overview", field_name=field,
                      old_value=str(old_val) if old_val is not None else None, new_value=str(val) if val is not None else None)
@@ -735,4 +735,5 @@ async def get_project_audit(project_id: int, db: Session = Depends(get_db), _use
 
 # History tab lists (store issues, purchases, tasks) — routes/project_history.py
 from app.modules.projects.routes import project_history as _project_history_routes  # noqa: E402
+from app.utils.value_diff import changed as value_changed
 router.include_router(_project_history_routes.router)
