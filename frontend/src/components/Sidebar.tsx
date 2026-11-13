@@ -12,6 +12,7 @@ import FeedbackButton from '@/components/FeedbackButton'
 import { House, Briefcase, Flask, Users, FileText, User as UserIcon, Storefront, Tray, Buildings, ShieldCheck, Factory, Package, ShoppingCart, Wrench, PenNib, Lightning, Drop, Kanban, IdentificationCard, CurrencyInr, SidebarSimple, CaretUp, CaretDown, Envelope, SignOut } from '@phosphor-icons/react'
 import { secondaryBtnStyle, dangerBtnStyle, pillStyle } from '@/components/shared/ui'
 import AnchoredPopover from '@/components/shared/AnchoredPopover'
+import DesktopAppDownload, { DesktopAppUploadHost } from '@/components/shared/DesktopAppDownload'
 
 const icons: Record<string, ReactNode> = {
   dashboard: <House size={15} />,
@@ -431,6 +432,7 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
                     <Buildings size={15} />
                   }
                 />
+                <DesktopAppDownload isAdmin={user.role === 'admin'} onDone={() => setMenuOpen(false)} />
               </div>
 
               <div style={{ padding: '10px 14px 14px' }}>
@@ -455,6 +457,7 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
               </div>
             </div>
           </AnchoredPopover>
+          <DesktopAppUploadHost isAdmin={user.role === 'admin'} />
 
           {/* ui-audit-ignore-next-line custom-button — sidebar user/profile row that opens the account menu, not an action pill */}
           <button

@@ -10,6 +10,7 @@ import { refOf } from '@/lib/recordRef'
 import { extractErrorMessages } from '@/lib/validation'
 import { Bell } from '@phosphor-icons/react'
 import { formatDateTime } from '@/lib/format'
+import DesktopRefreshButton from '@/components/shared/DesktopRefreshButton'
 
 // Some notification types need a more specific link than their entity type
 // alone gives (P2P approvals key their action buttons off ?from=).
@@ -237,7 +238,8 @@ export default function NotificationBell() {
   }
 
   return (
-    <div ref={ref} style={{ position: 'relative' }}>
+    <div ref={ref} style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 8 }}>
+      <DesktopRefreshButton />
       <button
         onClick={toggleOpen}
         style={{

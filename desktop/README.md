@@ -19,6 +19,18 @@ outside the repo: `npx electron-builder --win -c.directories.output=C:\temp\port
 
 Point at another server for testing: `$env:PORTAL_URL="http://localhost:3000"; npm start`
 
+## Give it to users
+
+Download page: `/dashboard/windows-app` (latest version, Download button, the install steps from
+IT's installation guide incl. the SmartScreen "Keep / Keep anyway" steps). The profile menu
+(bottom-left) › Windows app opens it (website and Teams; hidden inside the Windows app itself).
+The portal admin uploads the Setup `.exe` once from that page (Upload shows only while no file is
+there). For a rare new installer,
+POST it to `/api/v1/desktop-app` as the admin (version + file); it replaces the old file. The file is kept in SharePoint
+(`<SHAREPOINT_FOLDER>/Desktop App/Windows/`); see `backend/app/modules/organization/services/desktop_app.py`.
+
+Inside the Windows app the portal shows a refresh icon next to the bell (the app has no browser toolbar).
+
 ## What the shell does
 
 - Portal pages and Microsoft sign-in stay inside the app; the sign-in is remembered between launches.

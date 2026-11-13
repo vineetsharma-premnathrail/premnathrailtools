@@ -493,6 +493,7 @@ from app.modules.organization.routes import audit_log as organization_audit_log_
 from app.modules.organization.routes import workflows as organization_workflows_routes
 from app.modules.organization.routes import approval_mail as organization_approval_mail_routes
 from app.modules.organization.routes import delegations as organization_delegations_routes
+from app.modules.organization.routes import desktop_app as organization_desktop_app_routes
 from app.modules.organization.routes import security as organization_security_routes
 from app.modules.organization.services.approval_engine import run_escalations
 from app.modules.hr.routes import employees as hr_employees_routes
@@ -840,6 +841,7 @@ app.include_router(organization_workflows_routes.router, prefix="/api/v1")
 app.include_router(organization_workflows_routes.approvals_router, prefix="/api/v1")
 app.include_router(organization_approval_mail_routes.router, prefix="/api/v1")
 app.include_router(organization_delegations_routes.router, prefix="/api/v1")
+app.include_router(organization_desktop_app_routes.router, prefix="/api/v1")
 app.include_router(organization_security_routes.router, prefix="/api/v1")
 app.include_router(hr_employees_routes.router, prefix="/api/v1", dependencies=[_Depends(require_hr_module)])
 app.include_router(hr_masters_routes.router, prefix="/api/v1", dependencies=[_Depends(require_hr_module)])
