@@ -1,5 +1,5 @@
 from __future__ import annotations
-from sqlalchemy import Column, ForeignKey, Integer, String, Table, Text
+from sqlalchemy import Column, ForeignKey, Integer, String, Table, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 from app.db.mixins import TimestampMixin
@@ -11,10 +11,15 @@ from app.modules.products.models.application import ProductApplication
 # (repair, overhaul, AMC, operator hire) with no physical product built.
 # An application (2026-10-28) is an add-on sold with a product only when the
 # customer asks for it — same master, same form, picked on a quotation line.
-PRODUCT_TYPES = ("vehicle", "machine", "equipment", "attachment", "service", "application")
+#
+# 2026-11-12 (owner): only three types — Rail-road vehicle, Rail bound vehicle,
+# Application. Machine / equipment / attachment / paid-service products were
+# moved by migration d7a2c5e9b1f4 (attachment → application, the rest → vehicle).
+# Codes are no longer typed: each type has its own running number 01, 02, 03 …
+# (products/numbering.py), so the same number exists once per type.
+PRODUCT_TYPES = ("vehicle", "rail_bound_vehicle", "application")
 PRODUCT_TYPE_LABELS = {
-    "vehicle": "Rail-road vehicle", "machine": "Machine", "equipment": "Equipment", "attachment": "Attachment / accessory",
-    "service": "Paid service", "application": "Application",
+    "vehicle": "Rail-road vehicle", "rail_bound_vehicle": "Rail bound vehicle", "application": "Application",
 }
 
 # Product lifecycle (standard PLM states). Only `active` products should be
@@ -40,9 +45,14 @@ class FinishedProduct(Base, TimestampMixin):
     and Sales order lines (which key on store_items) can be traced back here."""
 
     __tablename__ = "products"
+    __table_args__ = (UniqueConstraint("product_type", "code", name="uq_products_type_code"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    code: Mapped[str] = mapped_column(String(30), unique=True, index=True, nullable=False)
+    # Running number within the product type (01, 02 …), given by the system.
+    code: Mapped[str] = mapped_column(String(30), index=True, nullable=False)
+    # The hand-typed code it had before the 2026-11-12 renumbering (e.g. PRT-RRV-AUG),
+    # kept so old documents / searches still find it.
+    old_code: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     product_type: Mapped[str] = mapped_column(String(30), nullable=False)
     model_number: Mapped[str | None] = mapped_column(String(100), nullable=True)

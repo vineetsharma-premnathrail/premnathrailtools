@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, field_validator
 class PrePoReceiptItemCreate(BaseModel):
     store_item_id: int
     quantity: float = Field(gt=0, allow_inf_nan=False)
+    invoice_item_name: str | None = Field(default=None, max_length=255)
     remarks: str | None = Field(default=None, max_length=2000)
     # Optional rate per unit from the vendor's quote / bill; values the stock until the PO's own rate arrives.
     unit_rate: float | None = Field(default=None, allow_inf_nan=False)
@@ -24,6 +25,7 @@ class PrePoReceiptCreate(BaseModel):
     received_date: date
     store_location_id: int | None = None
     delivery_challan_number: str | None = Field(default=None, max_length=100)
+    delivery_challan_date: date | None = None
     vendor_invoice_number: str | None = Field(default=None, max_length=100)
     vendor_invoice_date: date | None = None
     remarks: str | None = Field(default=None, max_length=2000)
@@ -47,6 +49,7 @@ class PrePoReceiptItemResponse(BaseModel):
     store_item_id: int
     item_code: str | None = None
     item_name: str
+    invoice_item_name: str | None = None
     unit: str | None = None
     quantity: float
     remarks: str | None = None
@@ -78,6 +81,7 @@ class PrePoReceiptResponse(BaseModel):
     store_location_id: int | None = None
     store_location_name: str | None = None
     delivery_challan_number: str | None = None
+    delivery_challan_date: date | None = None
     vendor_invoice_number: str | None = None
     vendor_invoice_date: date | None = None
     remarks: str | None = None

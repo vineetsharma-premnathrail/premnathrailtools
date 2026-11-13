@@ -25,4 +25,8 @@ export const ENTRIES: TourEntry[] = [
     pattern: /^\/dashboard\/crm\/reports$/,
     load: () => import('../configs/crmReports'),
   },
+  {
+    pattern: /^\/dashboard\/crm\/library$/,
+    load: () => import('../configs/crmSalesLibrary'),
+  },
 ]

@@ -29,7 +29,7 @@ class ProductApplicationRef(BaseModel):
 
 
 class ProductCreate(BaseModel):
-    code: str
+    # No code: the system gives the next number of the product type (products/numbering.py).
     name: str
     product_type: str
     model_number: str | None = None
@@ -69,6 +69,7 @@ class ProductResponse(BaseModel):
 
     id: int
     code: str
+    old_code: str | None = None
     name: str
     product_type: str
     model_number: str | None = None

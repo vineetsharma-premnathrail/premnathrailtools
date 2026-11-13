@@ -10,6 +10,9 @@ from app.modules.crm.models.payment_term import PaymentTerm
 from app.modules.crm.models.document_category import CrmDocumentCategory
 from app.modules.crm.models.rnd_request import CrmRndRequest
 from app.modules.crm.models.requirement_comment import CrmRequirementComment
+from app.modules.crm.models.library import (
+    LibraryFolder, LibraryDocument, LibraryDocumentVersion, LibraryDocumentLink, LibraryFavorite,
+)
 
 __all__ = [
     "Organization",
@@ -29,4 +32,9 @@ __all__ = [
     "CrmDocumentCategory",
     "CrmRndRequest",
     "CrmRequirementComment",
+    "LibraryFolder",
+    "LibraryDocument",
+    "LibraryDocumentVersion",
+    "LibraryDocumentLink",
+    "LibraryFavorite",
 ]

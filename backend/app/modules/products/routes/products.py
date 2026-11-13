@@ -5,7 +5,7 @@ Lives in CRM › Products (one tab, `crm:products`; moved from Sales on 2026-10-
 The master is tab-gated, not owner-scoped: anyone who may open the tab sees every
 product, like the vendor master (owner decision, 2026-10-30)."""
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func, or_
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session, selectinload
 
 from app.core import visibility
@@ -16,6 +16,7 @@ from app.modules.products.models.application import ProductApplication
 from app.modules.products.models.product import (
     FinishedProduct, ProductSpecification, PRODUCT_STATUSES, PRODUCT_STATUS_LABELS, PRODUCT_TYPES, PRODUCT_TYPE_LABELS,
 )
+from app.modules.products import numbering
 from app.modules.products.schemas.product import (
     ProductCreate, ProductUpdate, ProductResponse, ProductSpecificationPayload,
 )
@@ -27,13 +28,6 @@ _CAN_CREATE = require_tab_action("crm", "products", "create")
 _CAN_EDIT = require_tab_action("crm", "products", "edit")
 # Role-wise visibility (core/features/products.py): the Type / Status values a role may pick.
 VIS_KEY = "crm:products"
-
-
-def _norm_code(code: str) -> str:
-    c = (code or "").strip().upper()
-    if not c or len(c) > 30:
-        raise HTTPException(status_code=422, detail="Product code is required (up to 30 characters), e.g. RRB-SV.")
-    return c
 
 
 def _check_choices(product_type: str | None, status: str | None) -> None:
@@ -101,13 +95,15 @@ def _get(db: Session, product_id: int) -> FinishedProduct:
 
 
 @router.get("/meta")
-async def product_meta(user: User = Depends(require_tab_access("crm", "products"))):
+async def product_meta(db: Session = Depends(get_db), user: User = Depends(require_tab_access("crm", "products"))):
     """Every type / status with `allowed` = the user's roles offer it (never filtered: a saved
     product keeps showing its value; the form filters, the server enforces)."""
     types = visibility.allowed_values(user, VIS_KEY, "product_type")
     statuses = visibility.allowed_values(user, VIS_KEY, "status")
     return {
-        "types": [{"value": k, "label": PRODUCT_TYPE_LABELS[k], "allowed": types is None or k in types} for k in PRODUCT_TYPES],
+        # next_code: what a new product of this type would get (shown on the form, taken on save).
+        "types": [{"value": k, "label": PRODUCT_TYPE_LABELS[k], "allowed": types is None or k in types,
+                   "next_code": numbering.preview_code(db, k)} for k in PRODUCT_TYPES],
         "statuses": [{"value": k, "label": PRODUCT_STATUS_LABELS[k], "allowed": statuses is None or k in statuses} for k in PRODUCT_STATUSES],
     }
 
@@ -134,19 +130,21 @@ async def list_products(
     term = search.strip()
     if term:
         like = f"%{term}%"
-        q = q.filter(or_(FinishedProduct.code.ilike(like), FinishedProduct.name.ilike(like), FinishedProduct.model_number.ilike(like)))
+        q = q.filter(or_(FinishedProduct.code.ilike(like), FinishedProduct.old_code.ilike(like),
+                         FinishedProduct.name.ilike(like), FinishedProduct.model_number.ilike(like)))
     if product_type:
         q = q.filter(FinishedProduct.product_type == product_type)
     if status:
         q = q.filter(FinishedProduct.status == status)
     if application_id:
         q = q.filter(FinishedProduct.applications.any(ProductApplication.id == application_id))
-    return [_out(p) for p in q.order_by(FinishedProduct.name).all()]
+    # Type, then code ascending (01, 02 … 99, 100 — shorter codes first keeps the numbers in order).
+    type_order = case({t: i for i, t in enumerate(PRODUCT_TYPES)}, value=FinishedProduct.product_type, else_=len(PRODUCT_TYPES))
+    return [_out(p) for p in q.order_by(type_order, func.length(FinishedProduct.code), FinishedProduct.code).all()]
 
 
 @router.post("", response_model=ProductResponse)
 async def create_product(payload: ProductCreate, db: Session = Depends(get_db), user: User = Depends(_CAN_CREATE)):
-    code = _norm_code(payload.code)
     name = (payload.name or "").strip()
     if not name:
         raise HTTPException(status_code=422, detail="Product name is required, e.g. RRB Sanding Vehicle.")
@@ -154,10 +152,8 @@ async def create_product(payload: ProductCreate, db: Session = Depends(get_db), 
     visibility.ensure_option_allowed(user, VIS_KEY, "product_type", payload.product_type)
     visibility.ensure_option_allowed(user, VIS_KEY, "status", payload.status)
     _check_numbers(payload.warranty_months)
-    existing = db.query(FinishedProduct).filter(func.upper(FinishedProduct.code) == code).first()
-    if existing:
-        raise HTTPException(status_code=409, detail=f"Product code '{code}' is already used by {existing.name} — codes are unique; pick another code or edit that product.")
     _store_item(db, payload.store_item_id, None)
+    code = numbering.next_code(db, payload.product_type)  # never typed: next number of this type
     p = FinishedProduct(
         code=code, name=name, product_type=payload.product_type, status=payload.status,
         model_number=(payload.model_number or "").strip() or None,
@@ -206,6 +202,9 @@ async def update_product(product_id: int, payload: ProductUpdate, db: Session = 
             data[field] = (data[field] or "").strip() or None
     if "uom" in data:
         data["uom"] = (data["uom"] or "").strip() or "Nos"
+    if data.get("product_type") and data["product_type"] != p.product_type:
+        # The code is a number within the type, so a new type means the next number of that type.
+        data["code"] = numbering.next_code(db, data["product_type"])
     for k, v in data.items():
         setattr(p, k, v)
     if app_ids is not None:

@@ -7,7 +7,7 @@ const config: TourConfig = {
     {
       target: 'prod-search',
       title: 'Search products',
-      purpose: 'Finds a product by its code, name or model number as you type.',
+      purpose: 'Finds a product by its code (or its earlier code, e.g. PRT-RRV-AUG), name or model number as you type.',
       whatToEnter: 'Part of the code, name or model.',
       validExample: 'RRB Sanding Vehicle',
     },
@@ -21,7 +21,7 @@ const config: TourConfig = {
     {
       target: 'prod-table',
       title: 'Products list',
-      purpose: 'Every product with code, name, type, model and status, sorted by code. Click a row to see its technical specifications and prices.',
+      purpose: 'Every product with code, name, type, model and status, sorted by type then code. Each type — Rail-road vehicle, Rail bound vehicle, Application — has its own running code 01, 02, 03 … given by the system. Click a row to see its technical specifications and prices.',
       why: 'Prices and specifications are inside the product (no separate Pricing page). Prices show only to roles that have the Prices switch and CRM › Products › Pricing.',
     },
   ],

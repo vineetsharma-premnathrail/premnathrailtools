@@ -589,3 +589,8 @@ register_audited(
     ref=lambda o: f"'{o.parameter}'", parent_attr="product_id", parent_entity_type="product", child_action="specification",
 )
 register_audited(ProductApplication, entity_type="product_application", module_key="crm", label="Application", ref=lambda o: f"{o.code} — {o.name}")
+
+# CRM › Sales Library: who renamed / moved / un-marked Confidential a folder or file (2026-11-12).
+from app.modules.crm.models.library import LibraryDocument as _LibraryDocument, LibraryFolder as _LibraryFolder  # noqa: E402
+register_audited(_LibraryFolder, entity_type="crm_library_folder", module_key="crm", label="Library folder", ref=lambda o: o.name)
+register_audited(_LibraryDocument, entity_type="crm_library_document", module_key="crm", label="Library file", ref=lambda o: o.title)

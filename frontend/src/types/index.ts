@@ -10412,7 +10412,8 @@ export interface P2PEngineApproval {
 }
 
 // ── Product Management ──────────────────────────────────────────────
-export type ProductType = 'vehicle' | 'machine' | 'equipment' | 'attachment' | 'service' | 'application'
+// Only three types since 2026-11-12; each has its own code series 01, 02, 03 …
+export type ProductType = 'vehicle' | 'rail_bound_vehicle' | 'application'
 export type ProductStatus = 'development' | 'active' | 'phased_out' | 'discontinued'
 
 export interface ProductApplication {
@@ -10434,7 +10435,10 @@ export interface ProductSpecification {
 
 export interface FinishedProduct {
   id: number
+  /** Running number within the type (01, 02 …), given by the system. */
   code: string
+  /** The hand-typed code it had before 2026-11-12 (e.g. PRT-RRV-AUG). */
+  old_code?: string | null
   name: string
   product_type: ProductType
   model_number?: string | null
@@ -10457,8 +10461,9 @@ export interface FinishedProduct {
 }
 
 export interface ProductMeta {
-  types: { value: ProductType; label: string }[]
-  statuses: { value: ProductStatus; label: string }[]
+  /** next_code = what a new product of this type would get (taken on save). */
+  types: { value: ProductType; label: string; allowed?: boolean; next_code?: string }[]
+  statuses: { value: ProductStatus; label: string; allowed?: boolean }[]
 }
 
 export interface ProductStoreItemOption {

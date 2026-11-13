@@ -4,9 +4,10 @@ import { BORDER, GLASS, SHADOWS, TEXT } from '@/lib/theme'
 import { pillStyle } from '@/components/shared/ui'
 
 export const PRODUCT_TYPE_LABELS: Record<string, string> = {
-  vehicle: 'Rail-road vehicle', machine: 'Machine', equipment: 'Equipment', attachment: 'Attachment / accessory',
-  service: 'Paid service', application: 'Application',
+  vehicle: 'Rail-road vehicle', rail_bound_vehicle: 'Rail bound vehicle', application: 'Application',
 }
+/** A code is a number within its type (Rail-road vehicle 01 ≠ Application 01), so it is shown with the type. */
+export const productCodeLabel = (p: { code: string; product_type: string }) => `${PRODUCT_TYPE_LABELS[p.product_type] || p.product_type} ${p.code}`
 export const PRODUCT_STATUS_LABELS: Record<string, string> = {
   development: 'In development', active: 'Active', phased_out: 'Phased out', discontinued: 'Discontinued',
 }

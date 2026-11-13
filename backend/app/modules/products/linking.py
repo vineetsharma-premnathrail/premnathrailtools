@@ -34,9 +34,13 @@ class Matcher:
         self.by_code: dict[str, set[int]] = {}
         self.by_model: dict[str, set[int]] = {}
         self.by_name: dict[str, list[tuple[int, str]]] = {}
-        for pid, code, name, model in rows:
-            if _n(code):
-                self.by_code.setdefault(_n(code), set()).add(pid)
+        for pid, code, name, model, *rest in rows:
+            # Since 2026-11-12 the code is a running number per type (01, 02 …), the
+            # same in every type — free text "04" must not link to a product. Only the
+            # hand-typed code it had before (old_code, e.g. PRT-RRV-AUG) is matched.
+            old_code = rest[0] if rest else None
+            if _n(old_code):
+                self.by_code.setdefault(_n(old_code), set()).add(pid)
             if _n(model):
                 self.by_model.setdefault(_n(model), set()).add(pid)
             if _n(name):
@@ -46,7 +50,7 @@ class Matcher:
     def load(cls, db_or_conn) -> "Matcher":
         from sqlalchemy import text
         exec_ = db_or_conn.execute
-        return cls(exec_(text("SELECT id, code, name, model_number FROM products")).fetchall())
+        return cls(exec_(text("SELECT id, code, name, model_number, old_code FROM products")).fetchall())
 
     def match(self, text: str | None, model: str | None = None) -> int | None:
         t, m = _n(text), _n(model)

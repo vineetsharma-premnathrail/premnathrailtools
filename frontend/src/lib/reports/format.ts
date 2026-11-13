@@ -37,8 +37,12 @@ export function fmtCell(type: ColType, v: unknown): string {
   }
 }
 
-/** A change between two periods (fraction from the API) as '+12.5%'. */
-export const fmtDelta = (d: number) => `${d > 0 ? '+' : ''}${(d * 100).toLocaleString('en-IN', { maximumFractionDigits: 1 })}%`
+/** A change between two periods as '+12.5%'. The API already sends it in percent (-66.7 = 66.7 % down), never a fraction. */
+export const fmtDelta = (d: number) => `${d > 0 ? '+' : ''}${d.toLocaleString('en-IN', { maximumFractionDigits: 1 })}%`
+
+/** Decimal places a chart axis may step in, so ticks never repeat after rounding (count axis 0,1,2 not 0,0.2,0.4 shown as 0,0,0). */
+export const axisPrecision = (type: ColType): number =>
+  type === 'int' ? 0 : type === 'hours' || type === 'days' ? 1 : type === 'percent' ? 3 : 2
 
 export const NONE_TOKEN = '__none__'
 /** Filter values that come from a drill: the empty-value token reads 'Not set'. */

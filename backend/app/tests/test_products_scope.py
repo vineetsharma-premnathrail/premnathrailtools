@@ -57,7 +57,7 @@ def test_create_edit_delete_need_their_own_action(client, db):
     editor = _user(db, "ps.editor@premnathrail.com", ["crm:products:view", "crm:products:create", "crm:products:edit", "crm:products:delete"])
     admin = _user(db, "ps.admin@premnathrail.com", role="admin")
     prods = _products(db, admin)
-    body = {"code": "PS-9", "name": "Nine", "product_type": "machine"}
+    body = {"name": "Nine", "product_type": "rail_bound_vehicle"}
     assert client.post(BASE, json=body, headers=_hdr(viewer)).status_code == 403
     assert client.patch(f"{BASE}/{prods['PS-1'].id}", json={"name": "Hijack"}, headers=_hdr(viewer)).status_code == 403
     assert client.post(f"{BASE}/applications", json={"code": "APP-1", "name": "App one"}, headers=_hdr(viewer)).status_code == 403

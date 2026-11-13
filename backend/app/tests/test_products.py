@@ -21,7 +21,7 @@ def _auth(u):
 
 
 def _product(client, h, **over):
-    body = {"code": "rrb-sv", "name": "RRB Sanding Vehicle", "product_type": "vehicle", "status": "development"}
+    body = {"name": "RRB Sanding Vehicle", "product_type": "vehicle", "status": "development"}
     body.update(over)
     return client.post(API, json=body, headers=h)
 
@@ -44,18 +44,17 @@ def test_full_flow(client, db):
                  specifications=[{"parameter": "Max speed on rail", "value": "40", "unit": "km/h"}, {"parameter": "", "value": ""}])
     assert r.status_code == 200, r.text
     p = r.json()
-    assert p["code"] == "RRB-SV" and p["uom"] == "Nos"
+    assert p["code"] == "01" and p["uom"] == "Nos"  # system-given, first of its type
     assert [a["code"] for a in p["applications"]] == ["OHE-INSP"]
     assert len(p["specifications"]) == 1 and p["store_item_code"] == "FG-0001"
 
-    assert _product(client, admin).status_code == 409
-    clash = _product(client, admin, code="RRB-2", store_item_id=item.id)
+    clash = _product(client, admin, store_item_id=item.id)
     assert clash.status_code == 409 and "already linked" in clash.json()["detail"]
-    bad = _product(client, admin, code="X1", product_type="boat")
+    bad = _product(client, admin, product_type="boat")
     assert bad.status_code == 422
 
     listed = client.get(API, params={"application_id": app_id}, headers=admin).json()
-    assert [x["code"] for x in listed] == ["RRB-SV"]
+    assert [x["code"] for x in listed] == ["01"]
     apps = client.get(f"{API}/applications", headers=admin).json()
     assert apps[0]["product_count"] == 1
 
@@ -76,3 +75,23 @@ def test_permissions(client, db):
     assert client.get(API, headers=outsider).status_code == 403
     r = _product(client, viewer)
     assert r.status_code == 403 and place("crm:products:create").split(" › ")[-1] in r.json()["detail"]
+
+
+def test_codes_are_a_running_number_per_type(client, db):
+    """Owner, 2026-11-12: no typed code; Rail-road vehicle, Rail bound vehicle and
+    Application each count 01, 02 … on their own; a typed code is ignored; a type
+    change takes the next number of the new type; a deleted number is not reused."""
+    admin = _auth(_user(db, "pm.codes@premnathrail.com", role="admin"))
+    v1 = _product(client, admin, code="TYPED-IGNORED").json()
+    v2 = _product(client, admin, name="Second vehicle").json()
+    rb1 = _product(client, admin, name="Tower wagon", product_type="rail_bound_vehicle").json()
+    a1 = _product(client, admin, name="OHE add-on", product_type="application").json()
+    assert (v1["code"], v2["code"], rb1["code"], a1["code"]) == ("01", "02", "01", "01")
+
+    meta = client.get(f"{API}/meta", headers=admin).json()
+    assert {t["value"]: t["next_code"] for t in meta["types"]} == {"vehicle": "03", "rail_bound_vehicle": "02", "application": "02"}
+
+    moved = client.patch(f"{API}/{v2['id']}", json={"product_type": "rail_bound_vehicle"}, headers=admin)
+    assert moved.status_code == 200 and moved.json()["code"] == "02"
+    assert client.delete(f"{API}/{rb1['id']}", headers=admin).status_code == 200
+    assert _product(client, admin, name="Third rail bound", product_type="rail_bound_vehicle").json()["code"] == "03"

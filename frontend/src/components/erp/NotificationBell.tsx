@@ -72,6 +72,7 @@ const ENTITY_LINK: Record<string, (ref: string) => string> = {
   sales_order: () => '/dashboard/sales',
   sales_amendment: () => '/dashboard/sales',
   crm_quotation: (ref) => `/dashboard/crm/quotations/${ref}`,
+  crm_library_document: (ref) => `/dashboard/crm/library?doc=${ref}`,
   sales_extension: () => '/dashboard/sales',
   pm_project: (ref) => `/dashboard/projects/${ref}`,
   pm_milestone: (ref) => `/dashboard/projects/milestones/${ref}`,

@@ -151,6 +151,8 @@ async def create_pre_po_receipt(
                 f"{'heat / batch numbers and mill TC' if kind == 'batch-tracked' else 'serial numbers'}. Leave it off this receipt and record it "
                 "with a GRN once its PO exists, or ask the Store manager to receive it."))
 
+    if payload.delivery_challan_date and payload.delivery_challan_date > payload.received_date:
+        raise HTTPException(status_code=422, detail="The challan date is after the date the goods were received - check the date printed on the delivery challan, or correct the Received on date.")
     if payload.vendor_invoice_date and payload.vendor_invoice_date > payload.received_date:
         raise HTTPException(status_code=422, detail="The invoice date is after the date the goods were received - check the date printed on the vendor's bill, or correct the Received on date.")
     receipt = StorePrePoReceipt(
@@ -159,13 +161,15 @@ async def create_pre_po_receipt(
         delivery_challan_number=(payload.delivery_challan_number or "").strip() or None,
         vendor_invoice_number=(payload.vendor_invoice_number or "").strip() or None,
         vendor_invoice_date=payload.vendor_invoice_date,
+        delivery_challan_date=payload.delivery_challan_date,
         remarks=(payload.remarks or "").strip() or None, status="pending_po", created_by_id=user.id,
     )
     for line in payload.items:
         item = items[line.store_item_id]
         receipt.items.append(StorePrePoReceiptItem(
             store_item_id=item.id, item_name=item.item_name, unit=item.uom, quantity=line.quantity,
-            remarks=(line.remarks or "").strip() or None, unit_rate=line.unit_rate))
+            remarks=(line.remarks or "").strip() or None, unit_rate=line.unit_rate,
+            invoice_item_name=(line.invoice_item_name or "").strip() or None))
     db.add(receipt)
     db.flush()
     # Goods go into stock now (Free, or Quality + lot); a refusal rolls the whole receipt back with the reason.

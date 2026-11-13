@@ -5,7 +5,7 @@ import {
   Chart as ChartJS, CategoryScale, LinearScale, BarElement, ArcElement, PointElement, LineElement, Tooltip, Legend,
 } from 'chart.js'
 import { CATEGORICAL, GRID, INK_MUTED, chartFont } from '@/lib/reports/palette'
-import { fmtNumber } from '@/lib/reports/format'
+import { axisPrecision, fmtNumber } from '@/lib/reports/format'
 import type { VisualResult, VisualSpec } from '@/lib/reports/dashboard'
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, PointElement, LineElement, Tooltip, Legend)
@@ -49,7 +49,7 @@ export default function ChartVisual({ spec, result, selected, onSelect }: {
   const horizontal = spec.kind === 'hbar'
   const stacked = spec.kind === 'stacked_bar'
   const multi = result.datasets.length > 1
-  const valueAxis = { stacked, beginAtZero: true, grid: { color: GRID }, ticks: { font: chartFont, color: INK_MUTED, callback: (v: string | number) => fmt(v) } }
+  const valueAxis = { stacked, beginAtZero: true, grid: { color: GRID }, ticks: { font: chartFont, color: INK_MUTED, precision: axisPrecision(type), callback: (v: string | number) => fmt(v) } }
   const labelAxis = { stacked, grid: { display: false }, ticks: { font: chartFont, color: INK_MUTED, maxRotation: horizontal ? 0 : 40 } }
   const options = {
     responsive: true, maintainAspectRatio: false, onClick: click as never,

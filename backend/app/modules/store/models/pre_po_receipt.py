@@ -29,6 +29,7 @@ class StorePrePoReceipt(Base, TimestampMixin):
     received_date: Mapped[date] = mapped_column(Date, nullable=False)
     store_location_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("store_locations.id"), nullable=True)
     delivery_challan_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    delivery_challan_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     vendor_invoice_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
     vendor_invoice_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -63,6 +64,8 @@ class StorePrePoReceiptItem(Base, TimestampMixin):
         Integer, ForeignKey("store_pre_po_receipts.id", ondelete="CASCADE"), nullable=False, index=True)
     store_item_id: Mapped[int] = mapped_column(Integer, ForeignKey("store_items.id"), nullable=False, index=True)
     item_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # The name printed on the vendor's invoice / challan for this line, when it differs (owner, 2026-11-07).
+    invoice_item_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     unit: Mapped[str | None] = mapped_column(String(20), nullable=True)
     quantity: Mapped[float] = mapped_column(Float, nullable=False)
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)

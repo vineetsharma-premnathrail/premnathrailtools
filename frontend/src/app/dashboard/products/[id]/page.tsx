@@ -12,6 +12,7 @@ import { TEXT } from '@/lib/theme'
 import ProductsNav from '@/components/products/ProductsNav'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import ProductSalesPanels from '@/components/products/ProductSalesPanels'
+import ProductSalesResources from '@/components/crm/library/ProductSalesResources'
 import { Section, DetailCard, DetailSummary, DetailGroup, DetailRow, dangerBtnStyle, primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
 import {
   ErrorBanner, PageHeader, Pill, PRODUCT_STATUS_HEX, PRODUCT_STATUS_LABELS, PRODUCT_TYPE_LABELS,
@@ -109,6 +110,9 @@ export default function ProductDetailPage() {
 
           {/* Pricing loads the product's prices — not drawn for the preview's sample product. */}
           {!vis.preview && <ProductSalesPanels productId={p.id} />}
+
+          {/* Sales Library documents linked to this product (needs CRM › Sales Library › View). */}
+          {!vis.preview && <ProductSalesResources product={p} />}
         </>
       )}
 

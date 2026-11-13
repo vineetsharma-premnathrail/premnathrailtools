@@ -53,7 +53,7 @@ register_visibility(
     ),
     options=(
         ("product_type", "Type", dict(PRODUCT_TYPE_LABELS),
-         "Rail-road vehicle / Machine / Equipment / Attachment / Paid service / Application. Leaving out Application removes the "
+         "Rail-road vehicle / Rail bound vehicle / Application. Leaving out Application removes the "
          "'Application' choice on the form. A value not allowed here is also refused by the server.", "form"),
         ("status", "Status", dict(PRODUCT_STATUS_LABELS),
          "Lifecycle status offered on the form (In development / Active / Phased out / Discontinued). A saved product keeps its status "

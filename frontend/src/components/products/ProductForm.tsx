@@ -7,7 +7,7 @@ import DraftBanner from '@/components/shared/DraftBanner'
 import { productsApi } from '@/lib/api'
 import { FinishedProduct, ProductMeta, ProductStatus, ProductStoreItemOption, ProductType } from '@/types'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
-import { ErrorBanner } from '@/components/products/ProductBits'
+import { ErrorBanner, productCodeLabel } from '@/components/products/ProductBits'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import { pricingApi } from '@/lib/sdServiceApi'
@@ -21,7 +21,7 @@ import { VisOptionValues, VisSection } from '@/lib/visibilityComponents'
 const hintStyle = sheetHint
 const L = ({ children }: { children: React.ReactNode }) => <label style={sheetLabel}>{children}</label>
 
-/** Create / edit form for a product. `initial` = edit mode (code is fixed once created). */
+/** Create / edit form for a product. The code is never typed: the system gives the next number of the type on save. */
 export default function ProductForm({ initial, onSaved, onCancel, nav }: {
   initial?: FinishedProduct
   onSaved: (p: FinishedProduct) => void
@@ -34,7 +34,6 @@ export default function ProductForm({ initial, onSaved, onCancel, nav }: {
   // editor's "Preview & choose" nothing is saved or kept as a draft.
   const vis = useVisibility('crm:products')
   const [form, setForm] = useState({
-    code: initial?.code || '',
     name: initial?.name || '',
     product_type: initial?.product_type || 'vehicle',
     model_number: initial?.model_number || '',
@@ -109,15 +108,12 @@ export default function ProductForm({ initial, onSaved, onCancel, nav }: {
   const save = async () => {
     if (vis.preview) return
     setError('')
-    if (!form.code.trim() || !form.name.trim()) {
-      setError('Product code and name are required — e.g. code RRB-SV, name RRB Sanding Vehicle.')
+    if (!form.name.trim()) {
+      setError('Enter the name — e.g. RRB Sanding Vehicle. The code is given by the system when you save.')
       return
     }
-    // Code is fixed once created — the edit payload leaves it out.
-    const { code, ...rest } = form
     const payload: Record<string, unknown> = {
-      ...rest,
-      ...(initial ? {} : { code }),
+      ...form,
       warranty_months: form.warranty_months.trim() === '' ? null : Number(form.warranty_months),
       store_item_id: storeItem?.id ?? null,
       technical_specification: techSpec.trim() || null,
@@ -146,8 +142,8 @@ export default function ProductForm({ initial, onSaved, onCancel, nav }: {
   }
 
   return (
-    <FormPage nav={nav} icon={initial ? 'edit' : 'box'} title={initial ? `Edit ${initial.code}` : isApp ? 'New Application' : 'New Product'}
-      subtitle={initial ? `${initial.name} — the code is fixed once created.` : isApp
+    <FormPage nav={nav} icon={initial ? 'edit' : 'box'} title={initial ? `Edit ${productCodeLabel(initial)}` : isApp ? 'New Application' : 'New Product'}
+      subtitle={initial ? `${initial.name} — the code is a running number of its type; changing the type gives it the next number of the new type.` : isApp
         ? 'An add-on sold with a product only when the customer asks for it.'
         : 'A finished product the company sells — the master CRM, Design, Production and Service refer to.'}
       onBack={vis.preview ? undefined : onCancel} backTour="product-form-back"
@@ -178,8 +174,11 @@ export default function ProductForm({ initial, onSaved, onCancel, nav }: {
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
               <div style={{ flex: '0 1 140px', minWidth: 120 }}>
-                <L>Code <Req /></L>
-                <input style={{ ...sheetInput, textTransform: 'uppercase' }} value={form.code} disabled={!!initial} onChange={(e) => set('code', e.target.value)} placeholder="RRB-SV" maxLength={30} />
+                <L>Code</L>
+                {/* Never typed: the next number of the type, taken on save (each type has its own 01, 02 …). */}
+                <input style={sheetInput} disabled aria-readonly
+                  value={initial && initial.product_type === form.product_type ? initial.code : meta?.types.find((t) => t.value === form.product_type)?.next_code || 'Given on save'}
+                  title={initial?.old_code ? `Earlier code: ${initial.old_code}` : 'Given by the system when you save — the next number of this type.'} />
               </div>
               <div style={{ flex: '1 1 240px', maxWidth: 360 }}>
                 <L>Name <Req /></L><input style={sheetInput} value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="RRB Sanding Vehicle" />

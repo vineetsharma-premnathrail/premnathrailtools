@@ -183,13 +183,13 @@ PROD_GRANTS = ["crm:products:view", "crm:products:create", "crm:products:edit"]
 
 def test_product_create_refuses_type_and_status_outside_the_role(client, db):
     u = _member(db, "vis.prod@premnathrail.com", ["crm"], PROD_GRANTS,
-                {"crm:products": {"options": {"product_type": ["machine"], "status": ["development"]}}})
-    body = {"code": "VIS-1", "name": "Tamping machine", "product_type": "vehicle", "status": "development"}
+                {"crm:products": {"options": {"product_type": ["rail_bound_vehicle"], "status": ["development"]}}})
+    body = {"name": "Tamping machine", "product_type": "vehicle", "status": "development"}
     r = client.post(f"{API}/products", json=body, headers=_h(u))
-    assert r.status_code == 422 and r.json()["detail"].startswith("Type 'Rail-road vehicle' isn't available to your role — you can pick: Machine.")
-    r = client.post(f"{API}/products", json={**body, "product_type": "machine", "status": "active"}, headers=_h(u))
+    assert r.status_code == 422 and r.json()["detail"].startswith("Type 'Rail-road vehicle' isn't available to your role — you can pick: Rail bound vehicle.")
+    r = client.post(f"{API}/products", json={**body, "product_type": "rail_bound_vehicle", "status": "active"}, headers=_h(u))
     assert r.status_code == 422 and "Status 'Active' isn't available" in r.json()["detail"]
-    r = client.post(f"{API}/products", json={**body, "product_type": "machine"}, headers=_h(u))
+    r = client.post(f"{API}/products", json={**body, "product_type": "rail_bound_vehicle"}, headers=_h(u))
     assert r.status_code == 200, r.text
 
 

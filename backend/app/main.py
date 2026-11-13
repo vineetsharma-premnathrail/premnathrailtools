@@ -467,6 +467,7 @@ from app.modules.crm.routes import settings as crm_settings_routes
 from app.modules.crm.routes import exports as crm_exports_routes
 from app.modules.crm.routes import quotation_status as crm_quotation_status_routes
 from app.modules.crm.routes import opportunity as crm_opportunity_routes
+from app.modules.crm.routes import library as crm_library_routes
 from app.modules.rnd.routes import calculations as rnd_calculations_routes
 from app.modules.rnd.routes import history as rnd_history_routes
 from app.modules.rnd.routes import projects as rnd_projects_routes
@@ -780,6 +781,7 @@ app.include_router(crm_settings_routes.router, prefix="/api/v1")
 app.include_router(crm_exports_routes.router, prefix="/api/v1")
 app.include_router(crm_quotation_status_routes.router, prefix="/api/v1")
 app.include_router(crm_opportunity_routes.router, prefix="/api/v1")
+app.include_router(crm_library_routes.router, prefix="/api/v1")
 app.include_router(notifications_routes.router, prefix="/api/v1")
 app.include_router(feedback_routes.router, prefix="/api/v1")
 app.include_router(modules_routes.router, prefix="/api/v1")

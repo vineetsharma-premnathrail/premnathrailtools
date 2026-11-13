@@ -143,7 +143,7 @@ const config: TourConfig = {
       title: 'Product',
       purpose: 'Each row is one product, paid service or application / attachment being quoted. Pick it from the Product master; if it is not in the list, just type its name — a typed name is used for this quotation only and is not added to the master. An application / attachment the customer asked for is added as its own line.',
       required: true,
-      whatToEnter: 'Open the list and search by name or model, then pick one — or type a name that is not in the list. Products, Paid services and Applications / attachments are listed in their own groups (active and in-development only).',
+      whatToEnter: 'Open the list and search by name or model, then pick one — or type a name that is not in the list. Products (rail-road and rail bound vehicles) and Applications are listed in their own groups (active and in-development only).',
       validExample: 'RRV Mobile Crane',
       invalidExample: 'A row left completely blank — silently ignored, so an unused extra row from "+ Add Line Item" never blocks saving.',
       after: 'Picking a product puts its name on the quotation, fills the model number, and fills the price when a price is set for this customer in Products.',

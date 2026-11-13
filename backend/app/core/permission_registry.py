@@ -91,6 +91,7 @@ MODULES: dict[str, dict] = {
         ("organizations", "Customer Organizations", _with(CRUD, "export", "import")),
         ("inquiries_tenders", "Inquiries & Tenders", WORKFLOW),
         ("products", "Products", CRUD),
+        ("sales_library", "Sales Library", CRUD),  # catalogues, demo videos, price lists, references (2026-11-12)
         ("reports", "Reports", ["view", "export"]),
         ("settings", "Settings", SETTINGS),
     ),

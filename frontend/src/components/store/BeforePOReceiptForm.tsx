@@ -15,13 +15,15 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import Select from '@/components/shared/Select'
 import { CONTROL } from '@/lib/theme'
+import { segmentBtnStyle } from '@/components/shared/ui'
 import { useFormDraft } from '@/lib/formDraft'
 import { useAuthStore } from '@/store/authStore'
 import DraftBanner from '@/components/shared/DraftBanner'
 import { FormSheet, SheetSection, SheetIcon, SheetError, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 
-type Line = { itemId: string; quantity: string; rate: string; remarks: string }
-const emptyLine = (): Line => ({ itemId: '', quantity: '', rate: '', remarks: '' })
+type DocType = 'invoice' | 'challan'
+type Line = { itemId: string; invoiceName: string; quantity: string; rate: string; remarks: string }
+const emptyLine = (): Line => ({ itemId: '', invoiceName: '', quantity: '', rate: '', remarks: '' })
 // Item types a Before PO receipt may carry: the "stock" purpose's types (backend
 // p2p/purpose.py PURPOSE_ITEM_TYPES); types Store added beyond the standard five stay offered.
 const STANDARD_ITEM_TYPES = ['material', 'service', 'asset', 'consumable', 'tool_equipment']
@@ -39,21 +41,24 @@ export default function BeforePOReceiptForm({ onClose, onSaved }: { onClose: () 
   const [challan, setChallan] = useState('')
   const [invoice, setInvoice] = useState('')
   const [invoiceDate, setInvoiceDate] = useState('')
+  // Tax invoice or delivery challan - only the chosen document's fields show and are saved (owner, 2026-11-07).
+  const [docType, setDocType] = useState<DocType>('invoice')
+  const [challanDate, setChallanDate] = useState('')
   const [remarks, setRemarks] = useState('')
   const [invoiceFile, setInvoiceFile] = useState<File | null>(null)
   const [challanFile, setChallanFile] = useState<File | null>(null)
   const [lines, setLines] = useState<Line[]>([emptyLine()])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | string[]>('')
-  const draft = useFormDraft('store-before-po-receipt-new', { vendorId, receivedDate, locationId, challan, invoice, invoiceDate, remarks, lines }, (d) => {
+  const draft = useFormDraft('store-before-po-receipt-new', { vendorId, receivedDate, locationId, docType, challan, challanDate, invoice, invoiceDate, remarks, lines }, (d) => {
     setVendorId(d.vendorId ?? ''); setReceivedDate(d.receivedDate || new Date().toLocaleDateString('en-CA')); setLocationId(d.locationId ?? '')
-    setChallan(d.challan ?? ''); setInvoice(d.invoice ?? ''); setInvoiceDate(d.invoiceDate ?? ''); setRemarks(d.remarks ?? '')
-    setLines(d.lines?.length ? d.lines.map((l: Partial<Line>) => ({ itemId: l.itemId ?? '', quantity: l.quantity ?? '', rate: l.rate ?? '', remarks: l.remarks ?? '' })) : [emptyLine()])
+    setDocType(d.docType === 'challan' ? 'challan' : 'invoice'); setChallan(d.challan ?? ''); setChallanDate(d.challanDate ?? ''); setInvoice(d.invoice ?? ''); setInvoiceDate(d.invoiceDate ?? ''); setRemarks(d.remarks ?? '')
+    setLines(d.lines?.length ? d.lines.map((l: Partial<Line>) => ({ itemId: l.itemId ?? '', invoiceName: l.invoiceName ?? '', quantity: l.quantity ?? '', rate: l.rate ?? '', remarks: l.remarks ?? '' })) : [emptyLine()])
   })
 
   useEffect(() => {
     const fail = (what: string) => (err: unknown) => setError(extractErrorMessages(err, `Could not load ${what} — close this form and open it again.`))
-    vendorsApi.list({ status: 'active' }).then((v) => setVendors([...v].sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true })))).catch(fail('the vendor list'))
+    vendorsApi.list({ status: 'active' }).then((v) => setVendors([...v].sort((a, b) => a.name.localeCompare(b.name)))).catch(fail('the vendor list'))
     storeApi.listItems({ status: 'active' }).then((i: StoreItem[]) => setItems([...i].sort((a, b) => a.item_code.localeCompare(b.item_code, undefined, { numeric: true })))).catch(fail('the Item Master'))
     storeApi.listLocations().then((ls: StoreLocation[]) => setLocations(ls.filter((l) => l.is_active))).catch(fail('the store locations'))
   }, [])
@@ -85,7 +90,8 @@ export default function BeforePOReceiptForm({ onClose, onSaved }: { onClose: () 
         : 'No store is linked to you, so goods cannot be booked. Ask an admin to make you the manager of your store in Store › Settings › Stores.')
       return
     }
-    if (invoiceDate && invoiceDate > receivedDate) { setError('The invoice date is after the date the goods were received — check the date printed on the vendor’s bill, or correct the Received on date.'); return }
+    if (docType === 'challan' && challanDate && challanDate > receivedDate) { setError('The challan date is after the date the goods were received — check the date printed on the delivery challan, or correct the Received on date.'); return }
+    if (docType === 'invoice' && invoiceDate && invoiceDate > receivedDate) { setError('The invoice date is after the date the goods were received — check the date printed on the vendor’s bill, or correct the Received on date.'); return }
     const filled = lines.filter((l) => l.itemId || l.quantity)
     if (!filled.length) { setError('Add at least one item with its quantity.'); return }
     for (const l of filled) {
@@ -100,16 +106,17 @@ export default function BeforePOReceiptForm({ onClose, onSaved }: { onClose: () 
         vendor_id: Number(vendorId),
         received_date: receivedDate,
         store_location_id: locationId ? Number(locationId) : undefined,
-        delivery_challan_number: challan.trim() || undefined,
-        vendor_invoice_number: invoice.trim() || undefined,
-        vendor_invoice_date: invoiceDate || undefined,
+        delivery_challan_number: docType === 'challan' ? challan.trim() || undefined : undefined,
+        delivery_challan_date: docType === 'challan' ? challanDate || undefined : undefined,
+        vendor_invoice_number: docType === 'invoice' ? invoice.trim() || undefined : undefined,
+        vendor_invoice_date: docType === 'invoice' ? invoiceDate || undefined : undefined,
         remarks: remarks.trim() || undefined,
-        items: filled.map((l) => ({ store_item_id: Number(l.itemId), quantity: Number(l.quantity), unit_rate: l.rate.trim() !== '' ? Number(l.rate) : undefined, remarks: l.remarks.trim() || undefined })),
+        items: filled.map((l) => ({ store_item_id: Number(l.itemId), quantity: Number(l.quantity), unit_rate: l.rate.trim() !== '' ? Number(l.rate) : undefined, remarks: l.remarks.trim() || undefined, invoice_item_name: l.invoiceName.trim() || undefined })),
       })
       // Files go up after the receipt exists; a failed upload doesn't undo the receipt.
       const notes: string[] = []
       let latest = saved
-      for (const [file, type] of [[invoiceFile, 'invoice'], [challanFile, 'challan']] as const) {
+      for (const [file, type] of (docType === 'invoice' ? [[invoiceFile, 'invoice']] : [[challanFile, 'challan']]) as [File | null, 'invoice' | 'challan'][]) {
         if (!file) continue
         try { latest = await prePoStoreApi.uploadAttachment(saved.id, file, type) }
         catch (err) { notes.push(`${file.name}: ${extractErrorMessages(err, 'upload failed').join(' ')}`) }
@@ -123,7 +130,7 @@ export default function BeforePOReceiptForm({ onClose, onSaved }: { onClose: () 
   }
 
   return (
-    <FormSheet icon="box" title="Before PO receipt" subtitle="Goods that arrived before their purchase order" onClose={onClose} busy={busy} tour="store-bpo-form" onSubmit={save}
+    <FormSheet icon="box" title="Before PO receipt" subtitle="Goods that arrived before their purchase order" onClose={onClose} busy={busy} tour="store-bpo-form" width={1320} onSubmit={save}
       footer={<>
         <button type="button" disabled={busy} onClick={onClose} data-tour="store-bpo-cancel-btn" style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
         <button type="submit" disabled={busy} data-tour="store-bpo-save-btn" style={sheetBtn('primary', SHEET.BLUE, busy)}><SheetIcon name="check" size={16} />{busy ? 'Saving…' : 'Save receipt'}</button>
@@ -140,7 +147,7 @@ export default function BeforePOReceiptForm({ onClose, onSaved }: { onClose: () 
             <div data-tour="store-bpo-vendor" style={{ flex: '1 1 300px', minWidth: 240 }}>
               <label style={sheetLabel}>Vendor <Req /></label>
               <SearchableSelect value={vendorId} onChange={setVendorId} placeholder="Search a vendor…"
-                options={vendors.map((v) => ({ value: String(v.id), label: `${v.code} — ${v.name}` }))} />
+                options={vendors.map((v) => ({ value: String(v.id), label: v.name }))} />
             </div>
             <div data-tour="store-bpo-date" style={{ flex: '0 1 180px', minWidth: 160 }}>
               <label style={sheetLabel}>Received on <Req /></label>
@@ -158,38 +165,52 @@ export default function BeforePOReceiptForm({ onClose, onSaved }: { onClose: () 
               )}
             </div>
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginTop: 14 }}>
-            <div style={{ flex: '1 1 200px', maxWidth: 280 }}>
-              <label style={sheetLabel}>Delivery challan no. <Optional /></label>
-              <input style={sheetInput} value={challan} onChange={(e) => setChallan(e.target.value)} maxLength={100} />
-            </div>
-            <div style={{ flex: '1 1 200px', maxWidth: 280 }}>
-              <label style={sheetLabel}>Vendor invoice no. <Optional /></label>
-              <input style={sheetInput} value={invoice} onChange={(e) => setInvoice(e.target.value)} maxLength={100} placeholder="As on the bill" />
-            </div>
-            <div style={{ flex: '0 1 180px', minWidth: 160 }}>
-              <label style={sheetLabel}>Invoice date <Optional /></label>
-              <DateField value={invoiceDate} onChange={setInvoiceDate} />
-            </div>
-          </div>
           <div style={{ marginTop: 14 }}>
             <label style={sheetLabel}>Remarks <Optional /></label>
             <textarea style={{ ...sheetInput, minHeight: 60, resize: 'vertical' }} value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="Condition on arrival, who brought it, why there is no PO yet…" />
           </div>
         </SheetSection>
 
-        <SheetSection icon="clip" title="Invoice & challan files">
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
-            <div style={{ flex: '1 1 260px' }}>
-              <label style={sheetLabel}>Vendor invoice <Optional /></label>
-              <input type="file" accept=".pdf,image/*,.doc,.docx,.xls,.xlsx" style={sheetInput} onChange={(e) => setInvoiceFile(e.target.files?.[0] || null)} aria-label="Vendor invoice file" />
-            </div>
-            <div style={{ flex: '1 1 260px' }}>
-              <label style={sheetLabel}>Delivery challan <Optional /></label>
-              <input type="file" accept=".pdf,image/*,.doc,.docx,.xls,.xlsx" style={sheetInput} onChange={(e) => setChallanFile(e.target.files?.[0] || null)} aria-label="Delivery challan file" />
-            </div>
+        <SheetSection icon="clip" title="Vendor Documents">
+          <label style={sheetLabel}>Goods came with</label>
+          <div role="radiogroup" aria-label="Goods came with" data-tour="store-bpo-doc-type" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+            {([['invoice', 'Tax Invoice'], ['challan', 'Delivery Challan']] as [DocType, string][]).map(([v, l]) => (
+              <button key={v} type="button" role="radio" aria-checked={docType === v} onClick={() => setDocType(v)}
+                style={{ ...segmentBtnStyle(docType === v), minWidth: 140 }}>{l}</button>
+            ))}
           </div>
-          <p style={sheetHint}>Procurement sees these files on the PO. More can be attached later from the receipt.</p>
+          {docType === 'invoice' ? (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
+              <div style={{ flex: '1 1 200px', maxWidth: 280 }}>
+                <label style={sheetLabel}>Invoice no. <Optional /></label>
+                <input style={sheetInput} value={invoice} onChange={(e) => setInvoice(e.target.value)} maxLength={100} placeholder="As on the bill" />
+              </div>
+              <div style={{ flex: '0 1 180px', minWidth: 160 }}>
+                <label style={sheetLabel}>Invoice date <Optional /></label>
+                <DateField value={invoiceDate} onChange={setInvoiceDate} />
+              </div>
+              <div style={{ flex: '1 1 260px' }}>
+                <label style={sheetLabel}>Invoice file <Optional /></label>
+                <input type="file" accept=".pdf,image/*,.doc,.docx,.xls,.xlsx" style={sheetInput} onChange={(e) => setInvoiceFile(e.target.files?.[0] || null)} aria-label="Vendor invoice file" />
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
+              <div style={{ flex: '1 1 200px', maxWidth: 280 }}>
+                <label style={sheetLabel}>Delivery challan no. <Optional /></label>
+                <input style={sheetInput} value={challan} onChange={(e) => setChallan(e.target.value)} maxLength={100} />
+              </div>
+              <div style={{ flex: '0 1 180px', minWidth: 160 }}>
+                <label style={sheetLabel}>Challan date <Optional /></label>
+                <DateField value={challanDate} onChange={setChallanDate} />
+              </div>
+              <div style={{ flex: '1 1 260px' }}>
+                <label style={sheetLabel}>Challan file <Optional /></label>
+                <input type="file" accept=".pdf,image/*,.doc,.docx,.xls,.xlsx" style={sheetInput} onChange={(e) => setChallanFile(e.target.files?.[0] || null)} aria-label="Delivery challan file" />
+              </div>
+            </div>
+          )}
+          <p style={sheetHint}>Procurement sees the file on the PO. More can be attached later from the receipt.</p>
         </SheetSection>
 
         <div style={{ marginTop: 6 }}>
@@ -200,11 +221,22 @@ export default function BeforePOReceiptForm({ onClose, onSaved }: { onClose: () 
                 const last = idx === lines.length - 1
                 return (
                   <div key={idx} style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 10, flexWrap: 'wrap' }}>
-                    <div style={{ flex: '1 1 340px', minWidth: 240 }}>
+                    <div style={{ flex: '1 1 240px', minWidth: 200 }}>
                       {idx === 0 && <label style={sheetLabel}>Item (Item Master) <Req /></label>}
                       <SearchableSelect ariaLabel={`Item, line ${idx + 1}`} value={line.itemId} onChange={(v) => setLine(idx, { itemId: v })}
                         placeholder="Search code, name or technical details…"
                         options={stockItems.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}`, description: itemOptionDetail(i), disabled: usedIds.has(String(i.id)) && String(i.id) !== line.itemId }))} />
+                    </div>
+                    <div style={{ flex: '1 1 200px', minWidth: 160 }}>
+                      {idx === 0 && <label style={sheetLabel}>Technical details</label>}
+                      <input style={{ ...sheetInput, background: 'rgba(15,23,42,0.04)', color: SHEET.INK }} readOnly tabIndex={-1}
+                        value={it ? it.specification || it.description || '—' : ''} title={it ? it.specification || it.description || '' : ''}
+                        placeholder="Shows after the item is picked" aria-label={`Technical details, line ${idx + 1}`} />
+                    </div>
+                    <div style={{ flex: '1 1 180px', minWidth: 150 }}>
+                      {idx === 0 && <label style={sheetLabel}>Name on invoice <Optional /></label>}
+                      <input style={sheetInput} value={line.invoiceName} maxLength={255} onChange={(e) => setLine(idx, { invoiceName: e.target.value })}
+                        placeholder="As written on the bill" aria-label={`Name on invoice, line ${idx + 1}`} />
                     </div>
                     <div style={{ flex: '0 0 100px' }}>
                       {idx === 0 && <label style={sheetLabel}>Quantity <Req /></label>}
@@ -215,7 +247,7 @@ export default function BeforePOReceiptForm({ onClose, onSaved }: { onClose: () 
                       {idx === 0 && <label style={sheetLabel}>Rate (₹/unit) <Optional /></label>}
                       <input type="number" min={0} step="any" style={sheetInput} value={line.rate} onChange={(e) => setLine(idx, { rate: e.target.value })} aria-label={`Rate per unit, line ${idx + 1}`} placeholder="If known" />
                     </div>
-                    <div style={{ flex: '1 1 140px', minWidth: 120 }}>
+                    <div style={{ flex: '1 1 130px', minWidth: 110 }}>
                       {idx === 0 && <label style={sheetLabel}>Remarks <Optional /></label>}
                       <input style={sheetInput} value={line.remarks} onChange={(e) => setLine(idx, { remarks: e.target.value })} aria-label="Line remarks" />
                     </div>

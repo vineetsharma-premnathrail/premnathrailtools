@@ -78,7 +78,7 @@ export default function BeforePOReceiptDetail({ receipt, canCancel, onClose, onC
                   {receipt.items.map((i) => (
                     <tr key={i.id}>
                       <td style={{ ...td, whiteSpace: 'nowrap' }}>{i.item_code || '—'}</td>
-                      <td style={td}>{i.item_name}</td>
+                      <td style={td}>{i.item_name}{i.invoice_item_name && <div style={{ fontSize: 12, color: SHEET.MUTED }}>On invoice: {i.invoice_item_name}</div>}</td>
                       <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>{qty(i.quantity)} {i.unit || ''}</td>
                       {anyRate && <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>{i.unit_rate !== null && i.unit_rate !== undefined ? `₹${i.unit_rate.toLocaleString('en-IN', { maximumFractionDigits: 2 })}` : '—'}</td>}
                       {posted && <td style={{ ...td, whiteSpace: 'nowrap' }}>{stockText(i)}</td>}
