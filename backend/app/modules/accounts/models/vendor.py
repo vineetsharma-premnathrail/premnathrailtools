@@ -1,6 +1,6 @@
 from __future__ import annotations
 from datetime import date
-from sqlalchemy import Date, String, Integer, ForeignKey, Text
+from sqlalchemy import Date, String, Integer, ForeignKey, Text, event, func, select
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 from app.db.mixins import TimestampMixin
@@ -77,3 +77,43 @@ class Vendor(Base, TimestampMixin):
     referred_by_user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     referred_by_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
     referred_by_phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
+
+
+# ── One GSTIN = one vendor (owner, 2026-11-14) ─────────────────────────────
+# Checked on the model, so every path that saves a vendor — Procurement ›
+# Vendors, Finance › Vendors, the Excel import — gets the same rule. Only a
+# NEW or CHANGED GSTIN is checked: a vendor that already shares its GSTIN with
+# another (data from before this rule) can still be edited; Procurement ›
+# Vendors › Find duplicates lists those pairs so they can be merged.
+def _gstin_key(value: str | None) -> str | None:
+    return value.strip().upper() if value and value.strip() else None
+
+
+def _ensure_gstin_free(connection, target: "Vendor", *, changed: bool) -> None:
+    key = _gstin_key(target.gstin)
+    if not key or not changed:
+        return
+    table = Vendor.__table__
+    q = select(table.c.id, table.c.name, table.c.code).where(func.upper(func.trim(table.c.gstin)) == key)
+    if target.id is not None:
+        q = q.where(table.c.id != target.id)
+    clash = connection.execute(q.limit(1)).first()
+    if clash is not None:
+        from fastapi import HTTPException  # local: the model layer stays importable without FastAPI
+        raise HTTPException(
+            status_code=409,
+            detail=f"GSTIN {key} is already on vendor {clash.name} ({clash.code}) — one GSTIN belongs to one vendor. "
+                   "Open that vendor instead, or correct the GSTIN if it was typed wrong.")
+
+
+@event.listens_for(Vendor, "before_insert")
+def _gstin_unique_on_insert(_mapper, connection, target: "Vendor") -> None:
+    _ensure_gstin_free(connection, target, changed=True)
+
+
+@event.listens_for(Vendor, "before_update")
+def _gstin_unique_on_update(_mapper, connection, target: "Vendor") -> None:
+    from sqlalchemy import inspect
+    hist = inspect(target).attrs.gstin.history
+    old = hist.deleted[0] if hist.deleted else None
+    _ensure_gstin_free(connection, target, changed=hist.has_changes() and _gstin_key(old) != _gstin_key(target.gstin))

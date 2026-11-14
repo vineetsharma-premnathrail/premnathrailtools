@@ -330,6 +330,7 @@ from app.modules.store.routes import in_transit as store_in_transit_routes
 from app.modules.accounts.routes import msme as accounts_msme_routes
 from app.modules.p2p.routes import mis as p2p_mis_routes
 from app.modules.p2p.routes import vendors as p2p_vendors_routes
+from app.modules.p2p.routes import vendor_duplicates as p2p_vendor_duplicates_routes
 from app.modules.p2p.routes import settings as p2p_settings_routes
 from app.modules.p2p.routes import purpose_rules as p2p_purpose_rules_routes
 from app.modules.p2p.routes import buyer_responsibility as p2p_buyer_responsibility_routes
@@ -642,6 +643,7 @@ app.include_router(store_in_transit_routes.router, prefix="/api/v1")
 app.include_router(accounts_msme_routes.router, prefix="/api/v1")
 app.include_router(p2p_mis_routes.router, prefix="/api/v1")
 app.include_router(p2p_vendors_routes.router, prefix="/api/v1")
+app.include_router(p2p_vendor_duplicates_routes.router, prefix="/api/v1")
 app.include_router(p2p_settings_routes.router, prefix="/api/v1")
 app.include_router(p2p_settings_routes.flow_router, prefix="/api/v1")
 app.include_router(p2p_purpose_rules_routes.router, prefix="/api/v1")

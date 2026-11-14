@@ -13,6 +13,7 @@ import P2PNav from '@/components/p2p/P2PNav'
 import ExportDialog from '@/components/erp/ExportDialog'
 import ImportDialog from '@/components/shared/ImportDialog'
 import VendorFormDialog from '@/components/p2p/VendorFormDialog'
+import VendorDuplicatesDialog from '@/components/p2p/VendorDuplicatesDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
 
@@ -39,6 +40,7 @@ export default function VendorsPage() {
   const [showAdd, setShowAdd] = useState(false)
   const [showExport, setShowExport] = useState(false)
   const [showImport, setShowImport] = useState(false)
+  const [showDuplicates, setShowDuplicates] = useState(false)
   const [reload, setReload] = useState(0)
 
   useEffect(() => {
@@ -95,6 +97,7 @@ export default function VendorsPage() {
             onClear={() => setStatus('active')}
           />
           {activeFilterCount > 0 && <button type="button" onClick={clearFilters} style={secondaryBtnStyle} data-tour="vendors-clear-btn">Clear</button>}
+          <button type="button" data-tour="vendors-duplicates-btn" onClick={() => setShowDuplicates(true)} style={secondaryBtnStyle} title="List vendors that look like the same company — same GSTIN, same or similar name, same PAN">Find duplicates</button>
           {can('p2p', 'vendors', 'export') && <button type="button" data-tour="vendors-export-btn" onClick={() => setShowExport(true)} style={secondaryBtnStyle}>Export</button>}
           {can('p2p', 'vendors', 'import') && <button type="button" data-tour="vendors-import-btn" onClick={() => setShowImport(true)} style={secondaryBtnStyle}>Import</button>}
         </div>
@@ -139,6 +142,7 @@ export default function VendorsPage() {
         </table>
       </div>
 
+      {showDuplicates && <VendorDuplicatesDialog onClose={() => setShowDuplicates(false)} />}
       {showAdd && <VendorFormDialog onClose={() => setShowAdd(false)} onSaved={(v) => { setShowAdd(false); router.push(recordPath('/dashboard/p2p/vendors', v)) }} />}
       {showExport && (
         <ExportDialog onClose={() => setShowExport(false)} filename="vendors" noun="vendors" dateLabel="Added date"
