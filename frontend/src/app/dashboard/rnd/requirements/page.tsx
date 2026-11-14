@@ -44,6 +44,8 @@ function shortResponse(q: RndRequest): { text: string; color: string } {
   if (q.status === 'superseded') return { text: 'Re-sent', color: GREY }
   if (q.status === 'closed') return { text: 'Closed', color: GREY }
   if (q.status === 'withdrawn') return { text: 'Taken back', color: GREY }
+  // Returned to BD: the work is with BD (fix and re-send), so no R&D due date runs.
+  if (q.status === 'returned') return { text: 'With BD', color: GREY }
   if (q.status === 'responded') {
     const late = q.responded_at ? dayNo(q.responded_at) - dayNo(q.due_date) : 0
     return late > 0 ? { text: `Done · ${late}d late`, color: ORANGE } : { text: 'Done on time', color: GREEN }

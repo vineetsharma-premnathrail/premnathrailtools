@@ -828,7 +828,8 @@ export interface RequirementMovement {
 // CRM <-> R&D channel — who in R&D answers a Technical Offer Request, by when,
 // and what they replied. One per send; a re-send supersedes the open one.
 /** closed = R&D closed it without a response (nothing to share); the reason sits in response_remarks. */
-export type RndRequestStatus = 'open' | 'responded' | 'closed' | 'superseded' | 'withdrawn'
+// 'returned': R&D sent it back to BD to fix (rnd/services/requirements.py return_to_bd).
+export type RndRequestStatus = 'open' | 'returned' | 'responded' | 'closed' | 'superseded' | 'withdrawn'
 
 export interface RndRequest {
   id: number
