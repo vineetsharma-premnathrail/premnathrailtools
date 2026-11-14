@@ -4,7 +4,6 @@ import { useAuth } from '@/hooks/useAuth'
 import { p2pApi } from '@/lib/api'
 import ModuleSettingsPage from '@/components/shared/ModuleSettingsPage'
 import P2PNav from '@/components/p2p/P2PNav'
-import ApprovalFlowCard from '@/components/p2p/ApprovalFlowCard'
 import PurposeRulesCard from '@/components/p2p/PurposeRulesCard'
 import BuyerResponsibilityCard from '@/components/p2p/BuyerResponsibilityCard'
 
@@ -17,6 +16,6 @@ export default function ProcurementSettingsPage() {
   return (
     <ModuleSettingsPage title="Procurement settings" nav={<P2PNav />} backHref="/dashboard/p2p"
       load={p2pApi.getSettings} save={p2pApi.saveSettings} reset={p2pApi.resetSetting}
-      leadSections={<><ApprovalFlowCard /><PurposeRulesCard /><BuyerResponsibilityCard /></>} tourPrefix="p2p-settings" />
+      leadSections={<><PurposeRulesCard /><BuyerResponsibilityCard /></>} tourPrefix="p2p-settings" />
   )
 }

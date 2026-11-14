@@ -14,7 +14,8 @@ Each vendor-invoice line names its PO line (po_item_id). Per PO line:
 
 Quantities are compared in the PO line's unit only — a line billed in a
 different unit is refused, never converted or summed with other units.
-Tolerances are Procurement › Settings › Invoice match tolerances (OMR6)."""
+Tolerances are Finance › Settings › Invoice match tolerances (moved from
+Procurement › Settings on 2026-11-14)."""
 from __future__ import annotations
 
 from sqlalchemy import func
@@ -23,12 +24,29 @@ from sqlalchemy.orm import Session, selectinload
 _EPS = 1e-9
 
 
+def _tolerance(db: Session, key: str) -> float:
+    """Finance › Settings value. Until Finance saves it, a value saved under the
+    old Procurement › Settings (module_key "p2p", before 2026-11-14) still
+    applies, so moving the setting changed no company's tolerance."""
+    from app.modules.accounts.settings import get_setting
+    from app.modules.main.models.module_setting import ModuleSetting
+
+    def saved(module_key: str):
+        row = (db.query(ModuleSetting)
+               .filter(ModuleSetting.module_key == module_key, ModuleSetting.key == key, ModuleSetting.branch_id.is_(None))
+               .first())
+        return row.value if row is not None else None
+
+    if saved("accounts") is None and saved("p2p") is not None:
+        return float(saved("p2p") or 0)
+    return float(get_setting(db, key) or 0)
+
+
 def tolerances(db: Session) -> dict[str, float]:
-    from app.modules.p2p.settings import get_setting
     return {
-        "qty_tol_pct": float(get_setting(db, "invoice_qty_tolerance_pct") or 0),
-        "price_tol_pct": float(get_setting(db, "invoice_price_tolerance_pct") or 0),
-        "price_tol_abs": float(get_setting(db, "invoice_price_tolerance_abs") or 0),
+        "qty_tol_pct": _tolerance(db, "invoice_qty_tolerance_pct"),
+        "price_tol_pct": _tolerance(db, "invoice_price_tolerance_pct"),
+        "price_tol_abs": _tolerance(db, "invoice_price_tolerance_abs"),
     }
 
 

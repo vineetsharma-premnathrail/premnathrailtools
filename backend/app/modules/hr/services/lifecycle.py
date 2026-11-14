@@ -419,14 +419,13 @@ def compute_impact(db: Session, event: HrLifecycleEvent) -> dict[str, Any]:
             "the buyer and approvers carry on; ask the department to take them over."
         )
 
-    duties = buyer_duties(db, uid) if user else {"categories": [], "item_types": [], "default": False}
-    owns = [*[f"the {c} category" for c in duties["categories"]], *[f"{t} items" for t in duties["item_types"]],
-            *(["the default buyer"] if duties["default"] else [])]
+    duties = buyer_duties(db, uid) if user else {"categories": []}
+    owns = [f"the {c} category" for c in duties["categories"]]
     if owns:
         warnings.append(
-            f"{user.name or user.email} is the buyer of {', '.join(owns)} — pick another buyer in Procurement › Settings › "
-            "Buyer responsibility (categories) and Buyer for each item type (item types, default buyer) before they leave. "
-            "Until then new requisition lines for these go to the next buyer in line or to nobody."
+            f"{user.name or user.email} is the buyer of {', '.join(owns)} — pick another buyer for these categories in "
+            "Procurement › Settings › Buyer responsibility before they leave. "
+            "Until then new requisition lines for these categories get no buyer and Purchase must assign them by hand."
         )
 
     needs_handover = bool(reportees or depts or hr_approvals or workflow_approvals or p2p or buyer_rows or other_items or templates)

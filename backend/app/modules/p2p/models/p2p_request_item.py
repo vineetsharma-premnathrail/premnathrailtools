@@ -34,10 +34,11 @@ class P2PRequestItem(Base, TimestampMixin, OrderProjectLineMixin):
     project_inhouse: Mapped[str | None] = mapped_column(String(100), nullable=True)
     category: Mapped[str | None] = mapped_column(String(100), nullable=True)
     ship_to: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    # Buyer of this line (2026-10-27): picked from the line's Item Master item
-    # type (Procurement › Settings › Buyer for each item type). One requisition
-    # can carry lines for different buyers. Null on lines raised before it and
-    # on item types with no buyer set; the header's assigned buyer then applies.
+    # Buyer of this line (2026-10-27): picked from the line's Item Master
+    # category (Procurement › Settings › Buyer responsibility; category-wise only
+    # since 2026-11-14). One requisition can carry lines for different buyers.
+    # Null on lines raised before it and on categories with no buyer; the
+    # header's assigned buyer then applies.
     buyer_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
 
     # Per-item buyer decision after a manual store-stock check on an approved

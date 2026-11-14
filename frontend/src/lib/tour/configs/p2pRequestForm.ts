@@ -54,7 +54,7 @@ const config: TourConfig = {
       required: true,
       validExample: 'RM-00012 — Ball Bearing 6205-2RS',
       why: 'Every purchase line must be an Item Master item — that is how the received goods land in the right stock item at the PO price. A new item is added in Store › Item Master first (link below the table), then picked here.',
-      after: 'The item type decides the buyer of the line (set in Procurement › Settings › Buyer for each item type), so one requisition can hold lines for different buyers. The buyer of every line is shown on the requisition page.',
+      after: 'The item\'s category decides the buyer of the line (set in Procurement › Settings › Buyer responsibility), so one requisition can hold lines for different buyers. A category with no buyer leaves the line without one until Purchase assigns it. The buyer of every line is shown on the requisition page.',
     },
     {
       target: 'pr-new-item-make',

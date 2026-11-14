@@ -7,9 +7,9 @@ categories (parent_id NULL) take a buyer. The map is one module_settings row
 kept outside the generic settings list like the Purpose rules, so no migration.
 
 A requisition line's buyer is resolved by resolve_line_buyer_id() in
-p2p/models/p2p_request.py: the buyer of the item's category, else the buyer of
-the item type (Settings > Buyer for each item type), else the "Default buyer"
-setting, else nobody (the requisition's main buyer then applies)."""
+p2p/models/p2p_request.py: the buyer of the item's category, else nobody (the
+line is saved without a buyer and Purchase assigns it). "Buyer for each item
+type" and "Default buyer" were removed on 2026-11-14 (category-wise only)."""
 from __future__ import annotations
 
 from typing import Any
@@ -23,7 +23,7 @@ from app.modules.store.models.category import StoreItemCategory
 from app.modules.store.models.item import STORE_ITEM_TYPE_LABELS, StoreItem, StoreItemType
 
 MAP_KEY = "buyer_responsibility"
-BUYER_APPS = ("p2p", "purchase")  # same rule as the "Buyer for each item type" settings
+BUYER_APPS = ("p2p", "purchase")  # who may be picked as a buyer
 
 
 class BuyerResponsibilityError(ValueError):
@@ -135,18 +135,11 @@ def category_buyer_id(db: Session, category: str | None = None, item_type: str |
 
 
 def buyer_duties(db: Session, user_id: int) -> dict:
-    """What a person is buyer of: category names (Buyer responsibility), item
-    type labels (Buyer for each item type) and whether they are the Default
-    buyer. Used by the HR exit checklist."""
-    from app.modules.p2p.settings import get_setting
+    """What a person is buyer of: the Item Master category names they own in
+    Buyer responsibility. Used by the HR exit checklist."""
     mine = [cid for cid, uid in load_map(db).items() if uid == user_id]
     cats = db.query(StoreItemCategory).filter(StoreItemCategory.id.in_(mine), StoreItemCategory.is_active.is_(True)).all() if mine else []
-    labels = _type_labels(db)
-    types = [labels.get(t, t) if t != "other" else "other-type"
-             for t in ("material", "consumable", "tool_equipment", "service", "asset", "other")
-             if get_setting(db, f"buyer_type_{t}") == user_id]
-    return {"categories": sorted(c.name for c in cats), "item_types": types,
-            "default": get_setting(db, "default_buyer") == user_id}
+    return {"categories": sorted(c.name for c in cats)}
 
 
 # ------------------------------------------------------------------ reading

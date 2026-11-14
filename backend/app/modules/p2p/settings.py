@@ -5,32 +5,15 @@ Who approves requisitions and POs is no longer a Procurement setting
 "Purchase order" in Organization › Approval Workflows (app/modules/p2p/approvals.py),
 seeded from the old `pr_approvers` / `po_approvers` values, which stay in
 module_settings only as the seed source and are no longer shown or edited here.
-What remains: the company's standard terms & conditions (shown on RFQs and POs)
-and the notification rules (app/core/notify_rules.py)."""
-from app.core.notify_rules import notification_groups, notification_specs, validate_notification_rules
+What remains: the company's standard terms & conditions (printed on POs) and
+RFQ by email. Removed 2026-11-14 (owner): the approval-chain preview card, the
+notification rules (who is told is Organization › Roles › Notifications) and the
+invoice match tolerances (moved to Finance › Settings, accounts/settings.py)."""
 from app.core.settings_framework import ModuleSettingsDef, SettingSpec, register_module_settings, get_setting as _get
-from app.modules.main.models.user import AVAILABLE_APPS
-from app.modules.p2p.models.p2p_request import P2P_ITEM_TYPE_BUYER_TYPES
-
-# Notification recipients may come from any department.
-_ANY_MODULE = tuple(sorted(AVAILABLE_APPS))
-
-NOTIFY_EVENTS: dict[str, tuple[str, str]] = {
-    "pr_create": ("PR created", "a new purchase requisition is raised"),
-    "pr_approved": ("PR approved", "a requisition gets its last PR approval"),
-    "pr_rejected": ("PR rejected", "a requisition is rejected"),
-    "rfq_create": ("RFQ created", "an RFQ is created for a requisition"),
-    "po_raised": ("PO raised", "a purchase order is submitted for approval"),
-    "po_approved": ("PO approved", "a purchase order gets its final (Partner) approval"),
-    "vendor_create": ("Vendor added", "a new vendor is added to the vendor master"),
-}
 
 P2P_SETTING_GROUPS = {
     "terms": "Company terms & conditions",
-    "invoice_match": "Invoice match tolerances (3-way match per PO line)",
     "rfq": "RFQ by email",
-    "line_buyers": "Buyer for each item type, and the default buyer",
-    **notification_groups(NOTIFY_EVENTS),
 }
 
 # The company's standing PO Declaration (official Tally PO) — the default for
@@ -49,15 +32,6 @@ _SPECS = [
     SettingSpec("company_terms", "terms", "Standard terms & conditions", "longtext", "\n".join(DEFAULT_COMPANY_TERMS),
                 help="Write one clause per line. Printed on every new PO (a vendor's own terms are used on the RFQ only, never on the PO). "
                      "Not entered on the RFQ."),
-    # SAP OMR6 tolerance keys — read by accounts/services/po_match.py.
-    SettingSpec("invoice_qty_tolerance_pct", "invoice_match", "Quantity tolerance (%)", "decimal", 2.0, min=0, max=50,
-                help="A bill line may invoice up to this % more than was received (and not yet invoiced) on its PO line "
-                     "before it is held as a variance for Finance Manager approval."),
-    SettingSpec("invoice_price_tolerance_pct", "invoice_match", "Price tolerance (%)", "decimal", 1.0, min=0, max=50,
-                help="A bill line's rate may differ from the PO line's rate by up to this % (either way)."),
-    SettingSpec("invoice_price_tolerance_abs", "invoice_match", "Price tolerance cap (₹ per line)", "decimal", 500.0, min=0, max=10000000,
-                help="Even inside the % tolerance, a line whose price difference (rate difference x quantity) is more "
-                     "than this amount is held as a variance. 0 = no cap."),
     SettingSpec("rfq_quote_days", "rfq", "Days vendors get to quote", "int", 3, min=1, max=60,
                 help="The default quote-by date on a new RFQ: today + this many days (the buyer can change it per RFQ). "
                      "Shown in the RFQ email."),
@@ -66,29 +40,15 @@ _SPECS = [
     SettingSpec("rfq_auto_reminder", "rfq", "Remind vendors a day before the quote-by date", "bool", True,
                 help="Every morning the portal re-sends the RFQ to vendors who haven't quoted and whose quote-by date is "
                      "tomorrow. When the date passes, the buyer is told how many quotes came in."),
-    # The buyer of each requisition line (2026-11-06), first that applies: the buyer
-    # of the item's category (Buyer responsibility card), the buyer of its item
-    # type (below), then this default buyer. The old "Buyer by category" section
-    # and the coded standard buyers are gone.
-    SettingSpec("default_buyer", "line_buyers", "Default buyer", "user", None, user_apps=("p2p", "purchase"),
-                required=True,
-                help="Requisition lines whose category and item type have no buyer go to this buyer. "
-                     "Required: pick the person who buys what nobody else owns."),
-    *(SettingSpec(f"buyer_type_{t}", "line_buyers", label, "user", None, user_apps=("p2p", "purchase"),
-                  help=(f"Requisition lines whose item is of type {label.lower()} go to this buyer, "
-                        "unless the item's category has its own buyer."
-                        if t != "other" else
-                        "Lines whose item type is one Store added (not listed above) go to this buyer, "
-                        "unless the item's category has its own buyer.")
-                        + " Left blank, those lines go to the default buyer.")
-      for t, label in P2P_ITEM_TYPE_BUYER_TYPES.items()),
-    *notification_specs(NOTIFY_EVENTS, user_apps={e: _ANY_MODULE for e in NOTIFY_EVENTS}),
+    # The buyer of each requisition line comes only from Buyer responsibility
+    # (Item Master category -> buyer, p2p/buyer_responsibility.py). "Default buyer"
+    # and "Buyer for each item type" were removed on 2026-11-14; their old
+    # module_settings rows are no longer read.
 ]
 
 register_module_settings(ModuleSettingsDef(
     module_key="p2p", label="Procurement",
     specs={s.key: s for s in _SPECS}, groups=P2P_SETTING_GROUPS,
-    cross_validate=lambda values: validate_notification_rules(values, NOTIFY_EVENTS),
 ))
 
 

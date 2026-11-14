@@ -34,8 +34,8 @@ const typeLabel = (t: string) => { const s = t.replace(/_/g, ' '); return s.char
 // project mode) comes from the server (/meta, edited in Procurement › Settings ›
 // Purpose rules); only the help text lives here. One project per machine: lines
 // never pick a vehicle / lot. No header category / requirement type (2026-10-27):
-// each line's Item Type + Category say what is bought, and the item type picks
-// the line's buyer (Procurement › Settings › Buyer for each item type).
+// each line's Item Type + Category say what is bought, and the item's category
+// picks the line's buyer (Procurement › Settings › Buyer responsibility).
 const PURPOSE_HINTS: Record<string, string> = {
   machine_project: 'Service work on a project: spares, repair, warranty, commissioning support. Pick the project (any stage); every line is for it.',
   development: 'New product development (R&D).',

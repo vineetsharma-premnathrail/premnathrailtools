@@ -96,7 +96,7 @@ register_features(
 )
 
 # "Assign to" rules per role (core/assignee_rules.py). A requisition line's buyer
-# comes from Settings (Buyer responsibility, item type, default buyer), not a pick, so it is not
+# comes from Settings (Buyer responsibility, by Item Master category), not a pick, so it is not
 # checked; PR / PO approvers are fixed in Settings and never take a rule.
 register_pickers("p2p", "purchase_requisitions",
                  ("buyer", "Assign buyer to", "Who this role may assign (or re-assign) as the buyer of an approved requisition."))

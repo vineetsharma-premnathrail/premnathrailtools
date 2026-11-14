@@ -149,9 +149,9 @@ def test_saved_map_is_not_listed_in_generic_settings(client, db):
     assert _put(client, admin, [{"user_id": a.id, "category_ids": [ele.id]}]).status_code == 200
     d = client.get("/api/v1/p2p/settings", headers=auth_header(admin)).json()
     assert br.MAP_KEY not in d["values"] and not any(s["group"] == "buyers" for s in d["specs"])
-    assert "default_buyer" in d["values"]
-    spec = next(s for s in d["specs"] if s["key"] == "default_buyer")
-    assert spec["group"] == "line_buyers" and spec["required"] is True and spec["label"] == "Default buyer"
+    # Category-wise only (2026-11-14): no Default buyer, no item-type buyers.
+    assert "default_buyer" not in d["values"] and not any(s["key"].startswith("buyer_type_") for s in d["specs"])
+    assert not any(s["group"] == "line_buyers" for s in d["specs"])
 
 
 # ---------------------------------------------------------------- resolution
@@ -168,35 +168,32 @@ def _owner(db, cat, user):
     db.commit()
 
 
-def test_line_buyer_is_category_then_type_then_default_then_none(db):
+def test_line_buyer_is_the_category_buyer_or_none(db):
     x = _purchaser(db, "res.x@premnathrail.com")
     t = _purchaser(db, "res.t@premnathrail.com")
-    d = _purchaser(db, "res.d@premnathrail.com")
     ele = _cat(db, "Electrical", "ELE", "material")
     item = master_item(db, "Relay 24V", item_type="material", category="Electrical")
     plain = master_item(db, "Loose bolt", item_type="material", category="Fasteners")
     # Nothing configured: nobody (the requisition's main buyer applies later).
     assert resolve_line_buyer_id(db, "material", item_id=item.id) is None
     assert resolve_line_buyer_id(db, "material") is None  # old two-argument callers
-    # Default buyer.
-    _set(db, "default_buyer", d.id)
-    assert resolve_line_buyer_id(db, "material", item_id=item.id) == d.id
-    assert default_buyer_id(db) == d.id and resolve_auto_buyer_id(db, "ELE") == d.id
-    # Item type buyer beats the default.
+    # Old Default / item-type buyer rows left in the database are never read (removed 2026-11-14).
+    _set(db, "default_buyer", t.id)
     _set(db, "buyer_type_material", t.id)
-    assert resolve_line_buyer_id(db, "material", item_id=item.id) == t.id
-    # Category buyer beats the item type buyer; an item of another category keeps the type buyer.
+    assert resolve_line_buyer_id(db, "material", item_id=item.id) is None
+    assert default_buyer_id(db) is None and resolve_auto_buyer_id(db, "ELE") is None
+    # The category buyer; an item of a category with no buyer gets nobody.
     _owner(db, ele, x)
     assert resolve_line_buyer_id(db, "material", item_id=item.id) == x.id
-    assert resolve_line_buyer_id(db, "material", item_id=plain.id) == t.id
+    assert resolve_line_buyer_id(db, "material", item_id=plain.id) is None
     assert resolve_line_buyer_id(db, None, item_id=item.id) == x.id  # item type read from the item
     # The category may also be passed as text (name or code, any case).
     assert resolve_line_buyer_id(db, "material", "ELECTRICAL") == x.id
     assert resolve_line_buyer_id(db, "material", "ele") == x.id
-    # A buyer who has left: falls through to the next rule.
+    # A buyer who has left: the line gets nobody.
     x.is_active = False
     db.commit()
-    assert resolve_line_buyer_id(db, "material", item_id=item.id) == t.id
+    assert resolve_line_buyer_id(db, "material", item_id=item.id) is None
 
 
 def test_same_category_name_under_two_types_prefers_the_items_type(db):
@@ -222,8 +219,9 @@ def test_hard_coded_buyers_are_gone(db):
     assert not hasattr(m, "standard_buyer_id") and not hasattr(m, "P2P_ITEM_TYPE_STANDARD_CATEGORY")
     from app.core.settings_framework import get_def
     keys = set(get_def("p2p").specs)
-    assert not [k for k in keys if k.startswith("buyer_") and not k.startswith("buyer_type_")]
-    assert "buyers" not in get_def("p2p").groups
+    assert not [k for k in keys if k.startswith("buyer_") or k == "default_buyer"]
+    assert "buyers" not in get_def("p2p").groups and "line_buyers" not in get_def("p2p").groups
+    assert not hasattr(m, "P2P_ITEM_TYPE_BUYER_TYPES")
     assert resolve_auto_buyer_id(db, "ELE") is None
     assert resolve_line_buyer_id(db, "material") is None
 
@@ -234,10 +232,8 @@ def test_service_request_pr_lines_go_to_their_category_buyers(client, db):
 
     x = _purchaser(db, "sr.x@premnathrail.com")
     y = _purchaser(db, "sr.y@premnathrail.com")
-    d = _purchaser(db, "sr.d@premnathrail.com")
     _owner(db, _cat(db, "Electrical", "ELE", "material"), x)
     _owner(db, _cat(db, "Hydraulic", "HYD", "material"), y)
-    _set(db, "default_buyer", d.id)
     user = erp_user(db, "sr.user@premnathrail.com", erp_permissions=["sr_create", "sr_edit"])
     sr = _make_sr(client, user, make_project(db, "SN-BR-1"))
     plain = master_item(db, "Plain washer", item_type="material", category="Fasteners")
@@ -253,7 +249,7 @@ def test_service_request_pr_lines_go_to_their_category_buyers(client, db):
     assert r.status_code == 201, r.text
     pr = db.get(P2PRequest, r.json()["id"])
     by_item = {row.store_item_id: row.buyer_id for row in pr.items}
-    assert by_item == {hyd.id: y.id, ele.id: x.id, plain.id: d.id}
+    assert by_item == {hyd.id: y.id, ele.id: x.id, plain.id: y.id}  # Fasteners has no buyer: the main buyer
     assert pr.assigned_buyer_id == y.id  # the buyer of the first line
 
 
@@ -263,11 +259,9 @@ def test_buyer_duties_for_the_exit_checklist(db):
     x = _purchaser(db, "duty.x@premnathrail.com")
     _owner(db, _cat(db, "Electrical", "ELE", "material"), x)
     _owner(db, _cat(db, "PPE", "PPE", "consumable"), x)
-    _set(db, "buyer_type_service", x.id)
-    _set(db, "default_buyer", x.id)
     d = br.buyer_duties(db, x.id)
-    assert d["categories"] == ["Electrical", "PPE"] and d["item_types"] == ["Service"] and d["default"] is True
-    assert br.buyer_duties(db, 999999) == {"categories": [], "item_types": [], "default": False}
+    assert d == {"categories": ["Electrical", "PPE"]}
+    assert br.buyer_duties(db, 999999) == {"categories": []}
 
 
 def test_resolution_loads_categories_once_per_session(db):

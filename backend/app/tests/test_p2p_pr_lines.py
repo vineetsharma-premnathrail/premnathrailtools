@@ -88,11 +88,24 @@ def _world(client, db, *, approve=True):
     w.po_appr = _user(db, VIEW_BOTH, name="Pooja PO Approver")
     set_pr_workflow(db, [w.appr.id], w.admin)
     set_po_workflow(db, [w.po_appr.id], w.admin)
-    db.add(ModuleSetting(module_key="p2p", key="buyer_type_material", value=w.a.id))
-    db.add(ModuleSetting(module_key="p2p", key="buyer_type_consumable", value=w.b.id))
+    # Line buyers come from Buyer responsibility (Item Master category -> buyer).
+    from app.modules.store.models.category import StoreItemCategory
+    cats = {}
+    for t in ("material", "consumable"):
+        cats[t] = db.query(StoreItemCategory).filter(StoreItemCategory.name == f"PRL {t}").first()
+        if cats[t] is None:
+            cats[t] = StoreItemCategory(name=f"PRL {t}", code=f"PRL-{t[:4].upper()}", item_type=t, is_active=True)
+            db.add(cats[t])
+            db.commit()
+    row = db.query(ModuleSetting).filter(ModuleSetting.module_key == "p2p", ModuleSetting.key == "buyer_responsibility").first()
+    value = {str(cats["material"].id): w.a.id, str(cats["consumable"].id): w.b.id}
+    if row is None:
+        db.add(ModuleSetting(module_key="p2p", key="buyer_responsibility", value=value))
+    else:
+        row.value = value
     db.commit()
-    w.mat = master_item(db, f"PRL steel plate {next(_seq)}", item_type="material")
-    w.svc = master_item(db, f"PRL cutting oil {next(_seq)}", item_type="consumable")
+    w.mat = master_item(db, f"PRL steel plate {next(_seq)}", item_type="material", category="PRL material")
+    w.svc = master_item(db, f"PRL cutting oil {next(_seq)}", item_type="consumable", category="PRL consumable")
     body = {"purpose": "stock", "priority": "standard", "approvers": {}, "items": [
         {"store_item_id": w.mat.id, "quantity": 10, "project_inhouse": "Inhouse"},
         {"store_item_id": w.svc.id, "quantity": 6, "project_inhouse": "Inhouse"}]}

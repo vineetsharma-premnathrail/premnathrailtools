@@ -2,9 +2,9 @@
 
 // Procurement › Settings › Buyer responsibility: which buyer looks after which
 // Item Master categories. A requisition line goes to the buyer of its item's
-// category; with no buyer on the category, to the buyer of its item type, then to
-// the Default buyer (those two are set further down this page). One category has
-// at most one buyer, so a category already with another buyer is shown disabled.
+// category — the only rule since 2026-11-14 (no item-type or Default buyer); a
+// category with no buyer leaves its lines without one. One category has at most
+// one buyer, so a category already with another buyer is shown disabled.
 // Backend: GET/PUT /p2p/buyer-responsibility (the PUT replaces the whole list).
 
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -204,7 +204,7 @@ export default function BuyerResponsibilityCard() {
     <div data-tour="p2p-buyer-responsibility" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20 }}>
       <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Buyer responsibility</h2>
       <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 12px' }}>
-        Each Item Master category goes to one buyer. A requisition line goes to the buyer of its item&apos;s category; if the category has no buyer, to the buyer of its item type below, then to the Default buyer.
+        Each Item Master category goes to one buyer. A requisition line goes to the buyer of its item&apos;s category. If the category has no buyer, the line gets no buyer and Purchase has to assign it by hand — so give every category a buyer.
         {data && !canEdit ? ' You can view this list but not change it. Ask an admin for edit access to Procurement settings.' : ''}
       </p>
       {loadError && (
@@ -239,7 +239,7 @@ export default function BuyerResponsibilityCard() {
             {unassigned.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {unassigned.map((c) => (
-                  <span key={c.id} title={`${catLabel(c)} — has no buyer, so its lines go to the item-type buyer or the Default buyer.`} style={{ ...pillStyle('#d97706'), padding: '4px 10px', fontSize: 12.5, fontWeight: 600 }}>{c.name} ({c.code})</span>
+                  <span key={c.id} title={`${catLabel(c)} — has no buyer, so its requisition lines get no buyer until Purchase assigns one by hand.`} style={{ ...pillStyle('#d97706'), padding: '4px 10px', fontSize: 12.5, fontWeight: 600 }}>{c.name} ({c.code})</span>
                 ))}
               </div>
             )}

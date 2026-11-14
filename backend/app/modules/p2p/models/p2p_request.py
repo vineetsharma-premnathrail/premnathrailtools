@@ -86,65 +86,33 @@ P2P_CATEGORIES: dict[str, str] = {
 # category -> buyer, p2p/buyer_responsibility.py); the old coded buyer e-mails are gone.
 
 
-def _active_user_id(db, user_id) -> int | None:
-    from app.modules.main.models.user import User  # local import avoids a cross-module cycle at startup
-    if not user_id:
-        return None
-    buyer = db.query(User).filter(User.id == int(user_id), User.is_active.is_(True)).first()
-    return buyer.id if buyer else None
-
-
 def default_buyer_id(db) -> int | None:
-    """The "Default buyer" of Procurement > Settings (lines whose category and
-    item type have no buyer go to this person), when still an active user."""
-    from app.modules.p2p.settings import get_setting
-    return _active_user_id(db, get_setting(db, "default_buyer"))
+    """Always None. The "Default buyer" setting was removed on 2026-11-14: a
+    line's buyer comes only from its Item Master category (Buyer
+    responsibility). Kept so existing callers keep working."""
+    return None
 
 
 def resolve_auto_buyer_id(db, category_code: str | None = None) -> int | None:
-    """The buyer a requisition with no line-level buyer goes to: the default
-    buyer, or None (the PR still creates fine). category_code is accepted and
-    deliberately ignored: it is kept only so old callers keep working, because
-    the per-category buyer setting no longer exists (the buyer of a line comes
-    from resolve_line_buyer_id)."""
-    return default_buyer_id(db)
-
-
-# Buyer of a line by its Item Master item type (2026-10-27). Procurement >
-# Settings > Buyer for each item type; blank = fall through to the default
-# buyer. Types Store added beyond these use the "other" setting.
-P2P_ITEM_TYPE_BUYER_TYPES: dict[str, str] = {
-    "material": "Material",
-    "consumable": "Consumable",
-    "tool_equipment": "Tool / equipment",
-    "service": "Service",
-    "asset": "Asset",
-    "other": "Any other item type",
-}
+    """Always None (no Default buyer since 2026-11-14). The buyer of each line
+    comes from resolve_line_buyer_id; category_code is ignored and kept only
+    so old callers keep working."""
+    return None
 
 
 def resolve_line_buyer_id(db, item_type: str | None, category: str | None = None, item_id: int | None = None) -> int | None:
-    """The buyer a requisition line goes to (2026-11-06), first that applies:
-    1. the buyer of the item's Item Master category (Settings > Buyer
-       responsibility) - the category comes from item_id's item, else from the
-       `category` text;
-    2. the buyer picked for the item type (Settings > Buyer for each item type);
-    3. the Default buyer setting;
-    4. None (the requisition's assigned buyer then applies).
-    Only active users are ever returned. Old callers pass the item type alone."""
+    """The buyer a requisition line goes to: the active buyer of the item's
+    Item Master category (Procurement > Settings > Buyer responsibility); the
+    category comes from item_id's item, else from the `category` text.
+
+    None when the category has no buyer: the line is saved without one (the
+    requisition is never blocked) and Purchase assigns it by hand. "Buyer for
+    each item type" and "Default buyer" were removed on 2026-11-14 (owner:
+    category-wise only). Old callers pass the item type alone and get None."""
     from app.modules.p2p.buyer_responsibility import category_buyer_id
-    from app.modules.p2p.settings import get_setting
-    if item_id and not item_type:
-        from app.modules.store.models.item import StoreItem  # local import avoids a cross-module cycle at startup
-        item = db.get(StoreItem, item_id)
-        item_type = item.item_type if item is not None else None
-    if category or item_id:
-        found = category_buyer_id(db, category=category, item_type=item_type, item_id=item_id)
-        if found:
-            return found
-    key = item_type if item_type in P2P_ITEM_TYPE_BUYER_TYPES else "other"
-    typed = _active_user_id(db, get_setting(db, f"buyer_type_{key}"))
-    return typed or default_buyer_id(db)
+    if not (category or item_id):
+        return None
+    return category_buyer_id(db, category=category, item_type=item_type, item_id=item_id)
 
 # Purpose of a requisition (2026-10-23) — the first question on the PR form.
 # It decides what the purchase must be charged to (p2p/purpose.py):

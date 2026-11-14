@@ -12,6 +12,7 @@ ACCOUNTS_SETTING_GROUPS = {
     "credit": "Credit management",
     "dunning": "Collections & dunning",
     "proof": "Supporting documents",
+    "invoice_match": "Invoice match tolerances (3-way match per PO line)",
 }
 
 _SPECS = [
@@ -52,6 +53,17 @@ _SPECS = [
                      "can't be saved without a supporting file (bill, bank advice / UTR). Contra transfers are exempt."),
     SettingSpec("proof_required_payment_above", "proof", "Payment proof needed above (₹)", "decimal", 0, min=0,
                 help="Used only when the switch above is on: vouchers above this amount need a file. 0 = every voucher."),
+    # Read by accounts/services/po_match.py. Moved here from Procurement › Settings on
+    # 2026-11-14: checking a vendor bill against its PO is a Finance control, so a
+    # buyer does not set the slack for checking their own POs.
+    SettingSpec("invoice_qty_tolerance_pct", "invoice_match", "Quantity tolerance (%)", "decimal", 2.0, min=0, max=50,
+                help="A bill line may invoice up to this % more than was received (and not yet invoiced) on its PO line "
+                     "before it is held as a variance for Finance Manager approval."),
+    SettingSpec("invoice_price_tolerance_pct", "invoice_match", "Price tolerance (%)", "decimal", 1.0, min=0, max=50,
+                help="A bill line's rate may differ from the PO line's rate by up to this % (either way)."),
+    SettingSpec("invoice_price_tolerance_abs", "invoice_match", "Price tolerance cap (₹ per line)", "decimal", 500.0, min=0, max=10000000,
+                help="Even inside the % tolerance, a line whose price difference (rate difference x quantity) is more "
+                     "than this amount is held as a variance. 0 = no cap."),
 ]
 
 register_module_settings(ModuleSettingsDef(

@@ -1,7 +1,7 @@
 """Per-line buyer on a purchase requisition (owner decision 2026-10-27): the PR
-form has no header category; each line's Item Master item type picks that
-line's buyer (Procurement > Settings > Buyer for each item type), and numbers
-run P2P-[YEAR]-[NNNN]."""
+form has no header category; each line's Item Master category picks that
+line's buyer (Procurement > Settings > Buyer responsibility — category-wise only
+since 2026-11-14), and numbers run P2P-[YEAR]-[NNNN]."""
 import re
 
 
@@ -16,9 +16,32 @@ from app.tests.test_p2p_requests import (  # noqa: F401 — _sqlite_number_serie
 NUMBER = re.compile(r"^P2P-\d{4}-\d{4}$")
 
 
+def _cat_name(item_type):
+    return f"LB {item_type}"
+
+
 def _set_buyer(db, item_type, user):
-    db.add(ModuleSetting(module_key="p2p", key=f"buyer_type_{item_type}", value=user.id))
+    """`user` buys the top-level category "LB <item_type>" (Buyer responsibility)."""
+    from app.modules.p2p import buyer_responsibility as br
+    from app.modules.store.models.category import StoreItemCategory
+    name = _cat_name(item_type)
+    cat = db.query(StoreItemCategory).filter(StoreItemCategory.name == name).first()
+    if cat is None:
+        cat = StoreItemCategory(name=name, code=f"LB-{item_type[:6].upper()}", item_type=item_type, is_active=True)
+        db.add(cat)
+        db.commit()
+    m = {str(k): v for k, v in br.load_map(db).items()}
+    m[str(cat.id)] = user.id
+    row = db.query(ModuleSetting).filter(ModuleSetting.module_key == "p2p", ModuleSetting.key == br.MAP_KEY).first()
+    if row is None:
+        db.add(ModuleSetting(module_key="p2p", key=br.MAP_KEY, value=m))
+    else:
+        row.value = m
     db.commit()
+
+
+def _item(db, name, item_type):
+    return master_item(db, name, item_type=item_type, category=_cat_name(item_type))
 
 
 def _setup(db, tag):
@@ -28,8 +51,8 @@ def _setup(db, tag):
     _set_buyer(db, "material", a)
     _set_buyer(db, "service", b)
     req = _requester(db, f"lb.req.{tag}@premnathrail.com")
-    mat = master_item(db, f"LB steel plate {tag}", item_type="material")
-    svc = master_item(db, f"LB hardening job {tag}", item_type="service")
+    mat = _item(db, f"LB steel plate {tag}", "material")
+    svc = _item(db, f"LB hardening job {tag}", "service")
     set_pr_workflow(db, [u.id for u in _pr_approvers(db).values()], req)
     return a, b, req, mat, svc
 
@@ -73,7 +96,7 @@ def test_editing_a_draft_re_resolves_changed_line_only(client, db):
     pr = r.json()
     assert [i["buyer_id"] for i in pr["items"]] == [a.id, b.id]
     # Line 2 changes from a service to a material; line 1 is unchanged.
-    mat2 = master_item(db, "LB second plate t3", item_type="material")
+    mat2 = _item(db, "LB second plate t3", "material")
     r = client.put(f"{BASE}/{pr['id']}", json=_body([mat, mat2], save_as_draft=True), headers=auth_header(req))
     assert r.status_code == 200, r.text
     assert [i["buyer_id"] for i in r.json()["items"]] == [a.id, a.id]
@@ -128,15 +151,14 @@ def test_legacy_category_requisition_keeps_old_number_and_no_line_buyer(client, 
     assert pr["items"][0]["buyer_id"] is None
 
 
-def test_settings_list_buyer_for_each_item_type(client, db):
+def test_settings_have_no_item_type_or_default_buyer(client, db):
+    """Removed 2026-11-14 (owner: category-wise only)."""
     admin = make_user(db, "lb.admin@premnathrail.com", role="admin")
     r = client.get("/api/v1/p2p/settings", headers=auth_header(admin))
     assert r.status_code == 200, r.text
     d = r.json()
-    keys = {s["key"] for s in d["specs"] if s["group"] == "line_buyers"}
-    assert keys == {f"buyer_type_{t}" for t in ("material", "consumable", "tool_equipment", "service", "asset", "other")} | {"default_buyer"}
-    assert "line_buyers" in [g["key"] for g in d["groups"]]
-    assert all(k in d["values"] for k in keys)
+    assert not [s["key"] for s in d["specs"] if s["key"] == "default_buyer" or s["key"].startswith("buyer_type_")]
+    assert "line_buyers" not in [g["key"] for g in d["groups"]]
 
 
 # ── Multi-buyer split (2026-10-31): every line has its own buyer once approved ──
@@ -147,7 +169,7 @@ def test_approval_gives_lines_without_a_buyer_the_main_buyer(client, db):
     a, b, req, mat, svc = _setup(db, "t6")
     approver = make_user(db, "lb.appr.t6@premnathrail.com", assigned_apps=("p2p",))
     set_pr_workflow(db, [approver.id], req)
-    # A requisition with no category of its own and an item type that has no buyer: the line has none.
+    # A requisition with no category of its own and an item whose category has no buyer: the line has none.
     other = master_item(db, "LB tool t6", item_type="tool_equipment")
     r = _create(client, req, [other])
     assert r.status_code == 200, r.text

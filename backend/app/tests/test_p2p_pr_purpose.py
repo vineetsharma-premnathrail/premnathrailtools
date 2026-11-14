@@ -180,10 +180,10 @@ def test_project_manager_stage_only_for_production_and_names_the_projects_manage
     assert stages(r.json()["id"]) == [("Department head", head.id), ("Purchase Head", purchase_head.id)]
 
 
-def test_requisition_buyer_is_the_default_buyer_setting(client, db):
-    """The old "Buyer by category" settings and the coded standard buyers are gone
-    (2026-11-06): a requisition with no line-level buyer goes to Procurement >
-    Settings > Default buyer, or to nobody."""
+def test_requisition_with_no_line_buyer_gets_nobody(client, db):
+    """The coded standard buyers are gone (2026-11-06) and so is the Default buyer
+    (2026-11-14, category-wise only): a requisition with no line-level buyer gets
+    nobody until Purchase assigns one."""
     from app.modules.main.models.module_setting import ModuleSetting
     from app.modules.p2p.models.p2p_request import resolve_auto_buyer_id
     from app.tests.test_p2p_requests import make_user
@@ -193,17 +193,12 @@ def test_requisition_buyer_is_the_default_buyer_setting(client, db):
     assert resolve_auto_buyer_id(db, "SRV") is None
 
     picked = make_user(db, "purpose.buyer.srv@premnathrail.com", assigned_apps=("p2p",))
+    # An old Default buyer row left in the database is never read.
     db.add(ModuleSetting(module_key="p2p", key="default_buyer", value=picked.id))
     db.commit()
-    assert resolve_auto_buyer_id(db, "SRV") == picked.id
-    assert resolve_auto_buyer_id(db, "ELE") == picked.id
+    assert resolve_auto_buyer_id(db, "SRV") is None
 
-    # A default buyer who has left: nobody is assigned (the PR still creates).
-    picked.is_active = False
-    db.commit()
-    assert resolve_auto_buyer_id(db, "ELE") is None
-
-    # The settings screen offers the default buyer and no per-category buyers.
+    # The settings screen offers neither a default buyer nor per-category buyer settings.
     admin = make_user(db, "purpose.admin@premnathrail.com", role="admin")
     keys = set(client.get("/api/v1/p2p/settings", headers=auth_header(admin)).json()["values"])
-    assert "default_buyer" in keys and not {"buyer_ele", "buyer_srv", "buyer_cap", "buyer_adm"} & keys
+    assert "default_buyer" not in keys and not {"buyer_ele", "buyer_srv", "buyer_cap", "buyer_adm"} & keys

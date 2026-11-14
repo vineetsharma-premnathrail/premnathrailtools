@@ -14,7 +14,7 @@ from fastapi import BackgroundTasks
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.settings_framework import SettingSpec, get_setting
+from app.core.settings_framework import SettingSpec, get_def, get_setting
 from app.modules.main.models.notification import Notification
 from app.modules.main.models.user import User
 from app.utils.email import _send_graph_mail, _wrap_email_html
@@ -79,7 +79,15 @@ def fire_rule(
 ) -> None:
     """Apply the admin's rule for `module`/`event`. Bell/Teams rows are added to
     `db` (caller commits); emails go out after the response via background_tasks.
-    `skip_user_ids`: people already notified another way (e.g. @mentioned)."""
+    `skip_user_ids`: people already notified another way (e.g. @mentioned).
+    A module whose settings no longer carry rules for `event` (Procurement
+    removed them on 2026-11-14) sends nothing here — role subscriptions in
+    Organization › Roles › Notifications still apply."""
+    try:
+        if f"notify_{event}_enabled" not in get_def(module).specs:
+            return
+    except KeyError:
+        return
     if not get_setting(db, module, f"notify_{event}_enabled"):
         return
     skip = (skip_user_ids or set()) | {actor.id}
