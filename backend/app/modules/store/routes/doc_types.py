@@ -97,6 +97,8 @@ _KIND_TAB = {"stock_entry": "settings", "issue": "issue_types", "return_source":
 
 def _ensure_kind_action(user: User, kind: str, action: str) -> None:
     tab = _KIND_TAB[kind]
+    if kind in _FIXED_KINDS:
+        return  # fixed lists: create is refused for everyone and a rename is admin-only (checked by the caller)
     if tab == "settings":
         ensure_tab_action(user, "store", "settings", "edit")
     elif action == "create":

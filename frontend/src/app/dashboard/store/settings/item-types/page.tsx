@@ -12,7 +12,6 @@ import MasterEditDialog from '@/components/store/MasterEditDialog'
 import MessageDialog from '@/components/erp/MessageDialog'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
-import { useCan } from '@/lib/permissions'
 
 type ItemType = { value: string; label: string; prefix: string }
 
@@ -23,7 +22,6 @@ const FIELDS = [
 
 export default function StoreItemTypesPage() {
   const { isAuthorized, isLoading } = useRequireApp('store')
-  const { can, canDelete } = useCan()
   // Only a portal admin adds, changes or deletes item types (owner, 2026-11-07); the server enforces it too.
   const isAdmin = useAuthStore((st) => st.user?.role === 'admin')
   const [types, setTypes] = useState<ItemType[]>([])
@@ -82,7 +80,7 @@ export default function StoreItemTypesPage() {
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 8px' }}>Item Types</h1>
         </div>
-        {isAdmin && can('store', 'item_types', 'create') && (
+        {isAdmin && (
           <button data-tour="itype-add-btn" onClick={() => setEditing('new')} style={primaryBtnStyle}>
             <span style={{ fontSize: 17, lineHeight: 1, marginRight: 6 }}>+</span> Add Item Type
           </button>
@@ -129,8 +127,8 @@ export default function StoreItemTypesPage() {
                 <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body }}>{t.label}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, fontFamily: 'monospace' }}>{t.prefix || '—'}</td>
                 <td style={{ padding: '0 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                  {isAdmin && can('store', 'item_types', 'edit') && <span data-tour="itype-edit-link" onClick={() => setEditing(t)} style={{ color: '#FF6A2A', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Edit</span>}
-                  {isAdmin && canDelete('store', 'item_types', null) && <span data-tour="itype-delete-link" onClick={() => setDeleteTarget(t)} style={{ color: '#b91c1c', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', marginLeft: 14 }}>Delete</span>}
+                  {isAdmin && <span data-tour="itype-edit-link" onClick={() => setEditing(t)} style={{ color: '#FF6A2A', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Edit</span>}
+                  {isAdmin && <span data-tour="itype-delete-link" onClick={() => setDeleteTarget(t)} style={{ color: '#b91c1c', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', marginLeft: 14 }}>Delete</span>}
                 </td>
               </tr>
             ))}

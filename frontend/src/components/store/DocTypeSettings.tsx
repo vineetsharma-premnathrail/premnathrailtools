@@ -17,6 +17,7 @@ import MessageDialog from '@/components/erp/MessageDialog'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
+import { useAuthStore } from '@/store/authStore'
 
 const EFFECTS: Partial<Record<StoreDocTypeKind, { value: string; label: string; hint: string }[]>> = {
   stock_entry: [
@@ -54,8 +55,12 @@ export default function DocTypeSettings({ kind, title, noun, intro }: { kind: St
   // _KIND_TAB): return sources / conditions (and the read-only old stock entry
   // types — their tab was retired 2026-10-12) fall under the Settings gear.
   const tabKey = kind === 'issue' ? 'issue_types' : 'settings'
-  const canCreate = tabKey === 'settings' ? perm.can('store', 'settings', 'edit') : perm.can('store', tabKey, 'create')
-  const canEdit = perm.can('store', tabKey, 'edit')
+  // Issue types and return sources / conditions are fixed in code (backend _FIXED_KINDS):
+  // nobody adds or deletes one, and only the portal admin renames one (2026-11-14).
+  const fixed = kind === 'issue' || kind === 'return_source' || kind === 'return_condition'
+  const isAdmin = useAuthStore((st) => st.user?.role === 'admin')
+  const canCreate = !fixed && (tabKey === 'settings' ? perm.can('store', 'settings', 'edit') : perm.can('store', tabKey, 'create'))
+  const canEdit = fixed ? isAdmin : perm.can('store', tabKey, 'edit')
   const [rows, setRows] = useState<StoreDocType[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
@@ -69,7 +74,7 @@ export default function DocTypeSettings({ kind, title, noun, intro }: { kind: St
   const [deleteErrors, setDeleteErrors] = useState<string[]>([])
   // Only stock entry / issue types can be deleted (and only while unused —
   // the backend explains why when it refuses); the rest are deactivated.
-  const canDelete = (kind === 'stock_entry' || kind === 'issue') && perm.canDelete('store', tabKey, null)
+  const canDelete = kind === 'stock_entry' && perm.canDelete('store', tabKey, null)
 
   const effects = EFFECTS[kind]
   const hasApproval = kind === 'return_source' || kind === 'return_condition'

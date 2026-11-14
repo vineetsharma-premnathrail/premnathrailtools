@@ -199,11 +199,14 @@ MODULES: dict[str, dict] = {
         ("transfers", "Transfers", WORKFLOW, "Outward"),
         ("reservations", "Reservations", CRUD, "Outward"),
         ("settings", "Settings gear (opens Store settings)", SETTINGS, "Settings"),
-        ("item_types", "Item Types", CRUD, "Settings"),
+        # Item Types and Issue Types are view-only in the Role editor (2026-11-14): only the portal
+        # admin adds / changes / deletes an item type, and issue types are fixed in code (the admin
+        # may only rename one), so a Create / Edit / Delete tick here would grant nothing.
+        ("item_types", "Item Types (only the portal admin changes them)", V, "Settings"),
         ("uoms", "Units of Measure", CRUD, "Settings"),
         ("categories", "Categories", CRUD, "Settings"),
         ("warehouses", "Stores", CRUD, "Settings"),
-        ("issue_types", "Issue Types", CRUD, "Settings"),
+        ("issue_types", "Issue Types (fixed; only the portal admin renames one)", V, "Settings"),
         # Plant Access moved to the central data scope (Organization > Role & Permissions).
     ),
     "quality": _module(
