@@ -166,6 +166,8 @@ register_direct(
     "crm", "rnd_requirement_returned", "R&D returned the requirement",
     "The BD person who sent the requirement and the BD owner of the inquiry or tender",
     "R&D returns a revision of your customer requirement for correction",
+    # BD has to act (fix and re-send), so it is mailed too — not just a bell result.
+    default_channels=("bell", "teams", "email"), kind="assignment",
 )
 register_direct(
     "crm", "rnd_request_details_asked", "R&D needs more details",
