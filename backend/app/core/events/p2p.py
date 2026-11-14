@@ -68,6 +68,16 @@ register_event(
     "p2p", "pr_decided", "Purchase requisition approved / rejected / returned",
     "a purchase requisition gets its final approval, is rejected, or is returned for changes", ("purchase_requisitions", "view"),
 )
+# Were Procurement › Settings notification rules until 2026-11-14; fire_rule
+# (core/notify_rules.py) forwards the RFQ / vendor routes' calls to these.
+register_event(
+    "p2p", "rfq_created", "RFQ created",
+    "an RFQ is created for a requisition", ("rfq", "view"),
+)
+register_event(
+    "p2p", "vendor_added", "Vendor added",
+    "a new vendor is added to the vendor master", ("vendors", "view"),
+)
 register_event(
     "p2p", "vendor_quote_received", "Vendor quotation recorded",
     "a vendor's quotation is recorded on an RFQ", ("rfq", "vendor_quotes", "view"),

@@ -64,6 +64,17 @@ def validate_notification_rules(values: dict, events: dict[str, tuple[str, str]]
             raise ValueError(f"{label}: people are selected but no channel is ticked — tick Portal bell, Email or Teams.")
 
 
+# Rule events whose Procurement › Settings rule was removed (2026-11-14) and that
+# have no role event fired at their call site: fire_rule forwards them to this
+# role event (core/events/p2p.py). The other removed rules (PR created / approved /
+# rejected, PO raised / approved) already have role events of their own
+# (pr_submitted, pr_decided, po_submitted, po_decided) and are not forwarded.
+_ROLE_EVENT_FOR_RULE: dict[tuple[str, str], str] = {
+    ("p2p", "rfq_create"): "rfq_created",
+    ("p2p", "vendor_create"): "vendor_added",
+}
+
+
 def fire_rule(
     db: Session,
     background_tasks: BackgroundTasks | None,
@@ -81,12 +92,20 @@ def fire_rule(
     `db` (caller commits); emails go out after the response via background_tasks.
     `skip_user_ids`: people already notified another way (e.g. @mentioned).
     A module whose settings no longer carry rules for `event` (Procurement
-    removed them on 2026-11-14) sends nothing here — role subscriptions in
-    Organization › Roles › Notifications still apply."""
+    removed them on 2026-11-14) sends nothing here; an event listed in
+    _ROLE_EVENT_FOR_RULE goes to its role event instead, so it is subscribed in
+    Organization › Roles › Notifications."""
     try:
-        if f"notify_{event}_enabled" not in get_def(module).specs:
-            return
+        has_rule = f"notify_{event}_enabled" in get_def(module).specs
     except KeyError:
+        has_rule = False
+    if not has_rule:
+        role_event = _ROLE_EVENT_FOR_RULE.get((module, event))
+        if role_event:
+            from app.core.notification_events import notify_event
+            notify_event(db, background_tasks, module, role_event, title=title, message=message,
+                         entity_type=entity_type, entity_id=entity_id, actor=actor, details=details,
+                         skip_user_ids=skip_user_ids)
         return
     if not get_setting(db, module, f"notify_{event}_enabled"):
         return

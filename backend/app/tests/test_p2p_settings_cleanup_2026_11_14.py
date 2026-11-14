@@ -35,6 +35,30 @@ def test_old_procurement_tolerance_applies_until_finance_saves_one(db):
     assert tolerances(db)["qty_tol_pct"] == 3.0
 
 
+def test_vendor_added_and_rfq_created_reach_subscribed_roles(db):
+    """The two removed rules with no role event of their own now go to the
+    role events p2p.vendor_added / p2p.rfq_created (Organization › Roles › Notifications)."""
+    from app.modules.main.models.role import Role
+    from app.modules.main.models.user import User
+
+    role = Role(name="Vendor watchers", permissions=["p2p:vendors:view", "p2p:rfq:view"],
+                notification_events={"p2p.vendor_added": ["bell"], "p2p.rfq_created": ["bell"]})
+    db.add(role)
+    db.flush()
+    watcher = User(email="clean.watch@premnathrail.com", name="clean.watch", role="user", is_active=True,
+                   assigned_apps=["p2p"])
+    watcher.roles = [role]
+    db.add(watcher)
+    db.commit()
+    actor = make_user(db, "clean.adder@premnathrail.com", assigned_apps=("p2p",))
+    fire_rule(db, None, "p2p", "vendor_create", "New Vendor Added", "Vendor X was added", "vendor", 7, actor)
+    fire_rule(db, None, "p2p", "rfq_create", "RFQ Created", "RFQ-1 created", "rfq", 9, actor)
+    db.commit()
+    rows = db.query(Notification).filter(Notification.user_id == watcher.id).all()
+    assert sorted((r.entity_type, r.entity_id) for r in rows) == [("rfq", 9), ("vendor", 7)], [(r.entity_type, r.notification_type) for r in rows]
+    assert not db.query(Notification).filter(Notification.user_id == actor.id).first()
+
+
 def test_removed_procurement_rules_send_nothing_and_do_not_fail(db):
     actor = make_user(db, "clean.actor@premnathrail.com", assigned_apps=("p2p",))
     other = make_user(db, "clean.other@premnathrail.com", assigned_apps=("p2p",))
