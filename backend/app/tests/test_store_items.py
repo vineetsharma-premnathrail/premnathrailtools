@@ -144,7 +144,7 @@ def test_export_respects_filters(client, h):
     assert r.status_code == 200
     from openpyxl import load_workbook
     import io
-    names = [row[4] for row in load_workbook(io.BytesIO(r.content)).active.iter_rows(min_row=2, values_only=True)]
+    names = [row[3] for row in load_workbook(io.BytesIO(r.content)).active.iter_rows(min_row=2, values_only=True)]
     assert names == ["Export Me"]
 
 

@@ -10,7 +10,7 @@ from app.db.mixins import TimestampMixin, SoftDeleteMixin
 
 
 class LibraryFolder(Base, TimestampMixin, SoftDeleteMixin):
-    """Sales Library folder (nested). parent_id NULL = root folder."""
+    """Knowledge Hub folder (nested). parent_id NULL = root folder."""
 
     __tablename__ = "crm_library_folders"
     __table_args__ = (

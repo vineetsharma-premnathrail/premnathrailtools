@@ -325,26 +325,40 @@ class _ReorderTabState extends State<ReorderTab> {
               subtitle:
                   "Items whose projected stock — available plus what is already on order (open requisitions and POs) — is at or below their reorder level. Levels come from the item's plant data (per plant, that plant's stores) or, without plant data, from the Item Master."),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-            child: AppSelect<String>(
-              label: 'All categories',
-              value: _category,
-              options: [for (final c in _cats) Option(c['name'].toString(), txt(c['name']))],
-              onChanged: (o) {
-                setState(() => _category = o?.value);
-                _list.currentState?.reload();
-              },
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: CheckField(
-                label: 'Only items due for reorder · $_due due',
-                value: _dueOnly,
-                onChanged: (v) {
-                  setState(() => _dueOnly = v);
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Row(children: [
+              Expanded(child: Hint('${fmtQ(_due)} due for reorder${_dueOnly ? ' · only items due are shown' : ''}')),
+              FilterButton(
+                active: countSet([_category, _dueOnly]),
+                onClear: () {
+                  setState(() {
+                    _category = null;
+                    _dueOnly = false;
+                  });
                   _list.currentState?.reload();
-                }),
+                },
+                builder: (ctx, setS) => [
+                  AppSelect<String>(
+                    label: 'All categories',
+                    value: _category,
+                    options: [for (final c in _cats) Option(c['name'].toString(), txt(c['name']))],
+                    onChanged: (o) {
+                      setState(() => _category = o?.value);
+                      setS(() {});
+                      _list.currentState?.reload();
+                    },
+                  ),
+                  CheckField(
+                      label: 'Only items due for reorder',
+                      value: _dueOnly,
+                      onChanged: (v) {
+                        setState(() => _dueOnly = v);
+                        setS(() {});
+                        _list.currentState?.reload();
+                      }),
+                ],
+              ),
+            ]),
           ),
         ]),
         itemBuilder: (ctx, r, reload) {

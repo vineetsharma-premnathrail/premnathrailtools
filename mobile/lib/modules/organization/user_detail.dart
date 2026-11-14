@@ -1394,7 +1394,7 @@ class _DocumentsTabState extends State<_DocumentsTab> {
                       });
                     }
                   } catch (e) {
-                    if (ctx.mounted) showSnack(ctx, 'Could not pick the file: $e', error: true);
+                    if (ctx.mounted) showSnack(ctx, 'Could not pick the file. ${ApiClient.describe(e)}', error: true);
                   }
                 },
               ),
@@ -1486,7 +1486,7 @@ class _DocumentsTabState extends State<_DocumentsTab> {
                               try {
                                 await Files.openUrl(str(d['sharepoint_url']));
                               } catch (e) {
-                                if (context.mounted) showSnack(context, '$e', error: true);
+                                if (context.mounted) showSnack(context, ApiClient.describe(e), error: true);
                               }
                             }),
                           if (_canDelete) _linkBtn('Delete', () => _delete(d, reload), danger: true),

@@ -259,7 +259,7 @@ Future<Json?> showInquiryForm(BuildContext context, {Json? initial, int? default
                     label: 'Product',
                     required: true,
                     controller: product,
-                    hint: 'e.g. RRV for OHE maintenance, 1676 mm BG',
+                    hint: 'e.g. RRV for OHE maintenance',
                     onChanged: (_) => setS(() {}))),
             rowIconButton(Icons.add_rounded, canAdd ? 'Add another product' : 'Fill in the product first.',
                 canAdd ? () => setS(() => extras.add(_ExtraProduct())) : null),

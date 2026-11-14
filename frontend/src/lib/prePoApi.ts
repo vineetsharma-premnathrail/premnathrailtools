@@ -24,7 +24,7 @@ export interface PrePoReceiptItem {
   settled_qty?: number
 }
 
-export type PrePoDocType = 'invoice' | 'challan' | 'other'
+export type PrePoDocType = 'invoice' | 'challan' | 'po' | 'other'
 
 export interface PrePoAttachment {
   id: number
@@ -49,6 +49,9 @@ export interface PrePoReceipt {
   vendor_invoice_number?: string | null
   vendor_invoice_date?: string | null
   delivery_challan_date?: string | null
+  /** PO not in the portal's PO list (Tally / vendor PO), typed by the store. */
+  manual_po_number?: string | null
+  manual_po_date?: string | null
   remarks?: string | null
   status: PrePoStatus
   /** True when saving this receipt put the goods into stock (false on receipts made before 2026-11-06). */
@@ -71,13 +74,17 @@ export interface PrePoReceipt {
 }
 
 export interface PrePoReceiptCreate {
-  vendor_id: number
+  /** A vendor from the list, or vendor_name: a typed name, found or added to the vendor master on save. */
+  vendor_id?: number
+  vendor_name?: string
   received_date: string
   store_location_id?: number
   delivery_challan_number?: string
   vendor_invoice_number?: string
   vendor_invoice_date?: string
   delivery_challan_date?: string
+  manual_po_number?: string
+  manual_po_date?: string
   remarks?: string
   items: { store_item_id: number; quantity: number; unit_rate?: number; remarks?: string; invoice_item_name?: string }[]
 }
@@ -94,7 +101,7 @@ function uploadForm(file: File, docType: PrePoDocType): FormData {
   return fd
 }
 
-export const PRE_PO_DOC_LABEL: Record<string, string> = { invoice: 'Invoice', challan: 'Challan', other: 'Other' }
+export const PRE_PO_DOC_LABEL: Record<string, string> = { invoice: 'Invoice', challan: 'Challan', po: 'PO', other: 'Other' }
 
 export const PRE_PO_STATUS_LABEL: Record<string, string> = {
   pending_po: 'PO pending', po_created: 'PO created', closed: 'Closed', cancelled: 'Cancelled',
@@ -104,7 +111,25 @@ export const PRE_PO_STATUS_HEX: Record<string, string> = {
 }
 
 // Store side (Store tab "grn").
+/** A name a vendor's bill gives an Item Master item, learnt from earlier receipts (owner, 2026-11-13). */
+export interface BillName {
+  invoice_name: string
+  name_key: string
+  store_item_id: number
+  item_code?: string | null
+  item_name?: string | null
+  vendor_id: number
+  vendor_name?: string | null
+  times_used: number
+  last_used_on?: string | null
+}
+
+/** Same key as the server: lower case, single spaces. */
+export const billNameKey = (s: string) => s.split(/\s+/).filter(Boolean).join(' ').toLowerCase()
+
 export const prePoStoreApi = {
+  billNames: async (params: { vendor_id?: number; store_item_id?: number }): Promise<BillName[]> =>
+    (await apiClient.get('/store/pre-po-receipts/bill-names', { params })).data,
   list: async (params: { status?: string } = {}): Promise<PrePoReceipt[]> =>
     (await apiClient.get('/store/pre-po-receipts', { params })).data,
   get: async (id: number): Promise<PrePoReceipt> =>

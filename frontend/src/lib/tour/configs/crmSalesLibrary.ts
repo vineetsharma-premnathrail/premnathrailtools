@@ -2,12 +2,12 @@ import { TourConfig } from '../types'
 
 const config: TourConfig = {
   id: 'crm-sales-library',
-  pageTitle: 'CRM › Sales Library',
+  pageTitle: 'CRM › Knowledge Hub',
   steps: [
     {
       target: 'lib-upload',
       title: '+ Upload',
-      purpose: 'Opens the upload form: pick a file (any type, videos and large files are fine), the folder, and optionally tags, an expiry date and the products, projects and customers it belongs to. Shown only if your role can create in the Sales Library.',
+      purpose: 'Opens the upload form: pick a file (any type, videos and large files are fine), the folder, and optionally tags, an expiry date and the products, projects and customers it belongs to. Shown only if your role can create in the Knowledge Hub.',
       why: 'One central copy of every catalogue, video and price list, so the team stops sending old versions around by email.',
       after: 'The file is stored in SharePoint and appears in its folder and under "Recently added".',
     },

@@ -1,10 +1,13 @@
 import io
+import logging
 import re
 from urllib.parse import quote
 from fastapi import HTTPException, UploadFile
 import httpx
 from app.core.config import settings
 from app.auth.microsoft import get_app_graph_token
+
+_log = logging.getLogger(__name__)
 
 
 class _InMemoryUploadFile:
@@ -161,18 +164,10 @@ def _validate_uploaded_file(upload_file: UploadFile) -> int:
     ext = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
     ext = f".{ext}" if ext else ""
 
-    dangerous_ext = {".svg", ".svgz", ".html", ".htm", ".xhtml", ".xml", ".js", ".mjs"}
-    dangerous_types = {"text/html", "application/xhtml+xml", "text/xml", "application/xml",
-                       "text/javascript", "application/javascript"}
-    if ext in dangerous_ext or "svg" in content_type or content_type in dangerous_types:
-        raise HTTPException(status_code=400, detail=f"File type not allowed for {filename}")
-
-    if not (
-        any(content_type.startswith(prefix) for prefix in ALLOWED_CONTENT_PREFIXES)
-        or content_type in ALLOWED_CONTENT_TYPES
-        or ext in ALLOWED_EXTENSIONS
-    ):
-        raise HTTPException(status_code=400, detail=f"Unsupported file type for {filename}")
+    # Every file format is accepted (owner decision 2026-11-12: CAD, web pages,
+    # scripts, programs too). Safety is on the way OUT instead: downloads get
+    # their type from the extension (app/middleware/file_safety.py), so a page,
+    # script or program is only ever shown as text or saved — never run.
 
     file_obj = upload_file.file
     try:
@@ -319,9 +314,39 @@ async def download_file_content(site_id: str, file_path: str) -> tuple[bytes, st
         response = await client.get(content_url, headers={"Authorization": f"Bearer {token}"})
 
     if response.status_code != 200:
-        raise HTTPException(status_code=502, detail=f"Unable to download {file_path}: {response.text}")
+        _log.warning("SharePoint download failed (%s) for %s: %s", response.status_code, file_path, response.text[:500])
+        if response.status_code == 404:
+            raise HTTPException(status_code=404, detail="The file is no longer in SharePoint — it may have been moved or deleted there. Ask the uploader to attach it again.")
+        raise HTTPException(status_code=502, detail="SharePoint did not return the file (it may be busy or the portal's SharePoint connection was refused). Try again in a minute; if it keeps failing, ask IT to check the portal's SharePoint connection.")
 
     content_type = response.headers.get("content-type", "application/octet-stream")
+    return response.content, content_type
+
+
+async def download_thumbnail(site_id: str, file_path: str, size: str = "medium") -> tuple[bytes, str] | None:
+    """Small preview image SharePoint renders itself for images, videos (a frame),
+    PDFs and Office files (first page) — a few KB, so lists can show what a file
+    is without downloading it. None when SharePoint has no thumbnail for the file
+    (unknown format, or a video still being processed). Callers MUST run their
+    own authorization check first."""
+    if not site_id or not file_path:
+        return None
+    if size not in ("small", "medium", "large"):
+        size = "medium"
+    encoded_path = "/".join(_encode_path_segment(p) for p in file_path.split("/") if p)
+    url = f"{GRAPH_API}/sites/{site_id}/drive/root:/{encoded_path}:/thumbnails/0/{size}/content"
+    try:
+        token = await get_app_graph_token()
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+            response = await client.get(url, headers={"Authorization": f"Bearer {token}"})
+    except (httpx.HTTPError, HTTPException) as exc:
+        _log.warning("SharePoint thumbnail request failed for %s: %s", file_path, exc)
+        return None
+    content_type = response.headers.get("content-type", "")
+    if response.status_code != 200 or not response.content or not content_type.startswith("image/"):
+        if response.status_code not in (200, 404):
+            _log.warning("SharePoint thumbnail failed (%s) for %s", response.status_code, file_path)
+        return None
     return response.content, content_type
 
 
@@ -344,11 +369,16 @@ async def get_preview_url(site_id: str, file_path: str) -> str:
         response = await client.post(preview_url, headers={"Authorization": f"Bearer {token}"}, json={})
 
     if response.status_code != 200:
-        raise HTTPException(status_code=502, detail=f"Unable to generate preview for {file_path}: {response.text}")
+        # Full Graph reply goes to the server log only — never the folder path or raw JSON to the user.
+        _log.warning("SharePoint preview failed (%s) for %s: %s", response.status_code, file_path, response.text[:500])
+        if response.status_code == 404:
+            raise HTTPException(status_code=404, detail="The file is no longer in SharePoint — it may have been moved or deleted there. Ask the uploader to attach it again.")
+        raise HTTPException(status_code=502, detail="SharePoint could not open a preview of this file (format not supported or SharePoint busy). Use Download to open it on your computer.")
 
     get_url = response.json().get("getUrl")
     if not get_url:
-        raise HTTPException(status_code=502, detail=f"Preview response missing getUrl for {file_path}")
+        _log.warning("SharePoint preview reply had no getUrl for %s", file_path)
+        raise HTTPException(status_code=502, detail="SharePoint could not open a preview of this file (format not supported or SharePoint busy). Use Download to open it on your computer.")
     return get_url
 
 
@@ -375,7 +405,6 @@ def build_sharepoint_folder_path(user_name: str, project_name: str, service_requ
 DIRECT_UPLOAD_MAX_BYTES = 100 * 1024 * 1024 * 1024  # 100 GB (SharePoint's own cap is 250 GB)
 # Graph requires chunk sizes in multiples of 320 KiB; 10 MiB = 32 x 320 KiB.
 DIRECT_UPLOAD_CHUNK_BYTES = 10 * 1024 * 1024
-_DANGEROUS_EXTENSIONS = {".svg", ".svgz", ".html", ".htm", ".xhtml", ".xml", ".js", ".mjs"}
 
 
 def validate_upload_metadata(filename: str, size: int, content_type: str | None = None) -> str:
@@ -385,12 +414,7 @@ def validate_upload_metadata(filename: str, size: int, content_type: str | None 
     name = (filename or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="The file has no name.")
-    content_type = (content_type or "").lower()
-    ext = f".{name.lower().rsplit('.', 1)[-1]}" if "." in name else ""
-    if ext in _DANGEROUS_EXTENSIONS or "svg" in content_type or content_type in ("text/html", "application/xhtml+xml"):
-        raise HTTPException(status_code=400, detail=f"{name}: this file type is not allowed (web pages and SVGs can carry scripts).")
-    if not (any(content_type.startswith(p) for p in ALLOWED_CONTENT_PREFIXES) or content_type in ALLOWED_CONTENT_TYPES or ext in ALLOWED_EXTENSIONS):
-        raise HTTPException(status_code=400, detail=f"{name}: unsupported file type. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}.")
+    # Any format is accepted; downloads are made safe by extension (file_safety.py).
     if size <= 0:
         raise HTTPException(status_code=400, detail=f"{name} is empty.")
     if size > DIRECT_UPLOAD_MAX_BYTES:

@@ -172,7 +172,9 @@ def test_document_content_uses_name_based_type_and_safe_header(client, db, monke
 
     r = client.get(f"{BASE}/documents/{html_doc.id}/content", headers=h)
     assert r.status_code == 200, r.text
-    assert r.headers["content-type"].startswith("text/html")
+    # An uploaded web page is served as plain text so no script in it can run
+    # (middleware/file_safety.py, 2026-11); still a download with nosniff.
+    assert r.headers["content-type"].startswith("text/plain")
     assert r.headers["content-disposition"].startswith("attachment;")
     assert r.headers["x-content-type-options"] == "nosniff"
 

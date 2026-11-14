@@ -1,4 +1,4 @@
-"""CRM › Sales Library helpers: who may see which folder (Confidential), folder paths and loop checks,
+"""CRM › Knowledge Hub helpers: who may see which folder (Confidential), folder paths and loop checks,
 file kind, link validation, search and the list / detail shapes. Routes: crm/routes/library.py."""
 import json
 import re
@@ -29,11 +29,11 @@ SP_ROOT = "Sales Library"
 MAX_INLINE_BYTES = 25 * 1024 * 1024
 
 GRANT_CONFIDENTIAL_HINT = ("Ask an admin to switch on 'Confidential folders' for your role under "
-                           "Organization › Role & Permissions › CRM › Sales Library.")
+                           "Organization › Role & Permissions › CRM › Knowledge Hub.")
 # One message for "missing" and "hidden", so a Confidential folder / file can't be told apart from one that doesn't
 # exist, and its name is never repeated to a user who may not see it.
 NOT_FOUND_OR_HIDDEN = ("This file or folder was not found, or it is in a Confidential folder you can't open. "
-                       "Ask an admin for CRM › Sales Library › Confidential folders if you need it.")
+                       "Ask an admin for CRM › Knowledge Hub › Confidential folders if you need it.")
 NAME_TAKEN_NEUTRAL = "That name can't be used here — pick another name."
 
 

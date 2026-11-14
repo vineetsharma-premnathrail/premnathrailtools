@@ -42,7 +42,7 @@ export default function EditDocumentSheet({ doc, folders, onClose, onSaved }: {
   const folder = folders.find((f) => String(f.id) === folderId)
   // Pricing = this folder or any folder above it is a Pricing folder.
   const pricing = isPricingFolder(folders, folder?.id)
-  // Moving out of a Confidential folder shows the file to everyone with Sales Library access.
+  // Moving out of a Confidential folder shows the file to everyone with Knowledge Hub access.
   const becomesPublic = isConfidentialFolder(folders, doc.folder_id) && !isConfidentialFolder(folders, Number(folderId))
 
   const submit = async () => {
@@ -126,7 +126,7 @@ export default function EditDocumentSheet({ doc, folders, onClose, onSaved }: {
       />
     </FormSheet>
     <ConfirmDialog open={askPublic} title="Make this file visible to more people?" confirmLabel="Continue" danger={false}
-      message="This makes 1 file visible to everyone with Sales Library access. Continue?"
+      message="This makes 1 file visible to everyone with Knowledge Hub access. Continue?"
       onConfirm={submit} onCancel={() => setAskPublic(false)} />
     </>
   )

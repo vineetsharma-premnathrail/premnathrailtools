@@ -45,9 +45,11 @@ final Map<String, _Link> _entityLink = {
   'inquiry': (r) => '/dashboard/crm/inquiries/$r',
   'rnd_req_inquiry': (r) => '/dashboard/rnd/requirements/inquiry/$r',
   'rnd_req_tender': (r) => '/dashboard/rnd/requirements/tender/$r',
-  'design_rnd_requirement': (_) => '/dashboard/design',
-  'electrical_rnd_requirement': (_) => '/dashboard/electrical',
-  'hydraulic_rnd_requirement': (_) => '/dashboard/hydraulic',
+  // Old Share-Department bells (feature removed 2026-10-30) belong to the R&D
+  // requirement - same as the portal: R&D › Requirements.
+  'design_rnd_requirement': (_) => '/dashboard/rnd/requirements',
+  'electrical_rnd_requirement': (_) => '/dashboard/rnd/requirements',
+  'hydraulic_rnd_requirement': (_) => '/dashboard/rnd/requirements',
   'tender': (r) => '/dashboard/crm/tenders/$r',
   'activity': (_) => '/dashboard/crm/followups',
   'design_document': (r) => '/dashboard/design/documents/$r',

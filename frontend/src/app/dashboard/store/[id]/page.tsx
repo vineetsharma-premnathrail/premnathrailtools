@@ -17,6 +17,7 @@ import { secondaryBtnStyle, dangerBtnStyle, Pill, DetailCard, DetailSummary, Det
 import { FormPage, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import StoreNav from '@/components/store/StoreNav'
 import ItemPlantData from '@/components/store/ItemPlantData'
+import ItemBillNames from '@/components/store/ItemBillNames'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { useRecordId } from '@/lib/recordRef'
 import MessageDialog from '@/components/erp/MessageDialog'
@@ -334,6 +335,8 @@ export default function StoreItemDetailPage() {
           </DetailCard>
           {(seePlantData || vis.preview) && <VisSection vis={vis} k="detail_plant_data"><ItemPlantData itemId={item.id} canEdit={canFeature('store', 'items', 'plant_data', 'edit')} preview={vis.preview} /></VisSection>}
           {(seeVendors || vis.preview) && <VisSection vis={vis} k="detail_vendors"><ItemVendorSuggestions itemId={item.id} preview={vis.preview} /></VisSection>}
+          {/* Needs Store › GRN › Before PO › View, where the names are learnt. */}
+          {!vis.preview && can('store', 'grn', 'view') && canFeature('store', 'grn', 'before_po', 'view') && <ItemBillNames itemId={item.id} />}
         </>
       )}
     </div>

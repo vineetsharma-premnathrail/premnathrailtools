@@ -1,3 +1,4 @@
+from app.core.like import like_escape
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
@@ -155,8 +156,8 @@ async def list_tests(
     if result:
         query = query.filter(HydTest.result == result)
     if search:
-        like = f"%{search}%"
-        query = query.filter(HydTest.test_number.ilike(like) | HydTest.title.ilike(like) | HydTest.component_serial.ilike(like))
+        like = f"%{like_escape(search)}%"
+        query = query.filter(HydTest.test_number.ilike(like, escape="\\") | HydTest.title.ilike(like, escape="\\") | HydTest.component_serial.ilike(like, escape="\\"))
     return _to_responses(db, query.order_by(HydTest.id.desc()).all())
 
 

@@ -1,3 +1,4 @@
+from app.core.like import like_escape
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -99,8 +100,8 @@ async def list_spares(
     if status_filter:
         query = query.filter(HydSparePart.status == status_filter)
     if search:
-        like = f"%{search}%"
-        query = query.filter(HydSparePart.part_code.ilike(like) | HydSparePart.name.ilike(like) | HydSparePart.part_number.ilike(like))
+        like = f"%{like_escape(search)}%"
+        query = query.filter(HydSparePart.part_code.ilike(like, escape="\\") | HydSparePart.name.ilike(like, escape="\\") | HydSparePart.part_number.ilike(like, escape="\\"))
     rows = to_spare_responses(db, query.order_by(HydSparePart.part_code).all())
     if stock == "reorder":
         rows = [r for r in rows if r.stock_status in ("low", "out")]

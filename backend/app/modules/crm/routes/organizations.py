@@ -1,3 +1,4 @@
+from app.core.like import like_escape
 from datetime import datetime, timezone
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from app.core.notify_rules import fire_rule
@@ -87,18 +88,18 @@ async def list_organizations(
             raise HTTPException(status_code=422, detail=f"Organization Scope filter '{org_scope}' isn't valid. Use 'domestic' or 'international'.")
         query = query.filter(Organization.org_scope == scope)
     if search:
-        like = f"%{search}%"
+        like = f"%{like_escape(search)}%"
         creator_ids_matching = db.query(User.id).filter(
-            (User.name.ilike(like)) | (User.email.ilike(like))
+            (User.name.ilike(like, escape="\\")) | (User.email.ilike(like, escape="\\"))
         )
         query = query.filter(
-            (Organization.name.ilike(like)) | (Organization.org_type.ilike(like)) | (Organization.parent_org.ilike(like))
-            | (Organization.railway_zone.ilike(like)) | (Organization.division_workshop.ilike(like))
-            | (Organization.address.ilike(like)) | (Organization.country.ilike(like)) | (Organization.state.ilike(like))
-            | (Organization.city.ilike(like)) | (Organization.pin_code.ilike(like))
-            | (Organization.website.ilike(like))
-            | (Organization.tax_vat_id.ilike(like)) | (Organization.company_registration_no.ilike(like))
-            | (cast(Organization.created_at, SAString).ilike(like))
+            (Organization.name.ilike(like, escape="\\")) | (Organization.org_type.ilike(like, escape="\\")) | (Organization.parent_org.ilike(like, escape="\\"))
+            | (Organization.railway_zone.ilike(like, escape="\\")) | (Organization.division_workshop.ilike(like, escape="\\"))
+            | (Organization.address.ilike(like, escape="\\")) | (Organization.country.ilike(like, escape="\\")) | (Organization.state.ilike(like, escape="\\"))
+            | (Organization.city.ilike(like, escape="\\")) | (Organization.pin_code.ilike(like, escape="\\"))
+            | (Organization.website.ilike(like, escape="\\"))
+            | (Organization.tax_vat_id.ilike(like, escape="\\")) | (Organization.company_registration_no.ilike(like, escape="\\"))
+            | (cast(Organization.created_at, SAString).ilike(like, escape="\\"))
             | (Organization.created_by_id.in_(creator_ids_matching))
         )
     # A picker must offer every organization — a default page of 200 silently hid
@@ -172,7 +173,7 @@ async def search_organization_name(
     _user: User = Depends(require_app_access("crm")),
 ):
     matches = db.query(Organization).filter(
-        Organization.is_deleted == False, Organization.name.ilike(f"%{q}%")  # noqa: E712
+        Organization.is_deleted == False, Organization.name.ilike(f"%{like_escape(q)}%", escape="\\")  # noqa: E712
     ).limit(10).all()
     return [{"id": o.id, "name": o.name} for o in matches]
 

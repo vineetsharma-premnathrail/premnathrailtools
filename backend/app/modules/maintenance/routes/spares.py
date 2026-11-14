@@ -1,6 +1,7 @@
 """Spares page — read-only over the Store. Maintenance owns no stock: the
 item master, stock balances and the ledger are the Store's; this router only
 joins them with the assets' bills of spares."""
+from app.core.like import like_escape
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends
@@ -53,10 +54,10 @@ async def list_spares(
 
     q = db.query(StoreItem).filter((StoreItem.item_type == SPARE_ITEM_TYPE) | (StoreItem.id.in_(bos_item_ids or [0])))
     if search:
-        like = f"%{search.strip()}%"
+        like = f"%{like_escape(search.strip())}%"
         q = q.filter(
-            StoreItem.item_name.ilike(like) | StoreItem.item_code.ilike(like)
-            | StoreItem.part_number.ilike(like) | StoreItem.manufacturer_part_number.ilike(like)
+            StoreItem.item_name.ilike(like, escape="\\") | StoreItem.item_code.ilike(like, escape="\\")
+            | StoreItem.part_number.ilike(like, escape="\\") | StoreItem.manufacturer_part_number.ilike(like, escape="\\")
         )
     items = q.order_by(StoreItem.item_name).all()
     if not items:

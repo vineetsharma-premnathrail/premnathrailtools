@@ -15,6 +15,7 @@ Project Management project needs an R&D head, an admin or the project's
 manager / management (routes/project_tasks.py). The assignee
 rules ("Assign to") apply as on the record's own Tasks tab.
 """
+from app.core.like import like_escape
 from datetime import date
 from typing import Literal
 
@@ -121,8 +122,8 @@ async def project_options(q: str | None = None, db: Session = Depends(get_db), u
     query = apply_scope(db.query(RndProject), user, RndProject).filter(RndProject.is_deleted == False, RndProject.status != "cancelled")  # noqa: E712
     term = (q or "").strip()
     if term:
-        like = f"%{term}%"
-        query = query.filter(RndProject.project_number.ilike(like) | RndProject.title.ilike(like))
+        like = f"%{like_escape(term)}%"
+        query = query.filter(RndProject.project_number.ilike(like, escape="\\") | RndProject.title.ilike(like, escape="\\"))
     projects = [p for p in query.order_by(RndProject.project_number.asc()).limit(200).all() if project_roles.can_manage(user, p)]
     return [{"id": p.id, "project_number": p.project_number, "title": p.title, "label": f"{p.project_number} · {p.title}"} for p in projects[:50]]
 
@@ -135,8 +136,8 @@ async def pm_project_options(q: str | None = None, db: Session = Depends(get_db)
     query = db.query(PmProject).filter(PmProject.status.notin_(("closed", "cancelled")))
     term = (q or "").strip()
     if term:
-        like = f"%{term}%"
-        query = query.filter(PmProject.project_code.ilike(like) | PmProject.name.ilike(like) | PmProject.client_name.ilike(like))
+        like = f"%{like_escape(term)}%"
+        query = query.filter(PmProject.project_code.ilike(like, escape="\\") | PmProject.name.ilike(like, escape="\\") | PmProject.client_name.ilike(like, escape="\\"))
     # Narrow in SQL before any cap: admins / R&D heads see every running project; others
     # only their own (project manager) or, for management, those in their PM data scope.
     sees_all = user.role == "admin" or user.id in ra.org_head_ids(db)

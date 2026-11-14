@@ -3,6 +3,7 @@
 Tab Service › Service Contracts (erp:service_contracts) — view / create /
 edit / delete / submit / approve / cancel in the Permission Matrix. Rules in
 erp/contracts.py."""
+from app.core.like import like_escape
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -123,9 +124,9 @@ async def list_contracts(
         q = q.filter(ServiceContract.status == "active",
                      ServiceContract.end_date <= date.today() + timedelta(days=max(0, expiring_within_days)))
     if search and search.strip():
-        like = f"%{search.strip()}%"
-        q = q.filter(or_(ServiceContract.contract_number.ilike(like), ServiceContract.title.ilike(like),
-                         ServiceContract.customer_po_number.ilike(like)))
+        like = f"%{like_escape(search.strip())}%"
+        q = q.filter(or_(ServiceContract.contract_number.ilike(like, escape="\\"), ServiceContract.title.ilike(like, escape="\\"),
+                         ServiceContract.customer_po_number.ilike(like, escape="\\")))
     return [_out(db, c) for c in q.order_by(ServiceContract.id.desc()).limit(500).all()]
 
 

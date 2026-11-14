@@ -1,6 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- App self-update (lib/update/app_updater.dart + MainActivity.kt):
+         install the new version downloaded from the portal. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
     <application
         android:label="Premnath ERP"
         android:name="${applicationName}"
@@ -44,6 +48,21 @@
                     android:path="/36L+2zUIZ6aojcCZeSQ7WjkhJ3k=" />
             </intent-filter>
         </activity>
+        <!-- App self-update: result of an install session (only this app's
+             own PendingIntent reaches it), and the file share used when the
+             phone's own installer screen has to open the downloaded update. -->
+        <receiver
+            android:name=".UpdateInstallReceiver"
+            android:exported="false" />
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="com.premnathrail.premnath_erp.updater"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/updater_file_paths" />
+        </provider>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

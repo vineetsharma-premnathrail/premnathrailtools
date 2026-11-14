@@ -3,6 +3,7 @@ revisions → sent → the customer's response per drawing. Approval lets the
 Design head release the revision; rejection freezes it as
 customer_rejected so the fix goes out as the next revision. Customer
 comments become action items for designers."""
+from app.core.like import like_escape
 from datetime import date, timedelta
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session, selectinload
@@ -270,8 +271,8 @@ async def list_submissions(
     if pm_project_id:
         query = query.filter(DesignCustomerSubmission.pm_project_id == pm_project_id)
     if search:
-        like = f"%{search.strip()}%"
-        query = query.filter(DesignCustomerSubmission.submission_number.ilike(like) | DesignCustomerSubmission.customer_name.ilike(like))
+        like = f"%{like_escape(search.strip())}%"
+        query = query.filter(DesignCustomerSubmission.submission_number.ilike(like, escape="\\") | DesignCustomerSubmission.customer_name.ilike(like, escape="\\"))
     rows = _responses(db, query.order_by(DesignCustomerSubmission.created_at.desc(), DesignCustomerSubmission.id.desc()).limit(1000).all())
     return [r for r in rows if r.is_overdue] if overdue else rows
 

@@ -1,3 +1,4 @@
+from app.core.like import like_escape
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -200,9 +201,9 @@ async def list_projects(
     if project_type:
         query = query.filter(RndProject.project_type == project_type)
     if search:
-        like = f"%{search}%"
+        like = f"%{like_escape(search)}%"
         query = query.filter(
-            (RndProject.title.ilike(like)) | (RndProject.project_number.ilike(like)) | (RndProject.objective.ilike(like))
+            (RndProject.title.ilike(like, escape="\\")) | (RndProject.project_number.ilike(like, escape="\\")) | (RndProject.objective.ilike(like, escape="\\"))
         )
     out = [_to_response(db, p) for p in query.order_by(RndProject.created_at.desc()).all()]
     if hide_costs(user):  # R&D › Prototypes › BOM costs

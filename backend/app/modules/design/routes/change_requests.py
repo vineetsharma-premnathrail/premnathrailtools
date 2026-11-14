@@ -3,6 +3,7 @@ Production, Quality and Purchase viewers) raises one against released
 drawings/BOMs → Design records the impact (helped by where-used) → the
 change board votes → the Design head decides → an approved ECR becomes an
 ECN, which carries the implementation."""
+from app.core.like import like_escape
 from datetime import date
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, selectinload
@@ -316,8 +317,8 @@ async def list_change_requests(
     if mine:
         query = query.filter(DesignChangeRequest.raised_by_id == user.id)
     if search:
-        like = f"%{search.strip()}%"
-        query = query.filter(DesignChangeRequest.ecr_number.ilike(like) | DesignChangeRequest.title.ilike(like))
+        like = f"%{like_escape(search.strip())}%"
+        query = query.filter(DesignChangeRequest.ecr_number.ilike(like, escape="\\") | DesignChangeRequest.title.ilike(like, escape="\\"))
     return _responses(db, query.order_by(DesignChangeRequest.created_at.desc(), DesignChangeRequest.id.desc()).limit(1000).all(), user=user)
 
 

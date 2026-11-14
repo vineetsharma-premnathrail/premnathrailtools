@@ -1,3 +1,4 @@
+from app.core.like import like_escape
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -208,8 +209,8 @@ async def lookup_assets(
     if branch_id:
         q = q.filter(MaintenanceAsset.branch_id == branch_id)
     if search:
-        like = f"%{search}%"
-        q = q.filter((MaintenanceAsset.asset_code.ilike(like)) | (MaintenanceAsset.name.ilike(like)) | (MaintenanceAsset.location_text.ilike(like)))
+        like = f"%{like_escape(search)}%"
+        q = q.filter((MaintenanceAsset.asset_code.ilike(like, escape="\\")) | (MaintenanceAsset.name.ilike(like, escape="\\")) | (MaintenanceAsset.location_text.ilike(like, escape="\\")))
     rows = {a.id: a for a in q.order_by(MaintenanceAsset.asset_code).limit(100).all()}
     if id_list:
         for a in db.query(MaintenanceAsset).filter(MaintenanceAsset.is_deleted == False, MaintenanceAsset.id.in_(id_list)).all():  # noqa: E712
@@ -235,8 +236,8 @@ async def lookup_store_items(
 
     q = db.query(StoreItem)
     if search:
-        like = f"%{search}%"
-        q = q.filter((StoreItem.item_name.ilike(like)) | (StoreItem.item_code.ilike(like)) | (StoreItem.part_number.ilike(like)))
+        like = f"%{like_escape(search)}%"
+        q = q.filter((StoreItem.item_name.ilike(like, escape="\\")) | (StoreItem.item_code.ilike(like, escape="\\")) | (StoreItem.part_number.ilike(like, escape="\\")))
     items = q.limit(200).all()
     items.sort(key=lambda i: (i.item_type != "material", i.item_name))
     items = items[:50]

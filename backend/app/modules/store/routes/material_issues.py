@@ -131,6 +131,30 @@ async def list_material_issues(
     return [_to_response(db, i) for i in issues]
 
 
+@router.get("/bill-names")
+async def item_bill_names(
+    item_ids: str = Query(..., description="Comma-separated Item Master ids"),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("store")),
+):
+    """Names the vendors' bills give these items, latest first (learnt from goods receipts) - the
+    New Issue form fills "Name on DC" with the first one (owner, 2026-11-13)."""
+    ensure_any_store_action(user, ("issues", "create"), ("issues", "view"))
+    try:
+        ids = sorted({int(x) for x in item_ids.split(",") if x.strip()})[:200]
+    except ValueError:
+        raise HTTPException(status_code=422, detail="item_ids must be Item Master ids separated by commas, e.g. 12,40.")
+    from app.modules.store.models.pre_po_receipt import StoreItemVendorName
+    out: dict[str, list[str]] = {str(i): [] for i in ids}
+    rows = (db.query(StoreItemVendorName).filter(StoreItemVendorName.store_item_id.in_(ids or [-1]))
+            .order_by(StoreItemVendorName.last_used_on.desc().nullslast(), StoreItemVendorName.id.desc()).all())
+    for r in rows:
+        names = out[str(r.store_item_id)]
+        if r.invoice_name not in names:
+            names.append(r.invoice_name)
+    return out
+
+
 @router.get("/form-standard")
 async def issue_form_standard(_user: User = Depends(require_tab_action("store", "issues", "create"))):
     """What each issue type asks for — the New Issue form renders from this."""
@@ -511,6 +535,7 @@ async def create_material_issue(
                                             (p.batch_number or "").strip() or None, taken.setdefault(p.item_id, {})):
             mine, left = (left[:int(round(qty))], left[int(round(qty)):]) if units else ([], [])
             line = StoreMaterialIssueItem(issue_id=issue.id, item_id=p.item_id, quantity=qty, batch_number=batch_no, remarks=p.remarks,
+                                          dc_name=(p.dc_name or "").strip() or None,
                                           bin_id=p.bin_id, serial_numbers=[u.serial_no for u in mine] or None,
                                           order_project_element_id=line_el)
             db.add(line)

@@ -4,6 +4,7 @@ their applications and technical specifications.
 Lives in CRM › Products (one tab, `crm:products`; moved from Sales on 2026-10-30).
 The master is tab-gated, not owner-scoped: anyone who may open the tab sees every
 product, like the vendor master (owner decision, 2026-10-30)."""
+from app.core.like import like_escape
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session, selectinload
@@ -115,8 +116,8 @@ async def lookup_store_items(search: str = "", db: Session = Depends(get_db)):
     q = db.query(StoreItem).filter(StoreItem.status == "active")
     term = search.strip()
     if term:
-        like = f"%{term}%"
-        q = q.filter(or_(StoreItem.item_code.ilike(like), StoreItem.item_name.ilike(like), StoreItem.model.ilike(like)))
+        like = f"%{like_escape(term)}%"
+        q = q.filter(or_(StoreItem.item_code.ilike(like, escape="\\"), StoreItem.item_name.ilike(like, escape="\\"), StoreItem.model.ilike(like, escape="\\")))
     rows = q.order_by(StoreItem.item_name).limit(30).all()
     return [{"id": r.id, "item_code": r.item_code, "item_name": r.item_name, "uom": r.uom, "hsn_sac_code": r.hsn_sac_code} for r in rows]
 
@@ -129,9 +130,9 @@ async def list_products(
     q = db.query(FinishedProduct).options(selectinload(FinishedProduct.applications), selectinload(FinishedProduct.specifications))
     term = search.strip()
     if term:
-        like = f"%{term}%"
-        q = q.filter(or_(FinishedProduct.code.ilike(like), FinishedProduct.old_code.ilike(like),
-                         FinishedProduct.name.ilike(like), FinishedProduct.model_number.ilike(like)))
+        like = f"%{like_escape(term)}%"
+        q = q.filter(or_(FinishedProduct.code.ilike(like, escape="\\"), FinishedProduct.old_code.ilike(like, escape="\\"),
+                         FinishedProduct.name.ilike(like, escape="\\"), FinishedProduct.model_number.ilike(like, escape="\\")))
     if product_type:
         q = q.filter(FinishedProduct.product_type == product_type)
     if status:

@@ -267,7 +267,7 @@ class _OrgSecurityTabState extends State<OrgSecurityTab> {
                   try {
                     await Files.openUrl('https://entra.microsoft.com');
                   } catch (e) {
-                    if (context.mounted) showSnack(context, '$e', error: true);
+                    if (context.mounted) showSnack(context, ApiClient.describe(e), error: true);
                   }
                 }),
               ]),

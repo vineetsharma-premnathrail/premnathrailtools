@@ -1,3 +1,4 @@
+from app.core.like import like_escape
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -85,8 +86,8 @@ async def list_gl_accounts(
     if status is not None:
         query = query.filter(GLAccount.status == status)
     if search:
-        like = f"%{search}%"
-        query = query.filter((GLAccount.code.ilike(like)) | (GLAccount.name.ilike(like)))
+        like = f"%{like_escape(search)}%"
+        query = query.filter((GLAccount.code.ilike(like, escape="\\")) | (GLAccount.name.ilike(like, escape="\\")))
     groups = _groups(db)
     return [_to_response(a, groups) for a in query.order_by(GLAccount.code.asc()).all()]
 

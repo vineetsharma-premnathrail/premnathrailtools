@@ -3,6 +3,7 @@ items and locations, ERP projects, plants and people but usually don't
 hold those apps themselves — so these read-only lists are served under the
 hydraulic permission instead of those modules' own routes (same approach
 as production/routes/lookups.py)."""
+from app.core.like import like_escape
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
@@ -86,8 +87,8 @@ async def lookup_plans(system_id: int | None = None, db: Session = Depends(get_d
 async def lookup_store_items(search: str | None = None, limit: int = Query(5000, ge=1, le=5000), db: Session = Depends(get_db)):
     query = db.query(StoreItem).filter(StoreItem.status == "active")
     if search:
-        like = f"%{search}%"
-        query = query.filter(StoreItem.item_code.ilike(like) | StoreItem.item_name.ilike(like) | StoreItem.part_number.ilike(like))
+        like = f"%{like_escape(search)}%"
+        query = query.filter(StoreItem.item_code.ilike(like, escape="\\") | StoreItem.item_name.ilike(like, escape="\\") | StoreItem.part_number.ilike(like, escape="\\"))
     return [HydLookupOption(id=i.id, code=i.item_code, label=f"{i.item_code} — {i.item_name}", extra=i.uom) for i in query.order_by(StoreItem.item_code).limit(limit).all()]
 
 

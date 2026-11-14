@@ -279,6 +279,7 @@ Future<bool> uploadPo(BuildContext context, Json rfq, Json pr) async {
   double qtyOf(_PoLine l) => double.tryParse(l.qty.text) ?? l.max;
   double priceOf(_PoLine l) => double.tryParse(l.price.text) ?? 0;
 
+  if (!context.mounted) return false;
   return showFormSheet(
     context,
     title: 'Upload PO',

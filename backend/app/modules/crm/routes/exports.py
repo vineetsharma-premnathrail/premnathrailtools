@@ -4,6 +4,7 @@ Same two modes as the Service registers: exactly the ticked records (ids),
 or everything matching the list's search, optionally narrowed to a From–To
 range on the date the record was created (both ends inclusive, days in IST).
 Under /crm/exports/… so the paths never collide with /crm/organizations/{id}."""
+from app.core.like import like_escape
 import io
 from datetime import date, datetime
 
@@ -85,10 +86,10 @@ def export_organizations(
             raise HTTPException(status_code=404, detail="None of the selected customer organizations can be exported — they were deleted, or are outside your CRM data access. Refresh the list.")
     else:
         if search and search.strip():
-            like = f"%{search.strip()}%"
-            q = q.filter(or_(Organization.name.ilike(like), Organization.org_code.ilike(like), Organization.city.ilike(like),
-                             Organization.gst_number.ilike(like),
-                             Organization.tax_vat_id.ilike(like)))
+            like = f"%{like_escape(search.strip())}%"
+            q = q.filter(or_(Organization.name.ilike(like, escape="\\"), Organization.org_code.ilike(like, escape="\\"), Organization.city.ilike(like, escape="\\"),
+                             Organization.gst_number.ilike(like, escape="\\"),
+                             Organization.tax_vat_id.ilike(like, escape="\\")))
         orgs = [o for o in q.order_by(Organization.name).all() if in_range(ist_date(o.created_at), date_from, date_to)]
 
     contacts: dict[int, list[OrgContact]] = {}
@@ -131,14 +132,14 @@ def export_inquiries_tenders(
     sel_inq = parse_export_ids(inquiry_ids, "inquiries") if inquiry_ids else None
     sel_tnd = parse_export_ids(tender_ids, "tenders") if tender_ids else None
     selective = sel_inq is not None or sel_tnd is not None
-    term = f"%{search.strip()}%" if search and search.strip() else None
+    term = f"%{like_escape(search.strip())}%" if search and search.strip() else None
 
     def pick(model, selected, search_cols):
         q = apply_scope(db.query(model).filter(model.is_deleted == False), _user, model)  # noqa: E712
         if selective:
             return q.filter(model.id.in_(selected)).all() if selected else []
         if term:
-            q = q.outerjoin(Organization, Organization.id == model.org_id).filter(or_(*[c.ilike(term) for c in search_cols], Organization.name.ilike(term)))
+            q = q.outerjoin(Organization, Organization.id == model.org_id).filter(or_(*[c.ilike(term, escape="\\") for c in search_cols], Organization.name.ilike(term, escape="\\")))
         return [r for r in q.all() if in_range(ist_date(r.created_at), date_from, date_to)]
 
     inquiries = pick(Inquiry, sel_inq, [Inquiry.universal_id, Inquiry.product, Inquiry.product_category]) if type in ("all", "inquiry") or selective else []

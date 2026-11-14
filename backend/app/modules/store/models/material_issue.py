@@ -105,6 +105,9 @@ class StoreMaterialIssueItem(Base, TimestampMixin):
     quantity: Mapped[float] = mapped_column(Float, nullable=False)
     batch_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The item's name as on the vendor's bill, printed on the delivery challan (owner, 2026-11-13);
+    # stock and cost stay on item_id.
+    dc_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # WM: the bin it was picked from; serialised item: the units issued.
     bin_id: Mapped[int | None] = mapped_column(ForeignKey("store_bins.id"), nullable=True)
     serial_numbers: Mapped[list | None] = mapped_column(JSONB, nullable=True)

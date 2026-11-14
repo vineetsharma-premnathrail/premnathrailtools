@@ -6,6 +6,7 @@
   released for them (read-only on the PM side — PM tables aren't changed).
 - My Work: my PM tasks, each linked to the drawing/BOM it produces, so a
   task shows "ready to close" once its deliverable is released."""
+from app.core.like import like_escape
 from datetime import date
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import func
@@ -259,8 +260,8 @@ async def list_requests(
     if order_project_id:
         query = query.filter(DesignRequest.order_project_id == order_project_id)
     if search:
-        like = f"%{search.strip()}%"
-        query = query.filter(DesignRequest.request_number.ilike(like) | DesignRequest.title.ilike(like) | DesignRequest.crm_reference.ilike(like))
+        like = f"%{like_escape(search.strip())}%"
+        query = query.filter(DesignRequest.request_number.ilike(like, escape="\\") | DesignRequest.title.ilike(like, escape="\\") | DesignRequest.crm_reference.ilike(like, escape="\\"))
     rows = _responses(db, query.limit(2000).all())
     # Waiting on Design first, then by due date (no date last), newest first.
     rows.sort(key=lambda r: (

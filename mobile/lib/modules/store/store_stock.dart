@@ -196,11 +196,6 @@ class _StockTabState extends State<StockTab> {
   Widget build(BuildContext context) {
     final rows = _balances.where(_matches).toList();
     final cats = {for (final i in _items.values) if (i['category'] != null) i['category'].toString()}.toList()..sort();
-    final subs = {
-      for (final i in _items.values)
-        if (i['subcategory'] != null && (_category == null || i['category'] == _category)) i['subcategory'].toString()
-    }.toList()
-      ..sort();
     final seeVal = seeValues;
     final seeAsOf = canFeature('stock', 'as_of', 'view');
     final canPost = canFeature('adjustments', 'quarantine_clear', 'create');
@@ -236,40 +231,54 @@ class _StockTabState extends State<StockTab> {
       ]),
       Padding(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          SearchField(hint: 'Search item code, name, store…', onChanged: (v) => setState(() => _search = v)),
-          const SizedBox(height: 8),
-          AppSelect<int>(
-            label: 'All stores',
-            value: _store,
-            options: [for (final l in _locations) if (toInt(l['id']) != null) Option(toInt(l['id'])!, txt(l['name']))],
-            onChanged: (o) => setState(() => _store = o?.value),
+        child: Row(children: [
+          Expanded(child: SearchField(hint: 'Search item code, name, store…', onChanged: (v) => setState(() => _search = v))),
+          const SizedBox(width: 8),
+          FilterButton(
+            active: countSet([_store, if (_view != 'asof') _category, if (_view != 'asof') _subcategory]),
+            onClear: () => setState(() {
+              _store = null;
+              _category = null;
+              _subcategory = null;
+            }),
+            builder: (ctx, setS) {
+              void upd(VoidCallback f) {
+                setState(f);
+                setS(() {});
+              }
+
+              final subsNow = {
+                for (final i in _items.values)
+                  if (i['subcategory'] != null && (_category == null || i['category'] == _category)) i['subcategory'].toString()
+              }.toList()
+                ..sort();
+              return [
+                AppSelect<int>(
+                  label: 'All stores',
+                  value: _store,
+                  options: [for (final l in _locations) if (toInt(l['id']) != null) Option(toInt(l['id'])!, txt(l['name']))],
+                  onChanged: (o) => upd(() => _store = o?.value),
+                ),
+                if (_view != 'asof') ...[
+                  AppSelect<String>(
+                    label: 'All categories',
+                    value: _category,
+                    options: [for (final c in cats) Option(c, c)],
+                    onChanged: (o) => upd(() {
+                      _category = o?.value;
+                      _subcategory = null;
+                    }),
+                  ),
+                  AppSelect<String>(
+                    label: 'All subcategories',
+                    value: _subcategory,
+                    options: [for (final c in subsNow) Option(c, c)],
+                    onChanged: (o) => upd(() => _subcategory = o?.value),
+                  ),
+                ],
+              ];
+            },
           ),
-          if (_view != 'asof') ...[
-            const SizedBox(height: 8),
-            Row(children: [
-              Expanded(
-                child: AppSelect<String>(
-                  label: 'All categories',
-                  value: _category,
-                  options: [for (final c in cats) Option(c, c)],
-                  onChanged: (o) => setState(() {
-                    _category = o?.value;
-                    _subcategory = null;
-                  }),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: AppSelect<String>(
-                  label: 'All subcategories',
-                  value: _subcategory,
-                  options: [for (final c in subs) Option(c, c)],
-                  onChanged: (o) => setState(() => _subcategory = o?.value),
-                ),
-              ),
-            ]),
-          ],
         ]),
       ),
     ];
@@ -569,14 +578,27 @@ class _BatchesTabState extends State<BatchesTab> {
                 'Batch-tracked items (Item Master “Batch tracked”) carry the vendor\'s heat number and mill TC from the GRN. Open a batch to trace where it went.'),
           ),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: CheckField(
-                label: 'Only batches with stock',
-                value: _inStock,
-                onChanged: (v) {
-                  setState(() => _inStock = v);
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Row(children: [
+              Expanded(child: Hint(_inStock ? 'Showing only batches with stock.' : 'Showing every batch.')),
+              FilterButton(
+                active: countSet([_inStock]),
+                onClear: () {
+                  setState(() => _inStock = false);
                   _list.currentState?.reload();
-                }),
+                },
+                builder: (ctx, setS) => [
+                  CheckField(
+                      label: 'Only batches with stock',
+                      value: _inStock,
+                      onChanged: (v) {
+                        setState(() => _inStock = v);
+                        setS(() {});
+                        _list.currentState?.reload();
+                      }),
+                ],
+              ),
+            ]),
           ),
         ]),
         itemBuilder: (ctx, b, reload) {
@@ -1146,19 +1168,37 @@ class _BinsTabState extends State<BinsTab> {
               ),
               if (_loc != null) ...[
                 const SizedBox(height: 8),
-                AppSelect<String>(
-                  label: 'Racks, shelves & bins',
-                  value: _type,
-                  options: const [Option('rack', 'Racks only'), Option('shelf', 'Shelves only'), Option('bin', 'Bins only')],
-                  onChanged: (o) => setState(() => _type = o?.value),
-                ),
-                const SizedBox(height: 8),
-                SearchField(hint: 'Find an item — code or name', onChanged: (v) => setState(() => _search = v)),
                 Row(children: [
-                  Expanded(child: Hint('${count('rack')} racks · ${count('shelf')} shelves · ${count('bin')} bins')),
-                  Expanded(
-                      child: CheckField(label: 'Show inactive', value: _inactive, onChanged: (v) => setState(() => _inactive = v))),
+                  Expanded(child: SearchField(hint: 'Find an item — code or name', onChanged: (v) => setState(() => _search = v))),
+                  const SizedBox(width: 8),
+                  FilterButton(
+                    active: countSet([_type, _inactive]),
+                    onClear: () => setState(() {
+                      _type = null;
+                      _inactive = false;
+                    }),
+                    builder: (ctx, setS) => [
+                      AppSelect<String>(
+                        label: 'Racks, shelves & bins',
+                        value: _type,
+                        options: const [Option('rack', 'Racks only'), Option('shelf', 'Shelves only'), Option('bin', 'Bins only')],
+                        onChanged: (o) {
+                          setState(() => _type = o?.value);
+                          setS(() {});
+                        },
+                      ),
+                      CheckField(
+                          label: 'Show inactive',
+                          value: _inactive,
+                          onChanged: (v) {
+                            setState(() => _inactive = v);
+                            setS(() {});
+                          }),
+                    ],
+                  ),
                 ]),
+                const SizedBox(height: 6),
+                Hint('${count('rack')} racks · ${count('shelf')} shelves · ${count('bin')} bins'),
               ],
             ]),
           ),
@@ -1334,31 +1374,40 @@ class _SerialsTabState extends State<SerialsTab> {
             const Hint("Engines, pumps, gearboxes, PLCs… every unit of an item with 'Serial numbers' ticked in the Item Master."),
             const SizedBox(height: 8),
             Row(children: [
-              Expanded(
-                child: AppSelect<String>(
-                  label: 'All statuses',
-                  value: _status,
-                  options: valueLabelOptions(_statuses),
-                  onChanged: (o) {
-                    setState(() => _status = o?.value);
-                    _list.currentState?.reload();
-                  },
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: LocationSelect(
-                  label: 'All stores',
-                  required: false,
-                  value: _loc,
-                  onChanged: (l) {
-                    setState(() => _loc = toInt(l?['id']));
-                    _list.currentState?.reload();
-                  },
-                ),
+              Expanded(child: Hint(_total == null ? '' : '${fmtQ(_total)} unit${_total == 1 ? '' : 's'}')),
+              FilterButton(
+                active: countSet([_status, _loc]),
+                onClear: () {
+                  setState(() {
+                    _status = null;
+                    _loc = null;
+                  });
+                  _list.currentState?.reload();
+                },
+                builder: (ctx, setS) => [
+                  AppSelect<String>(
+                    label: 'All statuses',
+                    value: _status,
+                    options: valueLabelOptions(_statuses),
+                    onChanged: (o) {
+                      setState(() => _status = o?.value);
+                      setS(() {});
+                      _list.currentState?.reload();
+                    },
+                  ),
+                  LocationSelect(
+                    label: 'All stores',
+                    required: false,
+                    value: _loc,
+                    onChanged: (l) {
+                      setState(() => _loc = toInt(l?['id']));
+                      setS(() {});
+                      _list.currentState?.reload();
+                    },
+                  ),
+                ],
               ),
             ]),
-            if (_total != null) ...[const SizedBox(height: 6), Hint('${fmtQ(_total)} unit${_total == 1 ? '' : 's'}')],
           ]),
         ),
         itemBuilder: (ctx, r, reload) => RecordCard(
@@ -1514,7 +1563,6 @@ class _MovementsTabState extends State<MovementsTab> {
   List<Json> _users = const [];
   List<String> _cats = const [];
   int? _total;
-  bool _showFilters = false;
 
   @override
   void initState() {
@@ -1583,8 +1631,58 @@ class _MovementsTabState extends State<MovementsTab> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
-              PillButton(_showFilters ? 'Hide filters' : 'More filters',
-                  icon: Icons.filter_list_rounded, onPressed: () => setState(() => _showFilters = !_showFilters)),
+              FilterButton(
+                active: countSet([_loc, _category, _from, _to, _type, _ref.text.trim(), _vendor.text.trim(), _user]),
+                onClear: () {
+                  setState(() {
+                    _loc = null;
+                    _category = null;
+                    _from = null;
+                    _to = null;
+                    _type = null;
+                    _user = null;
+                    _ref.clear();
+                    _vendor.clear();
+                  });
+                  _reload();
+                },
+                builder: (ctx, setS) {
+                  void upd(VoidCallback f) {
+                    setState(f);
+                    setS(() {});
+                    _reload();
+                  }
+
+                  return [
+                    LocationSelect(label: 'All stores', required: false, value: _loc, onChanged: (l) => upd(() => _loc = toInt(l?['id']))),
+                    AppSelect<String>(
+                      label: 'All categories',
+                      value: _category,
+                      options: [for (final c in _cats) Option(c, c)],
+                      onChanged: (o) => upd(() => _category = o?.value),
+                    ),
+                    Row(children: [
+                      Expanded(child: DateField(label: 'From date', value: _from, onChanged: (d) => upd(() => _from = d))),
+                      const SizedBox(width: 8),
+                      Expanded(child: DateField(label: 'To date', value: _to, onChanged: (d) => upd(() => _to = d))),
+                    ]),
+                    AppSelect<String>(
+                      label: 'All movement types',
+                      value: _type,
+                      options: [for (final e in _movementLabels.entries) Option(e.key, e.value)],
+                      onChanged: (o) => upd(() => _type = o?.value),
+                    ),
+                    AppTextField(label: 'Document / reference no.', controller: _ref, onChanged: (_) => upd(() {})),
+                    AppTextField(label: 'Vendor', controller: _vendor, onChanged: (_) => upd(() {})),
+                    AppSelect<int>(
+                      label: 'All users',
+                      value: _user,
+                      options: idLabelOptions(_users),
+                      onChanged: (o) => upd(() => _user = o?.value),
+                    ),
+                  ];
+                },
+              ),
               if (can('movements', 'export'))
                 PillButton('Export Excel',
                     icon: Icons.download_rounded,
@@ -1593,74 +1691,6 @@ class _MovementsTabState extends State<MovementsTab> {
               if (_total != null) Hint('${fmtQ(_total)} movement${_total == 1 ? '' : 's'}'),
             ]),
           ),
-          if (_showFilters)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                LocationSelect(
-                    label: 'All stores',
-                    required: false,
-                    value: _loc,
-                    onChanged: (l) {
-                      setState(() => _loc = toInt(l?['id']));
-                      _reload();
-                    }),
-                const SizedBox(height: 8),
-                AppSelect<String>(
-                  label: 'All categories',
-                  value: _category,
-                  options: [for (final c in _cats) Option(c, c)],
-                  onChanged: (o) {
-                    setState(() => _category = o?.value);
-                    _reload();
-                  },
-                ),
-                const SizedBox(height: 8),
-                Row(children: [
-                  Expanded(
-                      child: DateField(
-                          label: 'From date',
-                          value: _from,
-                          onChanged: (d) {
-                            setState(() => _from = d);
-                            _reload();
-                          })),
-                  const SizedBox(width: 8),
-                  Expanded(
-                      child: DateField(
-                          label: 'To date',
-                          value: _to,
-                          onChanged: (d) {
-                            setState(() => _to = d);
-                            _reload();
-                          })),
-                ]),
-                const SizedBox(height: 8),
-                AppSelect<String>(
-                  label: 'All movement types',
-                  value: _type,
-                  options: [for (final e in _movementLabels.entries) Option(e.key, e.value)],
-                  onChanged: (o) {
-                    setState(() => _type = o?.value);
-                    _reload();
-                  },
-                ),
-                const SizedBox(height: 8),
-                AppTextField(label: 'Document / reference no.', controller: _ref, onChanged: (_) => _reload()),
-                const SizedBox(height: 8),
-                AppTextField(label: 'Vendor', controller: _vendor, onChanged: (_) => _reload()),
-                const SizedBox(height: 8),
-                AppSelect<int>(
-                  label: 'All users',
-                  value: _user,
-                  options: idLabelOptions(_users),
-                  onChanged: (o) {
-                    setState(() => _user = o?.value);
-                    _reload();
-                  },
-                ),
-              ]),
-            ),
         ]),
         itemBuilder: (ctx, t, reload) {
           final type = t['transaction_type']?.toString() ?? '';

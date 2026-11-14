@@ -5,6 +5,7 @@ Reading (list + resolve) is open to CRM and Service users — each of them
 prices something. Maintaining the records is the feature CRM › Products ›
 Pricing (create / edit / delete in the Permission Matrix); it needs no other
 tab than Products (moved from Sales on 2026-10-30)."""
+from app.core.like import like_escape
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -73,15 +74,15 @@ async def lookup_items(kind: str = "product", search: str = "", db: Session = De
     from sqlalchemy import or_
     from app.modules.products.models.product import FinishedProduct
     from app.modules.store.models.item import StoreItem
-    like = f"%{search.strip()}%" if search.strip() else None
+    like = f"%{like_escape(search.strip())}%" if search.strip() else None
     if kind == "spare":
         q = db.query(StoreItem).filter(StoreItem.status == "active")
         if like:
-            q = q.filter(or_(StoreItem.item_code.ilike(like), StoreItem.item_name.ilike(like)))
+            q = q.filter(or_(StoreItem.item_code.ilike(like, escape="\\"), StoreItem.item_name.ilike(like, escape="\\")))
         return [{"id": r.id, "label": f"{r.item_code} — {r.item_name}", "uom": r.uom} for r in q.order_by(StoreItem.item_name).limit(40).all()]
     q = db.query(FinishedProduct).filter(FinishedProduct.status != "discontinued")
     if like:
-        q = q.filter(or_(FinishedProduct.code.ilike(like), FinishedProduct.name.ilike(like), FinishedProduct.model_number.ilike(like)))
+        q = q.filter(or_(FinishedProduct.code.ilike(like, escape="\\"), FinishedProduct.name.ilike(like, escape="\\"), FinishedProduct.model_number.ilike(like, escape="\\")))
     return [{"id": p.id, "label": f"{p.code} — {p.name}", "uom": p.uom} for p in q.order_by(FinishedProduct.name).limit(200).all()]
 
 

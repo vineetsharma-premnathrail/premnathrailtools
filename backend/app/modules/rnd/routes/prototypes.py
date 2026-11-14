@@ -1,3 +1,4 @@
+from app.core.like import like_escape
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
@@ -115,8 +116,8 @@ async def list_prototypes(
     if status_filter:
         query = query.filter(RndPrototype.status == status_filter)
     if search:
-        like = f"%{search}%"
-        query = query.filter((RndPrototype.name.ilike(like)) | (RndPrototype.prototype_number.ilike(like)))
+        like = f"%{like_escape(search)}%"
+        query = query.filter((RndPrototype.name.ilike(like, escape="\\")) | (RndPrototype.prototype_number.ilike(like, escape="\\")))
     return [_masked(_to_response(db, p), user) for p in query.order_by(RndPrototype.created_at.desc()).all()]
 
 

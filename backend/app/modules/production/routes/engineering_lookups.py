@@ -2,6 +2,7 @@
 operations, sales order lines on work orders, job-work challans, Design
 documents on document BOM lines). Served under the Production permission
 for the same reason as routes/lookups.py."""
+from app.core.like import like_escape
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
@@ -20,8 +21,8 @@ async def lookup_vendors(search: str | None = None, limit: int = Query(200, ge=1
     from app.modules.accounts.models.vendor import Vendor
     q = db.query(Vendor).filter(Vendor.status == "active")
     if search:
-        like = f"%{search.strip()}%"
-        q = q.filter(Vendor.name.ilike(like) | Vendor.code.ilike(like))
+        like = f"%{like_escape(search.strip())}%"
+        q = q.filter(Vendor.name.ilike(like, escape="\\") | Vendor.code.ilike(like, escape="\\"))
     return [ProductionLookupOption(id=v.id, label=f"{v.code} — {v.name}", code=v.code) for v in q.order_by(Vendor.name).limit(limit).all()]
 
 
@@ -61,7 +62,7 @@ async def lookup_design_documents(search: str | None = None, db: Session = Depen
     from app.modules.design.models.document import DesignDocument
     q = db.query(DesignDocument).filter(DesignDocument.is_deleted == False, DesignDocument.status != "obsolete")  # noqa: E712
     if search:
-        like = f"%{search.strip()}%"
-        q = q.filter(DesignDocument.doc_number.ilike(like) | DesignDocument.title.ilike(like))
+        like = f"%{like_escape(search.strip())}%"
+        q = q.filter(DesignDocument.doc_number.ilike(like, escape="\\") | DesignDocument.title.ilike(like, escape="\\"))
     return [ProductionLookupOption(id=d.id, label=f"{d.doc_number} — {d.title}", code=d.doc_number)
             for d in q.order_by(DesignDocument.doc_number).limit(500).all()]

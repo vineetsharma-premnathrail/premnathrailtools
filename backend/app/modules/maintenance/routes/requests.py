@@ -1,3 +1,4 @@
+from app.core.like import like_escape
 from datetime import date
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
@@ -124,10 +125,10 @@ async def list_requests(
         if branch_id:
             query = query.filter(MaintenanceAsset.branch_id == branch_id)
         if search:
-            like = f"%{search}%"
+            like = f"%{like_escape(search)}%"
             query = query.filter(
-                (MaintenanceRequest.request_number.ilike(like)) | (MaintenanceRequest.problem_description.ilike(like))
-                | (MaintenanceAsset.asset_code.ilike(like)) | (MaintenanceAsset.name.ilike(like))
+                (MaintenanceRequest.request_number.ilike(like, escape="\\")) | (MaintenanceRequest.problem_description.ilike(like, escape="\\"))
+                | (MaintenanceAsset.asset_code.ilike(like, escape="\\")) | (MaintenanceAsset.name.ilike(like, escape="\\"))
             )
     query = apply_scope(query, user, MaintenanceRequest)
     return [_to_response(db, r, user) for r in query.order_by(MaintenanceRequest.reported_at.desc()).all()]

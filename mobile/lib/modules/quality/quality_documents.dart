@@ -99,7 +99,7 @@ class _DocumentsTabState extends State<DocumentsTab> {
               final picked = await Files.pickFiles();
               if (picked.isNotEmpty) setS(() => files = [...files, ...picked]);
             } catch (e) {
-              if (ctx.mounted) showSnack(ctx, 'Could not read the file: $e', error: true);
+              if (ctx.mounted) showSnack(ctx, 'Could not read the file. ${ApiClient.describe(e)}', error: true);
             }
           }, icon: Icons.attach_file_rounded),
           secondaryBtn('Take photo', () async {

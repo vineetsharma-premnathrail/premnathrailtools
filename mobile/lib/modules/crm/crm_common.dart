@@ -46,29 +46,8 @@ class CrmPerm {
 
 // ── Errors ───────────────────────────────────────────────────────────────────
 
-/// The server's own reason, including FastAPI validation lists (422).
-String crmError(Object e) {
-  if (e is String) return e;
-  if (e is DioException) {
-    final data = e.response?.data;
-    final detail = data is Map ? data['detail'] : null;
-    if (detail is List) {
-      final msgs = <String>[];
-      for (final d in detail) {
-        if (d is Map) {
-          var m = (d['msg'] ?? '').toString().replaceFirst('Value error, ', '');
-          final loc = d['loc'];
-          if (loc is List && loc.length > 1 && !m.contains(' ')) m = '${loc.last}: $m';
-          if (m.isNotEmpty) msgs.add(m);
-        } else if (d != null) {
-          msgs.add(d.toString());
-        }
-      }
-      if (msgs.isNotEmpty) return msgs.join('\n');
-    }
-  }
-  return ApiClient.describe(e);
-}
+/// The server's own reason in plain words (app-wide wording, incl. 422 lists).
+String crmError(Object e) => ApiClient.describe(e);
 
 /// Runs an API call and turns its failure into the readable reason (for showFormSheet).
 Future<T> guard<T>(Future<T> Function() fn) async {
@@ -241,7 +220,7 @@ class CrmLists {
   /// India first, every other country A-Z, 'Other' last.
   static final countries = ['India', ...(List<String>.of(_world)..sort()), 'Other'];
 
-  static const leadSources = ['Website', 'WhatsApp', 'Referral', 'Phone Call', 'Email', 'Walk-in', 'LinkedIn', 'Exhibition/Event', 'Other'];
+  static const leadSources = ['Website', 'WhatsApp', 'Referral', 'Phone Call', 'Email', 'Visiting', 'LinkedIn', 'Exhibition/Event', 'Other'];
 
   static const priorities = ['standard', 'urgent'];
   static String priorityLabel(Object? p) {

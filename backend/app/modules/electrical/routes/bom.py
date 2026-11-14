@@ -2,6 +2,7 @@
 every line that still has to be bought. Linking a line to a P2P purchase
 requisition only stores the pointer — the PR itself is raised and processed
 in Procurement as usual."""
+from app.core.like import like_escape
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
@@ -341,10 +342,10 @@ async def list_purchase_requirements(
     if category:
         query = query.filter(ElectricalBomItem.category == category)
     if search:
-        like = f"%{search}%"
+        like = f"%{like_escape(search)}%"
         query = query.filter(
-            ElectricalBomItem.description.ilike(like) | ElectricalBomItem.part_number.ilike(like)
-            | ElectricalBomItem.make.ilike(like) | ElectricalJob.job_number.ilike(like)
+            ElectricalBomItem.description.ilike(like, escape="\\") | ElectricalBomItem.part_number.ilike(like, escape="\\")
+            | ElectricalBomItem.make.ilike(like, escape="\\") | ElectricalJob.job_number.ilike(like, escape="\\")
         )
     items = query.order_by(ElectricalJob.job_number, ElectricalBomItem.line_no).all()
     return _to_responses(db, items, _tab, with_job=True)

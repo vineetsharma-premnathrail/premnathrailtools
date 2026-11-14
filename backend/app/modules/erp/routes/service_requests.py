@@ -1,3 +1,4 @@
+from app.core.like import like_escape
 from datetime import date, datetime, timezone, timedelta
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Query, Request, UploadFile, File
 from sqlalchemy import func
@@ -49,7 +50,7 @@ from pydantic import BaseModel
 from fastapi.responses import Response
 from app.utils.sharepoint import (
     upload_file_to_sharepoint, build_sharepoint_folder_path, delete_file_from_sharepoint,
-    get_preview_url, download_file_content,
+    get_preview_url, download_file_content, download_thumbnail,
 )
 from app.utils.email import send_client_sr_email, send_team_sr_notification, send_purchase_requisition_email
 from app.utils.notifications import broadcast_notification, notify_user
@@ -462,14 +463,14 @@ async def list_service_requests(
     query = apply_scope(query, _user, ServiceRequest)
 
     if search:
-        like = f"%{search}%"
+        like = f"%{like_escape(search)}%"
         query = query.outerjoin(Project, ServiceRequest.project_id == Project.id).filter(
-            ServiceRequest.request_number.ilike(like)
-            | ServiceRequest.issue_title.ilike(like)
-            | ServiceRequest.issue_description.ilike(like)
-            | ServiceRequest.issue_category.ilike(like)
-            | Project.serial_number.ilike(like)
-            | Project.client_name.ilike(like)
+            ServiceRequest.request_number.ilike(like, escape="\\")
+            | ServiceRequest.issue_title.ilike(like, escape="\\")
+            | ServiceRequest.issue_description.ilike(like, escape="\\")
+            | ServiceRequest.issue_category.ilike(like, escape="\\")
+            | Project.serial_number.ilike(like, escape="\\")
+            | Project.client_name.ilike(like, escape="\\")
         )
     if status:
         query = query.filter(ServiceRequest.status == status)
@@ -1252,6 +1253,35 @@ async def preview_service_request_attachment(
 
     get_url = await get_preview_url(settings.SHAREPOINT_SITE_ID, attachment.sharepoint_path or "")
     return {"getUrl": get_url}
+
+
+@router.get("/{sr_id}/attachments/{attachment_id}/thumbnail")
+async def get_service_request_attachment_thumbnail(
+    sr_id: int,
+    attachment_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_app_access("erp")),
+    _tab: User = Depends(require_feature_action("erp", "service_requests", "attachments", "view")),
+):
+    """Small preview image for the Attachments list (photo, video frame, first
+    page of a PDF / Word / Excel file), rendered by SharePoint."""
+    ensure_in_scope(db, _user, db.get(ServiceRequest, sr_id))
+    attachment = db.query(ServiceRequestAttachment).join(
+        ServiceRequest, ServiceRequest.id == ServiceRequestAttachment.service_request_id
+    ).filter(
+        ServiceRequestAttachment.id == attachment_id, ServiceRequestAttachment.service_request_id == sr_id,
+        ServiceRequest.is_deleted == False,  # noqa: E712
+    ).first()
+    if not attachment:
+        raise HTTPException(status_code=404, detail=_SR_ATTACHMENT_NOT_FOUND)
+    if not settings.SHAREPOINT_SITE_ID:
+        raise HTTPException(status_code=503, detail=_SHAREPOINT_MISSING)
+
+    thumb = await download_thumbnail(settings.SHAREPOINT_SITE_ID, attachment.sharepoint_path or "")
+    if not thumb:
+        raise HTTPException(status_code=404, detail="No thumbnail for this file yet — SharePoint cannot draw one for this format, or a new video is still being processed. Open the file to view it.")
+    content, content_type = thumb
+    return Response(content=content, media_type=content_type)
 
 
 @router.delete("/{sr_id}/attachments/{attachment_id}")

@@ -1,4 +1,4 @@
-// CRM › Sales Library (/crm/library): folders, documents, versions, links, favourites, share.
+// CRM › Knowledge Hub (/crm/library): folders, documents, versions, links, favourites, share.
 // Kept in its own file so the shared api.ts is untouched. Contract: docs/agent-runs/2026-11-12-sales-library/spec.md §3.
 import { apiClient } from '@/lib/api'
 import { uploadToSession, type UploadSession } from '@/lib/largeUpload'
@@ -196,7 +196,7 @@ export const salesLibraryApi = {
     return norm(data)
   },
 
-  /** Search-as-you-type pickers for the link fields (View on the Sales Library is enough). `q` filters on the server; at most 50 rows. */
+  /** Search-as-you-type pickers for the link fields (View on the Knowledge Hub is enough). `q` filters on the server; at most 50 rows. */
   pick: async (kind: 'product' | 'project' | 'organization', q = ''): Promise<{ id: number; code: string; name: string }[]> => {
     const path = kind === 'product' ? 'products' : kind === 'project' ? 'projects' : 'organizations'
     const { data } = await apiClient.get(`/crm/library/pickers/${path}`, { params: { ...(q ? { q } : {}), limit: 50 } })

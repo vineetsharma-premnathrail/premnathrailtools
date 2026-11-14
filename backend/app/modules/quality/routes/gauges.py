@@ -1,6 +1,7 @@
 """Quality › Gauges — test equipment register and calibration history
 (QM-IM). Maintained under the Masters tab permissions; the list is also
 readable by anyone who records inspection results (the gauge picker)."""
+from app.core.like import like_escape
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -135,10 +136,10 @@ async def list_gauges(
     if status:
         q = q.filter(QualityGauge.status == status)
     if gauge_type:
-        q = q.filter(QualityGauge.gauge_type.ilike(f"%{gauge_type}%"))
+        q = q.filter(QualityGauge.gauge_type.ilike(f"%{like_escape(gauge_type)}%", escape="\\"))
     if search:
-        like = f"%{search.strip()}%"
-        q = q.filter(QualityGauge.code.ilike(like) | QualityGauge.name.ilike(like) | QualityGauge.serial_number.ilike(like))
+        like = f"%{like_escape(search.strip())}%"
+        q = q.filter(QualityGauge.code.ilike(like, escape="\\") | QualityGauge.name.ilike(like, escape="\\") | QualityGauge.serial_number.ilike(like, escape="\\"))
     out = [_resp(g) for g in q.order_by(QualityGauge.code).all()]
     return [r for r in out if r.usable] if usable_only else out
 

@@ -6,6 +6,7 @@ link to one of their own approved trips) → submits → their reporting manager
 (or HR, when there is no manager) approves or rejects → HR records payment.
 A rejected claim can be edited and submitted again. Nobody decides their own
 claim, and HR cannot record payment of their own claim."""
+from app.core.like import like_escape
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile
@@ -299,9 +300,9 @@ async def list_claims(
     if date_to:
         q = q.filter(HrExpenseClaim.claim_date <= date_to)
     if search and search.strip():
-        term = f"%{search.strip()}%"
-        uids = [u.id for u in db.query(User.id).filter(or_(User.name.ilike(term), User.email.ilike(term))).all()]
-        conds = [HrExpenseClaim.claim_no.ilike(term), HrExpenseClaim.title.ilike(term), HrExpenseClaim.payment_reference.ilike(term)]
+        term = f"%{like_escape(search.strip())}%"
+        uids = [u.id for u in db.query(User.id).filter(or_(User.name.ilike(term, escape="\\"), User.email.ilike(term, escape="\\"))).all()]
+        conds = [HrExpenseClaim.claim_no.ilike(term, escape="\\"), HrExpenseClaim.title.ilike(term, escape="\\"), HrExpenseClaim.payment_reference.ilike(term, escape="\\")]
         if uids:
             conds.append(HrExpenseClaim.user_id.in_(uids))
         q = q.filter(or_(*conds))

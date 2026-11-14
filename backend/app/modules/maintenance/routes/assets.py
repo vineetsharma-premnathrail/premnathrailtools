@@ -1,3 +1,4 @@
+from app.core.like import like_escape
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
@@ -172,10 +173,10 @@ async def list_assets(
     if criticality:
         query = query.filter(MaintenanceAsset.criticality == criticality)
     if search:
-        like = f"%{search}%"
+        like = f"%{like_escape(search)}%"
         query = query.filter(
-            (MaintenanceAsset.asset_code.ilike(like)) | (MaintenanceAsset.name.ilike(like))
-            | (MaintenanceAsset.serial_number.ilike(like)) | (MaintenanceAsset.location_text.ilike(like))
+            (MaintenanceAsset.asset_code.ilike(like, escape="\\")) | (MaintenanceAsset.name.ilike(like, escape="\\"))
+            | (MaintenanceAsset.serial_number.ilike(like, escape="\\")) | (MaintenanceAsset.location_text.ilike(like, escape="\\"))
         )
     return [_to_response(db, a) for a in query.order_by(MaintenanceAsset.asset_code).all()]
 

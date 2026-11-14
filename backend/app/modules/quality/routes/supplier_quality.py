@@ -1,6 +1,7 @@
 """Supplier quality: approved vendor list, monthly vendor rating, escalation
 (Partner block approval) and vendor audits. Rules live in
 services/supplier_quality.py."""
+from app.core.like import like_escape
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -121,9 +122,9 @@ async def list_avl(status_filter: str | None = Query(None, alias="status"), item
     if pending_only:
         q = q.filter(QualityApprovedVendor.pending_action.isnot(None))
     if search:
-        like = f"%{search.lower()}%"
-        ids = [i for (i,) in db.query(StoreItem.id).filter(func.lower(StoreItem.item_name).like(like) | func.lower(StoreItem.item_code).like(like)).all()]
-        q = q.filter(QualityApprovedVendor.vendor_key.like(like) | QualityApprovedVendor.item_id.in_(ids))
+        like = f"%{like_escape(search.lower())}%"
+        ids = [i for (i,) in db.query(StoreItem.id).filter(func.lower(StoreItem.item_name).like(like, escape="\\") | func.lower(StoreItem.item_code).like(like, escape="\\")).all()]
+        q = q.filter(QualityApprovedVendor.vendor_key.like(like, escape="\\") | QualityApprovedVendor.item_id.in_(ids))
     return _avl_responses(db, q.order_by(QualityApprovedVendor.vendor_key, QualityApprovedVendor.item_id).all())
 
 

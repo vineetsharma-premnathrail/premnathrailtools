@@ -2,6 +2,7 @@
 calendar. Work-order generation itself lives in service.generate_pm_work_order
 so the daily scheduler (tasks/maintenance_pm_scheduler.py) and the button
 here run exactly the same code."""
+from app.core.like import like_escape
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -352,10 +353,10 @@ async def list_pm_plans(
         if branch_id:
             q = q.filter(MaintenanceAsset.branch_id == branch_id)
         if search:
-            like = f"%{search.strip()}%"
+            like = f"%{like_escape(search.strip())}%"
             q = q.filter(
-                (MaintenancePmPlan.plan_code.ilike(like)) | (MaintenancePmPlan.title.ilike(like))
-                | (MaintenanceAsset.asset_code.ilike(like)) | (MaintenanceAsset.name.ilike(like))
+                (MaintenancePmPlan.plan_code.ilike(like, escape="\\")) | (MaintenancePmPlan.title.ilike(like, escape="\\"))
+                | (MaintenanceAsset.asset_code.ilike(like, escape="\\")) | (MaintenanceAsset.name.ilike(like, escape="\\"))
             )
     plans = apply_scope(q, user, MaintenancePmPlan).order_by(MaintenancePmPlan.next_due_date, MaintenancePmPlan.plan_code).all()
     ctx = _list_context(db, plans)

@@ -3,6 +3,7 @@ manual action: naming which unit of a partly-accepted Quality lot passed or
 failed. Every other status change happens on the document that moves the unit
 (GRN, inspection, issue, return, transfer, return to vendor) — see
 services/serials.py."""
+from app.core.like import like_escape
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 from sqlalchemy import or_
@@ -71,10 +72,10 @@ async def list_serials(
     if location_id is not None:
         query = query.filter(StoreSerialNumber.location_id == location_id)
     if q and q.strip():
-        like = f"%{q.strip()}%"
+        like = f"%{like_escape(q.strip())}%"
         query = query.join(StoreItem, StoreItem.id == StoreSerialNumber.item_id).filter(or_(
-            StoreSerialNumber.serial_no.ilike(like), StoreItem.item_code.ilike(like), StoreItem.item_name.ilike(like),
-            StoreSerialNumber.issued_to.ilike(like), StoreSerialNumber.vendor_name.ilike(like)))
+            StoreSerialNumber.serial_no.ilike(like, escape="\\"), StoreItem.item_code.ilike(like, escape="\\"), StoreItem.item_name.ilike(like, escape="\\"),
+            StoreSerialNumber.issued_to.ilike(like, escape="\\"), StoreSerialNumber.vendor_name.ilike(like, escape="\\")))
     total = query.count()
     response.headers["X-Total-Count"] = str(total)
     rows = query.order_by(StoreSerialNumber.id.desc()).offset(skip).limit(limit).all()

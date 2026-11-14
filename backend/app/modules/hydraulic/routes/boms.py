@@ -1,3 +1,4 @@
+from app.core.like import like_escape
 import csv
 import io
 from datetime import datetime, timezone
@@ -149,8 +150,8 @@ async def list_boms(
     if status_filter:
         query = query.filter(HydBom.status == status_filter)
     if search:
-        like = f"%{search}%"
-        query = query.filter(HydBom.bom_number.ilike(like) | HydBom.title.ilike(like))
+        like = f"%{like_escape(search)}%"
+        query = query.filter(HydBom.bom_number.ilike(like, escape="\\") | HydBom.title.ilike(like, escape="\\"))
     return _shown(_to_responses(db, query.order_by(HydBom.id.desc()).all()), _tab)
 
 

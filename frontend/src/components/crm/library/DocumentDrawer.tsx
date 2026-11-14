@@ -84,7 +84,7 @@ export default function DocumentDrawer({ docId, folders, onClose, onChanged, onN
     if (!path) { setError('This document has no shareable link yet. Reload the page and try again.'); return }
     try {
       await navigator.clipboard.writeText(`${window.location.origin}${path}`)
-      onNotice('Link copied — anyone who can open the Sales Library can use it.')
+      onNotice('Link copied — anyone who can open the Knowledge Hub can use it.')
     } catch {
       setError('The link could not be copied (the browser blocked it). Copy the address from the browser bar instead.')
     }
@@ -204,7 +204,7 @@ export default function DocumentDrawer({ docId, folders, onClose, onChanged, onN
           onDone={(saved, complete) => { if (complete) { setSheet(null); onNotice(`Version ${saved[saved.length - 1]?.current_version_no ?? doc.current_version_no + 1} uploaded.`) } setPreviewVersion(undefined); load(); onChanged() }} />
       )}
       <ConfirmDialog open={confirmDelete} title="Delete document?"
-        message={doc ? `“${doc.title}” and all ${doc.versions?.length ?? doc.current_version_no} of its versions will be removed from the Sales Library. This can't be undone from here.` : ''}
+        message={doc ? `“${doc.title}” and all ${doc.versions?.length ?? doc.current_version_no} of its versions will be removed from the Knowledge Hub. This can't be undone from here.` : ''}
         onConfirm={remove} onCancel={() => setConfirmDelete(false)} />
     </>,
     document.body,

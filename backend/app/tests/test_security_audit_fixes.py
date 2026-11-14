@@ -14,7 +14,6 @@ import io
 from types import SimpleNamespace
 
 import pytest
-from fastapi import HTTPException
 
 from app.auth.jwt_handler import create_access_token
 from app.modules.main.models.user import User
@@ -45,12 +44,18 @@ def _upload(name, content_type, data=b"hello"):
 @pytest.mark.parametrize("content_type", [
     "text/html; charset=utf-8", "TEXT/HTML", "text/xml", "application/xml", "application/javascript",
 ])
-def test_upload_with_html_or_xml_content_type_is_rejected(content_type):
-    """A '.txt' (allowed extension, no signature check) sent as HTML/XML used
-    to pass and was then served back inline with that type."""
-    with pytest.raises(HTTPException) as exc:
-        _validate_uploaded_file(_upload("notes.txt", content_type))
-    assert exc.value.status_code == 400 and "not allowed" in exc.value.detail
+def test_upload_with_html_or_xml_content_type_is_accepted_but_served_as_text(content_type):
+    """Owner decision 2026-11-12: every format may be uploaded. The guard is on
+    download: a '.txt' claimed as HTML/XML/JS is served back as plain text, so
+    its script can never run (app/middleware/file_safety.py)."""
+    from starlette.datastructures import MutableHeaders
+    from app.middleware.file_safety import harden_file_response
+    assert _validate_uploaded_file(_upload("notes.txt", content_type)) == 5
+    h = MutableHeaders()
+    h["content-type"] = content_type
+    h["content-disposition"] = 'inline; filename="notes.txt"'
+    harden_file_response("/api/v1/crm/documents/1/download", h)
+    assert h["content-type"] == "text/plain; charset=utf-8"
 
 
 def test_plain_text_upload_still_allowed():

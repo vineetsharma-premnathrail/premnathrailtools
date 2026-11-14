@@ -64,6 +64,7 @@ export default function BeforePOReceiptDetail({ receipt, canCancel, onClose, onC
               <Fact label="Store location">{receipt.store_location_name}</Fact>
               <Fact label="Delivery challan no.">{receipt.delivery_challan_number}</Fact>
               <Fact label="Vendor invoice no.">{receipt.vendor_invoice_number}</Fact>
+              <Fact label="PO no. (not in portal)">{receipt.manual_po_number ? `${receipt.manual_po_number}${receipt.manual_po_date ? ` dt. ${formatDate(receipt.manual_po_date)}` : ''}` : null}</Fact>
               <Fact label="Recorded by">{receipt.created_by_name}</Fact>
               <Fact label="Purchase request">{prLink ? <Link href={prLink} style={{ color: '#2563eb' }}>{receipt.p2p_number}</Link> : receipt.p2p_number}</Fact>
               <Fact label="Purchase order">{receipt.po_number ? `${receipt.po_number}${receipt.po_status ? ` · ${receipt.po_status.replace(/_/g, ' ')}` : ''}` : null}</Fact>

@@ -15,6 +15,7 @@ Every (asset, kind) pair falls in one bucket:
 Shared by routes/contracts.py and tasks/maintenance_amc_reminders.py."""
 from __future__ import annotations
 
+from app.core.like import like_escape
 from datetime import date
 
 from sqlalchemy import or_
@@ -77,8 +78,8 @@ def build_contract_rows(
     if branch_id:
         q = q.filter(MaintenanceAsset.branch_id == branch_id)
     if search and search.strip():
-        like = f"%{search.strip()}%"
-        q = q.filter(or_(MaintenanceAsset.asset_code.ilike(like), MaintenanceAsset.name.ilike(like)))
+        like = f"%{like_escape(search.strip())}%"
+        q = q.filter(or_(MaintenanceAsset.asset_code.ilike(like, escape="\\"), MaintenanceAsset.name.ilike(like, escape="\\")))
     assets = q.all()
     if not assets:
         return []

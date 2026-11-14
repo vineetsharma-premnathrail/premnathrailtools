@@ -4,6 +4,7 @@ Owner: Agent A. Every endpoint here is HR-management only
 (`Depends(require_hr)`). Masters are never hard-deleted while something
 still points at them — the DELETE endpoints refuse with a 409 that says what
 uses the row and suggests deactivating instead."""
+from app.core.like import like_escape
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -112,8 +113,8 @@ async def list_grades(
     if not include_inactive:
         q = q.filter(HrGrade.is_active.is_(True))
     if search and search.strip():
-        like = f"%{search.strip()}%"
-        q = q.filter(or_(HrGrade.code.ilike(like), HrGrade.name.ilike(like)))
+        like = f"%{like_escape(search.strip())}%"
+        q = q.filter(or_(HrGrade.code.ilike(like, escape="\\"), HrGrade.name.ilike(like, escape="\\")))
     counts = _count_by(db, HrEmployeeProfile.grade_id)
     return [_grade_response(g, counts) for g in q.order_by(HrGrade.level, HrGrade.code).all()]
 
@@ -235,8 +236,8 @@ async def list_designations(
     if department_id:
         q = q.filter(HrDesignation.department_id == department_id)
     if search and search.strip():
-        like = f"%{search.strip()}%"
-        q = q.filter(or_(HrDesignation.name.ilike(like), HrDesignation.code.ilike(like)))
+        like = f"%{like_escape(search.strip())}%"
+        q = q.filter(or_(HrDesignation.name.ilike(like, escape="\\"), HrDesignation.code.ilike(like, escape="\\")))
     counts = _count_by(db, HrEmployeeProfile.designation_id)
     depts = {d.id: d.name for d in db.query(Department).all()}
     grades = {g.id: g for g in db.query(HrGrade).all()}
@@ -355,8 +356,8 @@ async def list_shifts(
     if branch_id:
         q = q.filter(or_(HrShift.branch_id == branch_id, HrShift.branch_id.is_(None)))
     if search and search.strip():
-        like = f"%{search.strip()}%"
-        q = q.filter(or_(HrShift.code.ilike(like), HrShift.name.ilike(like)))
+        like = f"%{like_escape(search.strip())}%"
+        q = q.filter(or_(HrShift.code.ilike(like, escape="\\"), HrShift.name.ilike(like, escape="\\")))
     counts = _count_by(db, HrEmployeeProfile.shift_id)
     branches = {b.id: b.name for b in db.query(Branch).all()}
     return [_shift_response(s, counts, branches) for s in q.order_by(HrShift.start_time, HrShift.code).all()]

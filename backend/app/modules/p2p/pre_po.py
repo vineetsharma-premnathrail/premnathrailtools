@@ -364,6 +364,7 @@ def receipt_to_response(db: Session, receipt: StorePrePoReceipt):
         received_date=receipt.received_date, store_location_id=receipt.store_location_id,
         store_location_name=location.name if location else None,
         delivery_challan_number=receipt.delivery_challan_number, delivery_challan_date=receipt.delivery_challan_date, vendor_invoice_number=receipt.vendor_invoice_number, vendor_invoice_date=receipt.vendor_invoice_date,
+        manual_po_number=receipt.manual_po_number, manual_po_date=receipt.manual_po_date,
         remarks=receipt.remarks, status=receipt.status, p2p_request_id=receipt.p2p_request_id,
         p2p_number=pr.p2p_number if pr else None, purchase_order_id=receipt.purchase_order_id,
         po_number=po.po_number if po else None, po_status=po.status if po else None,

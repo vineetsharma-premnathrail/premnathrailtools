@@ -1,6 +1,6 @@
 'use client'
 
-// Product detail › Sales resources: the Sales Library documents linked to this product, grouped by folder.
+// Product detail › Sales resources: the Knowledge Hub documents linked to this product, grouped by folder.
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -25,7 +25,7 @@ export default function ProductSalesResources({ product }: { product: { id: numb
     salesLibraryApi.productResources(product.id)
       .then((g) => { if (live) { setGroups(g); setError('') } })
       .catch(async (err) => {
-        // No Sales Library access: the section simply is not shown.
+        // No Knowledge Hub access: the section simply is not shown.
         if ((err as { response?: { status?: number } })?.response?.status === 403) { if (live) setHidden(true); return }
         if (live) setError(await errorText(err, 'The sales resources could not be loaded. Reload the page and try again.')) })
     return () => { live = false }
@@ -42,14 +42,14 @@ export default function ProductSalesResources({ product }: { product: { id: numb
     <Section title="Sales resources" style={{ marginBottom: 16 }}>
       <div data-tour="prod-sales-resources" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
         <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>
-          Catalogues, videos, price lists and other material linked to this product in the Sales Library.
+          Catalogues, videos, price lists and other material linked to this product in the Knowledge Hub.
         </p>
-        <button type="button" style={smallSecondaryBtnStyle} onClick={() => router.push(libraryHref)}>Open in Sales Library</button>
+        <button type="button" style={smallSecondaryBtnStyle} onClick={() => router.push(libraryHref)}>Open in Knowledge Hub</button>
       </div>
       {error && <p role="alert" style={{ fontSize: 13, color: '#b91c1c', margin: 0 }}>{error}</p>}
       {!error && groups === null && <p role="status" style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>Loading…</p>}
       {groups !== null && all.length === 0 && (
-        <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>Nothing is linked to this product yet. Upload a file in the Sales Library and link it to this product (or upload into a folder linked to it).</p>
+        <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>Nothing is linked to this product yet. Upload a file in the Knowledge Hub and link it to this product (or upload into a folder linked to it).</p>
       )}
       {all.length > 0 && (
         <>

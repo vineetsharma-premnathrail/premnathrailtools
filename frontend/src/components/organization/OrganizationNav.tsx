@@ -1,6 +1,6 @@
 'use client'
 
-import { ArrowsLeftRight, Buildings, CheckSquare, ClockCounterClockwise, FlowArrow, Gauge, GridFour, Lock, MapTrifold, Pulse, ShieldCheck, Users, Warning } from '@phosphor-icons/react'
+import { ArrowsLeftRight, Buildings, CheckSquare, ClockCounterClockwise, DeviceMobile, FlowArrow, Gauge, GridFour, Lock, MapTrifold, Pulse, ShieldCheck, Users, Warning } from '@phosphor-icons/react'
 import type { Icon } from '@phosphor-icons/react'
 import Link from 'next/link'
 import { navScrollRef } from '@/components/shared/navScroll'
@@ -24,6 +24,8 @@ const TABS = [
   { href: '/dashboard/organization/access-risk', label: 'Access Risk (SoD)', icon: 'alert', subtabKey: 'grc' },
   { href: '/dashboard/organization/monitor', label: 'System Monitor', icon: 'activity', subtabKey: 'monitor' },
   { href: '/dashboard/organization/cockpit', label: 'Cockpit', icon: 'chart', subtabKey: 'cockpit' },
+  // Portal admins only (publishes Android app versions); no role permission key.
+  { href: '/dashboard/organization/mobile-app', label: 'Mobile App', icon: 'phone', adminOnly: true },
   // My Approvals is its own Sidebar entry (/dashboard/approvals), not a tab here.
 ] as const
 
@@ -41,6 +43,7 @@ const TAB_ICONS: Record<string, Icon> = {
   alert: Warning,
   activity: Pulse,
   chart: Gauge,
+  phone: DeviceMobile,
 }
 
 function TabIcon({ name }: { name: string }) {
@@ -52,6 +55,7 @@ export default function OrganizationNav() {
   const pathname = usePathname()
   const { user } = useAuth()
   const visibleTabs = filterTabsByAccess('organization', TABS, user)
+    .filter((tab) => !('adminOnly' in tab) || user?.role === 'admin')
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, borderBottom: '1px solid rgba(0,0,0,0.08)' }}>

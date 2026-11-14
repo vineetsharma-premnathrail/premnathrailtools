@@ -65,16 +65,20 @@ class _ItemsTabState extends State<ItemsTab> {
     _list.currentState?.reload();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final catOptions = _cats
-        .where((c) => c['parent_id'] == null && c['item_type'] != null && (_type == null || c['item_type'] == _type))
-        .toList();
+  List<Json> _catOptions() => _cats
+      .where((c) => c['parent_id'] == null && c['item_type'] != null && (_type == null || c['item_type'] == _type))
+      .toList();
+
+  List<Json> _subOptions(List<Json> cats) {
     Json? picked;
-    for (final c in catOptions) {
+    for (final c in cats) {
       if (c['name'] == _category) picked = c;
     }
-    final subOptions = picked == null ? <Json>[] : _cats.where((c) => c['parent_id'] == picked!['id']).toList();
+    return picked == null ? <Json>[] : _cats.where((c) => c['parent_id'] == picked!['id']).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final hasFilters = _search.isNotEmpty || _type != null || _category != null || _subcategory != null;
     return Scaffold(
       floatingActionButton: can('items', 'create')
@@ -102,69 +106,66 @@ class _ItemsTabState extends State<ItemsTab> {
         },
         emptyText:
             hasFilters ? 'No items match these filters.' : 'No items yet — use + Add Item to create the first one.',
-        header: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          if (can('items', 'export') || can('items', 'import'))
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: Wrap(spacing: 8, children: [
-                if (can('items', 'export'))
-                  PillButton('Export',
-                      icon: Icons.download_rounded,
-                      onPressed: () => openApiFile(context, '/store/items/export',
-                          'item_master${_type != null ? '_$_type' : ''}_${todayIso()}.xlsx',
-                          query: _filters)),
-                if (can('items', 'import'))
-                  PillButton('Import', icon: Icons.upload_file_rounded, onPressed: () => _import(context)),
-              ]),
+        header: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
+            FilterButton(
+              active: countSet([_type, _category, _subcategory]),
+              onClear: () => _set(() {
+                _type = null;
+                _category = null;
+                _subcategory = null;
+              }),
+              builder: (ctx, setS) {
+                final cats = _catOptions();
+                final subs = _subOptions(cats);
+                void upd(VoidCallback f) {
+                  _set(f);
+                  setS(() {});
+                }
+
+                return [
+                  AppSelect<String>(
+                    label: 'All Types',
+                    value: _type,
+                    options: valueLabelOptions(_meta['item_types']),
+                    onChanged: (o) => upd(() {
+                      _type = o?.value;
+                      _category = null;
+                      _subcategory = null;
+                    }),
+                  ),
+                  // Type → Category → Subcategory: each step appears once the one before it is picked.
+                  if (_type != null)
+                    AppSelect<String>(
+                      label: 'All Categories',
+                      value: _category,
+                      options: [for (final c in cats) Option(c['name'].toString(), txt(c['name']))],
+                      onChanged: (o) => upd(() {
+                        _category = o?.value;
+                        _subcategory = null;
+                      }),
+                    ),
+                  if (subs.isNotEmpty)
+                    AppSelect<String>(
+                      label: 'All Subcategories',
+                      value: _subcategory,
+                      options: [for (final c in subs) Option(c['name'].toString(), txt(c['name']))],
+                      onChanged: (o) => upd(() => _subcategory = o?.value),
+                    ),
+                ];
+              },
             ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              AppSelect<String>(
-                label: 'All Types',
-                value: _type,
-                options: valueLabelOptions(_meta['item_types']),
-                onChanged: (o) => _set(() {
-                  _type = o?.value;
-                  _category = null;
-                  _subcategory = null;
-                }),
-              ),
-              if (_type != null) ...[
-                const SizedBox(height: 8),
-                AppSelect<String>(
-                  label: 'All Categories',
-                  value: _category,
-                  options: [for (final c in catOptions) Option(c['name'].toString(), txt(c['name']))],
-                  onChanged: (o) => _set(() {
-                    _category = o?.value;
-                    _subcategory = null;
-                  }),
-                ),
-              ],
-              if (subOptions.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                AppSelect<String>(
-                  label: 'All Subcategories',
-                  value: _subcategory,
-                  options: [for (final c in subOptions) Option(c['name'].toString(), txt(c['name']))],
-                  onChanged: (o) => _set(() => _subcategory = o?.value),
-                ),
-              ],
-              if (_type != null)
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton(
-                      onPressed: () => _set(() {
-                            _type = null;
-                            _category = null;
-                            _subcategory = null;
-                          }),
-                      child: const Text('Clear filters')),
-                ),
-            ]),
-          ),
-        ]),
+            if (can('items', 'export'))
+              PillButton('Export',
+                  icon: Icons.download_rounded,
+                  onPressed: () => openApiFile(context, '/store/items/export',
+                      'item_master${_type != null ? '_$_type' : ''}_${todayIso()}.xlsx',
+                      query: _filters)),
+            if (can('items', 'import'))
+              PillButton('Import', icon: Icons.upload_file_rounded, onPressed: () => _import(context)),
+          ]),
+        ),
         itemBuilder: (ctx, i, reload) {
           final spec = (i['description'] ?? '').toString();
           return RecordCard(

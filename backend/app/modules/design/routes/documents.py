@@ -1,6 +1,7 @@
 """Design document register: create (with its R0 draft), list, detail,
 edit, start next revision, obsolete/reactivate, delete, comments.
 Revision-level workflow (files, submit, check, approve) is in revisions.py."""
+from app.core.like import like_escape
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
@@ -344,10 +345,10 @@ def list_documents_query(
     if design_request_id:
         query = query.filter(DesignDocument.design_request_id == design_request_id)
     if search:
-        like = f"%{search.strip()}%"
+        like = f"%{like_escape(search.strip())}%"
         query = query.filter(
-            DesignDocument.doc_number.ilike(like) | DesignDocument.title.ilike(like) | DesignDocument.description.ilike(like)
-            | DesignDocument.legacy_number.ilike(like)
+            DesignDocument.doc_number.ilike(like, escape="\\") | DesignDocument.title.ilike(like, escape="\\") | DesignDocument.description.ilike(like, escape="\\")
+            | DesignDocument.legacy_number.ilike(like, escape="\\")
         )
     docs = query.order_by(DesignDocument.updated_at.desc(), DesignDocument.id.desc()).limit(limit).all()
     if released_only:

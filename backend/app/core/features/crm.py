@@ -83,13 +83,13 @@ register_pickers("crm", "inquiries_tenders",
 # CRM › Reports: per-BD-owner figures (Sales team page) need People & performance.
 register_features("crm", "reports", management_feature())
 
-# CRM › Sales Library: folders flagged Confidential (price lists, standard quotations by default)
+# CRM › Knowledge Hub: folders flagged Confidential (price lists, standard quotations by default)
 # and the documents inside them are hidden from everyone without this feature.
 register_features(
     "crm", "sales_library",
     _feature("confidential", "Confidential folders", "section", {
-        "view": None,  # explicit grant only: Sales Library Edit must not reveal price lists
-    }, "See folders marked Confidential in the Sales Library (Pricing & Quotations by default) and the files inside them — "
+        "view": None,  # explicit grant only: Knowledge Hub Edit must not reveal price lists
+    }, "See folders marked Confidential in the Knowledge Hub (Pricing & Quotations by default) and the files inside them — "
        "in the folder tree, search, counts and on product pages. Without it those folders stay hidden."),
 )
 

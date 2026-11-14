@@ -1,6 +1,6 @@
 'use client'
 
-// Left side of the Sales Library: the folder tree with a ⋯ menu per folder.
+// Left side of the Knowledge Hub: the folder tree with a ⋯ menu per folder.
 
 import { CaretDown, CaretRight, Folder, FolderOpen, LockSimple } from '@phosphor-icons/react'
 import { TEXT } from '@/lib/theme'
@@ -32,7 +32,7 @@ export default function FolderTree({ tree, folders, selectedId, expanded, onSele
       <button type="button" onClick={() => onSelect(null)} aria-current={selectedId === null ? 'page' : undefined}
         style={rowStyle(selectedId === null)}>
         <FolderOpen size={16} aria-hidden="true" color="#c2410c" />
-        <span style={{ flex: 1, textAlign: 'left', fontWeight: 700 }}>Sales Library</span>
+        <span style={{ flex: 1, textAlign: 'left', fontWeight: 700 }}>Knowledge Hub</span>
       </button>
       {rows.map(({ node, depth }) => {
         const open = expanded.has(node.id)

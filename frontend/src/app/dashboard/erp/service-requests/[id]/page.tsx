@@ -7,7 +7,7 @@ import { Paperclip, UploadSimple } from '@phosphor-icons/react'
 import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp, hasErpPermission } from '@/hooks/useAuth'
 import { PermissionAction, useCan } from '@/lib/permissions'
-import { useAttachmentBlobUrl, openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
+import { useAttachmentBlobUrl } from '@/hooks/useAttachmentBlobUrl'
 import { erpApi, storeApi } from '@/lib/api'
 import { formatDate, formatDateTime } from '@/lib/format'
 import { Project, ServiceRequest, ServiceMaterial, ServiceMaterialAttachment, StoreItem } from '@/types'
@@ -18,6 +18,7 @@ import ReasonSheet from '@/components/shared/ReasonSheet'
 import ApprovalBanner from '@/components/erp/ApprovalBanner'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
 import FileUploadPreview from '@/components/FileUploadPreview'
+import AttachmentPreviewDialog, { AttachmentThumb, fileExt, formatFileSize } from '@/components/shared/AttachmentPreview'
 import CameraCapture from '@/components/CameraCapture'
 import Link from 'next/link'
 import { inputStyle, Field, Card, InfoRow, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, smallPrimaryBtnStyle, smallSecondaryBtnStyle, smallDangerBtnStyle, RowCount, Pill, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
@@ -1380,6 +1381,8 @@ function MaterialPhotoGallery({ srId, material, canEdit, canDelete, onChanged }:
 
   const [pendingPhoto, setPendingPhoto] = useState<{ id: number; filename: string } | null>(null)
 
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null)
+
   const handleDelete = async (attachmentId: number) => {
     setError('')
     try {
@@ -1442,9 +1445,9 @@ function MaterialPhotoGallery({ srId, material, canEdit, canDelete, onChanged }:
         <p style={{ fontSize: 12.5, color: '#a8a29e', margin: 0 }}>No photos added yet.</p>
       ) : (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-          {material.attachments.map((a) => (
+          {material.attachments.map((a, i) => (
             <div key={a.id} style={{ position: 'relative', width: 64, height: 64, flex: 'none' }}>
-              <MaterialPhotoThumb srId={srId} matId={material.id} attachment={a} />
+              <MaterialPhotoThumb srId={srId} matId={material.id} attachment={a} onOpen={() => setPreviewIndex(i)} />
               {canDelete && (
                 // ui-audit-ignore-next-line custom-button — 20px round delete badge overlaid on a photo thumbnail, not a pill
                 <button
@@ -1467,6 +1470,14 @@ function MaterialPhotoGallery({ srId, material, canEdit, canDelete, onChanged }:
         confirmLabel="Delete"
         onConfirm={() => { const p = pendingPhoto; setPendingPhoto(null); if (p) handleDelete(p.id) }}
         onCancel={() => setPendingPhoto(null)}
+      />
+
+      <AttachmentPreviewDialog
+        files={material.attachments || []}
+        startIndex={previewIndex}
+        onClose={() => setPreviewIndex(null)}
+        getBlob={(f) => erpApi.getMaterialAttachmentBlob(srId, material.id, f.id)}
+        getPreviewUrl={(f) => erpApi.previewMaterialAttachment(srId, material.id, f.id)}
       />
     </div>
   )
@@ -1501,6 +1512,7 @@ function AttachmentsTab({ sr, canEdit, canDelete, onRefresh }: { sr: ServiceRequ
   }
 
   const [pendingDelete, setPendingDelete] = useState<{ id: number; filename: string } | null>(null)
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null)
 
   const handleDelete = async (attachmentId: number) => {
     setError('')
@@ -1573,15 +1585,28 @@ function AttachmentsTab({ sr, canEdit, canDelete, onRefresh }: { sr: ServiceRequ
           <p style={{ fontSize: 13, color: '#a8a29e', margin: 0 }}>No attachments uploaded.</p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {sr.attachments.map((a) => (
-              <div key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, background: '#fff', border: '1px solid rgba(0,0,0,0.06)' }}>
-                <a
-                  href="#"
-                  onClick={(e) => { e.preventDefault(); openAttachmentBlob(() => erpApi.getAttachmentBlob(sr.id, a.id), a.filename) }}
-                  style={{ fontSize: 13, color: '#2563eb', textDecoration: 'none' }}
+            {sr.attachments.map((a, i) => (
+              <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 14px 8px 8px', borderRadius: 10, background: '#fff', border: '1px solid rgba(0,0,0,0.06)' }}>
+                <button
+                  type="button"
+                  onClick={() => setPreviewIndex(i)}
+                  aria-label={`View ${a.filename}`}
+                  style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0, background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}
                 >
-                  {a.filename}
-                </a>
+                  <AttachmentThumb
+                    file={a}
+                    getThumbnail={() => erpApi.getAttachmentThumbnailBlob(sr.id, a.id)}
+                    getBlob={() => erpApi.getAttachmentBlob(sr.id, a.id)}
+                    cacheKey={`sr:${sr.id}:${a.id}`}
+                  />
+                  <span style={{ minWidth: 0 }}>
+                    <span style={{ display: 'block', fontSize: 13, color: '#2563eb', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.filename}</span>
+                    <span style={{ display: 'block', fontSize: 11.5, color: '#a8a29e' }}>
+                      {[fileExt(a.filename).toUpperCase(), formatFileSize(a.size), a.created_at ? formatDate(a.created_at) : ''].filter(Boolean).join(' · ')}
+                    </span>
+                  </span>
+                </button>
+                <button type="button" onClick={() => setPreviewIndex(i)} aria-label={`View ${a.filename}`} style={{ ...smallSecondaryBtnStyle }}>View</button>
                 {canDelete && (
                   <button onClick={() => setPendingDelete({ id: a.id, filename: a.filename })} style={{ ...smallDangerBtnStyle }}>Delete</button>
                 )}
@@ -1590,6 +1615,14 @@ function AttachmentsTab({ sr, canEdit, canDelete, onRefresh }: { sr: ServiceRequ
           </div>
         )}
       </div>
+
+      <AttachmentPreviewDialog
+        files={sr.attachments}
+        startIndex={previewIndex}
+        onClose={() => setPreviewIndex(null)}
+        getBlob={(f) => erpApi.getAttachmentBlob(sr.id, f.id)}
+        getPreviewUrl={(f) => erpApi.previewAttachment(sr.id, f.id)}
+      />
 
       <ConfirmDialog
         open={!!pendingDelete}
@@ -1603,14 +1636,14 @@ function AttachmentsTab({ sr, canEdit, canDelete, onRefresh }: { sr: ServiceRequ
   )
 }
 
-function MaterialPhotoThumb({ srId, matId, attachment }: { srId: number; matId: number; attachment: ServiceMaterialAttachment }) {
+function MaterialPhotoThumb({ srId, matId, attachment, onOpen }: { srId: number; matId: number; attachment: ServiceMaterialAttachment; onOpen: () => void }) {
   const fetchBlob = useMemo(
     () => () => erpApi.getMaterialAttachmentBlob(srId, matId, attachment.id),
     [srId, matId, attachment.id]
   )
   const src = useAttachmentBlobUrl(fetchBlob)
   return (
-    <a href="#" onClick={(e) => { e.preventDefault(); openAttachmentBlob(fetchBlob) }}>
+    <a href="#" aria-label={`View ${attachment.filename}`} onClick={(e) => { e.preventDefault(); onOpen() }}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       {src && <img src={src} alt={attachment.filename} style={{ width: 64, height: 64, borderRadius: 8, objectFit: 'cover', border: '1px solid rgba(0,0,0,0.08)' }} />}
     </a>

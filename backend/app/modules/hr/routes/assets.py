@@ -8,6 +8,7 @@ app/modules/hr/services/access.py).
 asset right now" — the exit checklist reads it to find unreturned assets, so
 every issue / return / lost transition here keeps it in step with the open
 HrAssetAssignment row (the one with returned_on IS NULL)."""
+from app.core.like import like_escape
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import Numeric, cast, func, or_, text
 from sqlalchemy.orm import Session, selectinload
@@ -255,11 +256,11 @@ async def list_assets(
     if holder_id:
         q = q.filter(HrAsset.current_holder_id == holder_id)
     if search and search.strip():
-        term = f"%{search.strip()}%"
-        holder_ids = [u.id for u in db.query(User.id).filter(or_(User.name.ilike(term), User.email.ilike(term))).all()]
+        term = f"%{like_escape(search.strip())}%"
+        holder_ids = [u.id for u in db.query(User.id).filter(or_(User.name.ilike(term, escape="\\"), User.email.ilike(term, escape="\\"))).all()]
         conds = [
-            HrAsset.asset_code.ilike(term), HrAsset.name.ilike(term), HrAsset.serial_number.ilike(term),
-            HrAsset.make.ilike(term), HrAsset.model.ilike(term), HrAsset.invoice_no.ilike(term),
+            HrAsset.asset_code.ilike(term, escape="\\"), HrAsset.name.ilike(term, escape="\\"), HrAsset.serial_number.ilike(term, escape="\\"),
+            HrAsset.make.ilike(term, escape="\\"), HrAsset.model.ilike(term, escape="\\"), HrAsset.invoice_no.ilike(term, escape="\\"),
         ]
         if holder_ids:
             conds.append(HrAsset.current_holder_id.in_(holder_ids))

@@ -1,3 +1,4 @@
+from app.core.like import like_escape
 from datetime import date, datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import Response
@@ -171,8 +172,8 @@ async def list_activities(
     if related_id:
         query = query.filter(Activity.related_id == related_id)
     if search:
-        like = f"%{search}%"
-        query = query.filter((Activity.universal_id.ilike(like)) | (Activity.remarks.ilike(like)))
+        like = f"%{like_escape(search)}%"
+        query = query.filter((Activity.universal_id.ilike(like, escape="\\")) | (Activity.remarks.ilike(like, escape="\\")))
     activities = query.order_by(Activity.id.desc()).offset(skip).limit(limit).all()
     return _enrich(db, activities)
 

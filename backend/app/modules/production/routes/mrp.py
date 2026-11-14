@@ -16,6 +16,7 @@ Access: Production › Planning — 'view' to read, 'create' for MD11,
 'edit' to run MRP, change, firm, delete and convert. Converting also needs
 the target document's own permission (Work Orders › Create, or Procurement ›
 Purchase Requisitions › Create)."""
+from app.core.like import like_escape
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
@@ -257,10 +258,10 @@ async def list_planned_orders(
     if firmed is not None:
         q = q.filter(ProductionPlannedOrder.firmed == firmed)
     if search:
-        like = f"%{search}%"
+        like = f"%{like_escape(search)}%"
         q = q.join(StoreItem, StoreItem.id == ProductionPlannedOrder.item_id).filter(
-            ProductionPlannedOrder.order_number.ilike(like) | StoreItem.item_code.ilike(like) | StoreItem.item_name.ilike(like)
-            | ProductionPlannedOrder.demand_label.ilike(like))
+            ProductionPlannedOrder.order_number.ilike(like, escape="\\") | StoreItem.item_code.ilike(like, escape="\\") | StoreItem.item_name.ilike(like, escape="\\")
+            | ProductionPlannedOrder.demand_label.ilike(like, escape="\\"))
     return _po_responses(db, q.order_by(ProductionPlannedOrder.start_date, ProductionPlannedOrder.order_number).limit(2000).all())
 
 

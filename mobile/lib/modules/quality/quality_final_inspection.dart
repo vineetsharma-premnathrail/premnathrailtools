@@ -286,7 +286,7 @@ class _LegacyInspectionScreenState extends State<LegacyInspectionScreen> {
         ],
       }..removeWhere((k, v) => v == null);
     } catch (e) {
-      setState(() => _error = '$e');
+      setState(() => _error = ApiClient.describe(e));
       return;
     }
     setState(() => _saving = true);

@@ -139,7 +139,7 @@ def test_units_lookup_always_offers_the_project_without_units(client, db, env):
     assert len(rows) == 1
     row = rows[0]
     assert row["project_id"] == env["p"].id and row["element_id"] is None and row["project_level"] is True
-    assert row["display"] == "PEW-901 · Northern Railway · machine PEW-901-M1"
+    assert row["display"] == "PEW-901"  # project number only (owner, 2026-11-07)
     assert row["machine_id"] == env["machine"].id and row["machine_serial"] == "PEW-901-M1"
     # Also with a kind filter (a picker that requires an element still gets the project row).
     rows = client.get(f"{API}/projects/units/lookup", params={"q": "PEW-901", "kind": "vehicle"}, headers=auth(designer)).json()

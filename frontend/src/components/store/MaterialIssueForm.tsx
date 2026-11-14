@@ -39,7 +39,9 @@ function Field({ label, children }: { label: React.ReactNode; children: React.Re
 }
 
 // binId / serials: WM pick bin and the serial numbers of a serialised item.
-interface Line { itemId: string; quantity: string; batchNumber: string; remarks: string; binId?: string; serials?: string[] }
+// dcName: the item's name as on the vendor's bill, printed on the delivery challan (owner, 2026-11-13);
+// dcAuto: it was filled from the item's remembered bill names (replaced when the item changes).
+interface Line { itemId: string; quantity: string; batchNumber: string; remarks: string; binId?: string; serials?: string[]; dcName?: string; dcAuto?: boolean }
 const emptyLine = (): Line => ({ itemId: '', quantity: '', batchNumber: '', remarks: '', binId: '', serials: [] })
 // Job work: an item expected back from the vendor (may differ from what is sent).
 interface BackLine { itemId: string; quantity: string }
@@ -157,6 +159,8 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
   // contract's third-party certificate before the issue posts (rule 8).
   const isDispatch = issueType === 'dispatch'
   const spec = standard[issueType]
+  // Material that leaves the factory travels on a delivery challan: its lines carry the name on the vendor's bill.
+  const onDc = (spec?.fields || []).some((f) => f.key === 'challan_number')
   const setVal = (key: string, v: Val) => setVals((p) => ({ ...p, [key]: v }))
   const selectedProject = projects.find((p) => String(p.id) === String(vals.erp_project_id || ''))
   // Fields of the picked type: "if:" fields appear only once their condition holds.
@@ -187,6 +191,18 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
   const updateBack = (idx: number, patch: Partial<BackLine>) => setBackLines((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)))
   const removeBack = (idx: number) => setBackLines((prev) => (prev.length === 1 ? [emptyBack()] : prev.filter((_, i) => i !== idx)))
   const updateLine = (idx: number, patch: Partial<Line>) => setLines((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)))
+  // Names on vendor bills per item (latest first), learnt from goods receipts.
+  const [billNames, setBillNames] = useState<Record<string, string[]>>({})
+  const pickItem = (idx: number, itemId: string) => {
+    const fill = (names: string[]) => setLines((prev) => prev.map((l, i) => (i !== idx || l.itemId !== itemId || (l.dcName && !l.dcAuto) ? l
+      : { ...l, dcName: names[0] || '', dcAuto: !!names[0] })))
+    setLines((prev) => prev.map((l, i) => (i !== idx ? l : { ...l, itemId, ...(l.dcAuto || !l.dcName ? { dcName: '', dcAuto: false } : {}) })))
+    if (!itemId) return
+    if (billNames[itemId]) { fill(billNames[itemId]); return }
+    storeApi.itemBillNames([Number(itemId)])
+      .then((r) => { const names = r[itemId] || []; setBillNames((b) => ({ ...b, [itemId]: names })); fill(names) })
+      .catch(() => { /* no remembered name: the field stays empty to type */ })
+  }
   const addLine = () => setLines((prev) => [...prev, emptyLine()])
   const removeLine = (idx: number) => setLines((prev) => (prev.length === 1 ? [emptyLine()] : prev.filter((_, i) => i !== idx)))
 
@@ -313,6 +329,7 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
           quantity: Number(l.quantity),
           batch_number: l.batchNumber.trim() || undefined,
           remarks: l.remarks.trim() || undefined,
+          dc_name: onDc ? (l.dcName || '').trim() || undefined : undefined,
           bin_id: l.binId ? Number(l.binId) : undefined,
           serials: l.serials && l.serials.length ? l.serials : undefined,
         })),
@@ -352,7 +369,7 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
   // batch- or serial-controlled, or the store has bins. Otherwise the column stays off.
   const trackedItem = lines.some((l) => { const it = items.find((i) => String(i.id) === l.itemId); return !!(it?.batch_controlled || it?.serial_controlled) })
   const showTrack = vis.preview || trackedItem || storeHasBins
-  const lineHeaders = ['#', 'Item', 'Quantity', 'Available in store', 'Batch / bin / serial', 'Remarks', ''].filter((h) => showLineCol(h) && (h !== 'Batch / bin / serial' || showTrack))
+  const lineHeaders = ['#', 'Item', ...(onDc ? ['Name on DC'] : []), 'Technical details', 'Quantity', 'Available in store', 'Batch / bin / serial', 'Remarks', ''].filter((h) => showLineCol(h) && (h !== 'Batch / bin / serial' || showTrack))
 
   return (
     <FormPage nav={vis.preview ? undefined : <StoreNav />} icon={isChallan ? 'truck' : 'box'} title={isChallan ? 'New Job Work Challan' : 'New Material Issue'}
@@ -526,9 +543,28 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
                     <td style={{ padding: '6px', fontSize: 12, color: TEXT.muted, width: 28 }}>{idx + 1}</td>
                     <td style={{ padding: '6px', minWidth: 260 }}>
                       <div {...(idx === 0 ? { 'data-tour': 'issue-item' } : {})}>
-                        <SearchableSelect value={line.itemId} onChange={(v) => updateLine(idx, { itemId: v })} placeholder="Search code, name or technical details…"
+                        <SearchableSelect value={line.itemId} onChange={(v) => pickItem(idx, v)} placeholder="Search code, name or technical details…"
                           options={items.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}`, description: itemOptionDetail(i) }))} />
                       </div>
+                    </td>
+                    {onDc && (
+                      <td style={{ padding: '6px', minWidth: 200 }}>
+                        {(billNames[line.itemId] || []).length > 1 ? (
+                          <SearchableSelect value={line.dcName || ''} ariaLabel={`Name on DC, line ${idx + 1}`} typeIn
+                            onChange={(v) => updateLine(idx, { dcName: v, dcAuto: false })}
+                            onKeepTyped={(t) => updateLine(idx, { dcName: t, dcAuto: false })}
+                            options={[...new Set([...(line.dcName ? [line.dcName] : []), ...billNames[line.itemId]])].map((n) => ({ value: n, label: n }))} />
+                        ) : (
+                          <input style={inputStyle} value={line.dcName || ''} maxLength={255} aria-label={`Name on DC, line ${idx + 1}`}
+                            placeholder={line.itemId ? 'Name as on the vendor’s bill' : 'Shows after the item is picked'}
+                            onChange={(e) => updateLine(idx, { dcName: e.target.value, dcAuto: false })} />
+                        )}
+                      </td>
+                    )}
+                    <td style={{ padding: '6px', minWidth: 160 }}>
+                      <input readOnly tabIndex={-1} aria-label={`Technical details, line ${idx + 1}`} placeholder="Shows after the item is picked"
+                        style={{ ...inputStyle, background: 'rgba(15,23,42,0.04)', color: SHEET.INK }}
+                        value={item ? item.specification || item.description || '—' : ''} title={item ? item.specification || item.description || '' : ''} />
                     </td>
                     <td style={{ padding: '6px', width: 120 }}>
                       <input {...(idx === 0 ? { 'data-tour': 'issue-quantity' } : {})} type="number" min="0" style={{ ...inputStyle, borderColor: bad ? '#dc2626' : undefined }}

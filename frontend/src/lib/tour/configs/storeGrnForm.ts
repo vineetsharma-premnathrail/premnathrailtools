@@ -10,6 +10,13 @@ const config: TourConfig = {
       purpose: 'Returns to the Goods Receipts list without saving.',
     },
     {
+      target: 'store-grn-form-po-source',
+      title: 'Purchase order: from list or not in list',
+      purpose: 'From PO list = the PO was made in the portal; pick it below. PO not in list = the PO was made in Tally or sent by the vendor; a form opens where you type the PO number and date, attach the PO, and enter the vendor and items.',
+      why: 'Goods on a PO made outside the portal still go into stock the same day, and the PO number stays on the receipt so it can be traced and searched.',
+      after: 'A receipt made with PO not in list is listed under Inward › Before PO with its typed PO number.',
+    },
+    {
       target: 'store-grn-form-po',
       title: 'Purchase Order',
       required: true,

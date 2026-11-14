@@ -3,6 +3,7 @@ Store locations, ERP machines, plants and people, but usually don't hold the
 Store / ERP / Organization app themselves — so these read-only lists are
 served under the production permission instead of those modules' own
 routes."""
+from app.core.like import like_escape
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
@@ -38,8 +39,8 @@ async def lookup_items(
     if item_type:
         query = query.filter(StoreItem.item_type.in_(item_type.split(",")))
     if search:
-        like = f"%{search}%"
-        query = query.filter((StoreItem.item_code.ilike(like)) | (StoreItem.item_name.ilike(like)) | (StoreItem.part_number.ilike(like)))
+        like = f"%{like_escape(search)}%"
+        query = query.filter((StoreItem.item_code.ilike(like, escape="\\")) | (StoreItem.item_name.ilike(like, escape="\\")) | (StoreItem.part_number.ilike(like, escape="\\")))
     return [
         ProductionLookupOption(id=i.id, code=i.item_code, label=f"{i.item_code} — {i.item_name}", extra=i.uom)
         for i in query.order_by(StoreItem.item_code).limit(limit).all()
@@ -56,8 +57,8 @@ async def lookup_locations(db: Session = Depends(get_db)):
 async def lookup_projects(search: str | None = None, db: Session = Depends(get_db)):
     query = db.query(Project).filter(Project.is_deleted == False)  # noqa: E712
     if search:
-        like = f"%{search}%"
-        query = query.filter((Project.serial_number.ilike(like)) | (Project.model_name.ilike(like)) | (Project.client_company.ilike(like)))
+        like = f"%{like_escape(search)}%"
+        query = query.filter((Project.serial_number.ilike(like, escape="\\")) | (Project.model_name.ilike(like, escape="\\")) | (Project.client_company.ilike(like, escape="\\")))
     return [
         ProductionLookupOption(id=p.id, code=p.serial_number, label=project_label(p) or p.serial_number, extra=p.status)
         for p in query.order_by(Project.created_at.desc()).limit(200).all()

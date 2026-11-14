@@ -54,10 +54,11 @@ const ENTITY_LINK: Record<string, (ref: string) => string> = {
   inquiry: (ref) => `/dashboard/crm/inquiries/${ref}`,
   rnd_req_inquiry: (ref) => `/dashboard/rnd/requirements/inquiry/${ref}`,
   rnd_req_tender: (ref) => `/dashboard/rnd/requirements/tender/${ref}`,
-  // Department requirement pages were removed with Share Department (2026-10-30): old bells open the module home.
-  design_rnd_requirement: () => '/dashboard/design',
-  electrical_rnd_requirement: () => '/dashboard/electrical',
-  hydraulic_rnd_requirement: () => '/dashboard/hydraulic',
+  // Department requirement pages were removed with Share Department (2026-10-30). Old bells belong to the
+  // R&D requirement, so they open R&D › Requirements (the share id can't point at the requirement itself).
+  design_rnd_requirement: () => '/dashboard/rnd/requirements',
+  electrical_rnd_requirement: () => '/dashboard/rnd/requirements',
+  hydraulic_rnd_requirement: () => '/dashboard/rnd/requirements',
   tender: (ref) => `/dashboard/crm/tenders/${ref}`,
   activity: () => `/dashboard/crm/followups`,
   design_document: (ref) => `/dashboard/design/documents/${ref}`,

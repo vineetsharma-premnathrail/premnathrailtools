@@ -1,4 +1,4 @@
-"""CRM › Sales Library request / response shapes (contract: docs/agent-runs/2026-11-12-sales-library/spec.md §3)."""
+"""CRM › Knowledge Hub request / response shapes (contract: docs/agent-runs/2026-11-12-sales-library/spec.md §3)."""
 from datetime import date, datetime
 from typing import Literal
 

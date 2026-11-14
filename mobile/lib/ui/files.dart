@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
@@ -10,10 +11,26 @@ import 'package:url_launcher/url_launcher.dart';
 import '../api/api_client.dart';
 import '../config.dart';
 
+/// A file download in progress - shown app-wide by DownloadOverlay.
+class FileTransfer {
+  FileTransfer(this.fileName, this.cancelToken, {this.received = 0, this.total = 0});
+  final String fileName;
+  final CancelToken cancelToken;
+  final int received;
+
+  /// 0 when the server did not say the size.
+  final int total;
+
+  double? get fraction => total > 0 ? (received / total).clamp(0.0, 1.0) : null;
+}
+
 /// Files, camera and links - the phone side of the portal's FileUploadField
 /// and download buttons.
 class Files {
   Files._();
+
+  /// The download running now (null = none); drives the progress card.
+  static final ValueNotifier<FileTransfer?> transfer = ValueNotifier(null);
 
   /// Photo from the camera (site photos, SR updates). Null when cancelled.
   static Future<MultipartFile?> takePhoto() => _image(ImageSource.camera);
@@ -53,7 +70,20 @@ class Files {
     final dir = await getTemporaryDirectory();
     final safe = fileName.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
     final path = '${dir.path}${Platform.pathSeparator}$safe';
-    await ApiClient.dio.download(apiPath, path, queryParameters: query);
+    final token = CancelToken();
+    transfer.value = FileTransfer(safe, token);
+    try {
+      await ApiClient.dio.download(apiPath, path, queryParameters: query, cancelToken: token,
+          onReceiveProgress: (got, total) {
+        transfer.value = FileTransfer(safe, token, received: got, total: total > 0 ? total : 0);
+      });
+    } on DioException catch (e) {
+      // Cancel is the person's choice, not an error.
+      if (CancelToken.isCancel(e)) return;
+      rethrow;
+    } finally {
+      if (transfer.value?.cancelToken == token) transfer.value = null;
+    }
     final r = await OpenFilex.open(path);
     if (r.type != ResultType.done) {
       throw Exception('The file was downloaded but no app on this phone can open "$safe". '

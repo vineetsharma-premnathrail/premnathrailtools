@@ -1,6 +1,6 @@
 'use client'
 
-// CRM › Sales Library — folder tree, documents, preview, versions, upload / share.
+// CRM › Knowledge Hub — folder tree, documents, preview, versions, upload / share.
 // Spec: docs/agent-runs/2026-11-12-sales-library/spec.md
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -63,7 +63,7 @@ export default function SalesLibraryPage() {
   const [folderSheet, setFolderSheet] = useState<{ mode: FolderSheetMode; folder?: LibFolder; parentId?: number | null } | null>(null)
   const [deleteFolder, setDeleteFolder] = useState<LibFolder | null>(null)
 
-  // Product / project / customer filters search the server as you type (View on the Sales Library is enough).
+  // Product / project / customer filters search the server as you type (View on the Knowledge Hub is enough).
   const productPick = useRemotePicker('product')
   const projectPick = useRemotePicker('project')
   const orgPick = useRemotePicker('organization')
@@ -95,7 +95,7 @@ export default function SalesLibraryPage() {
       const [f, s] = await Promise.all([salesLibraryApi.folders(), salesLibraryApi.summary()])
       setFolders(f); setSummary(s); setError('')
     } catch (err) {
-      setError(await errorText(err, 'The Sales Library could not be loaded. Check your connection and reload the page; if it keeps failing, ask an admin to check the SharePoint connection.'))
+      setError(await errorText(err, 'The Knowledge Hub could not be loaded. Check your connection and reload the page; if it keeps failing, ask an admin to check the SharePoint connection.'))
     }
   }, [])
 
@@ -214,7 +214,7 @@ export default function SalesLibraryPage() {
   const counts = summary ?? { folders: folders.length, documents: 0, videos: 0, expired: 0, expiring_30d: 0, recent: [] }
 
   // Breadcrumb
-  const crumbs: { id: number | null; name: string }[] = [{ id: null, name: 'Sales Library' }]
+  const crumbs: { id: number | null; name: string }[] = [{ id: null, name: 'Knowledge Hub' }]
   if (!globalMode && selectedFolder) {
     const chain: LibFolder[] = []
     let cur: LibFolder | undefined = selectedFolder
@@ -229,7 +229,7 @@ export default function SalesLibraryPage() {
       <CrmNav />
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 14, flexWrap: 'wrap' }}>
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Sales Library</h1>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Knowledge Hub</h1>
           <p style={{ fontSize: 13, color: TEXT.muted, margin: '4px 0 0' }}>All product, project and sales material in one place</p>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -250,7 +250,7 @@ export default function SalesLibraryPage() {
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-        <input data-tour="lib-search" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search the Sales Library"
+        <input data-tour="lib-search" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search the Knowledge Hub"
           placeholder="Search title, tags, file name or product — any word order (e.g. rrv demo)…"
           style={{ ...inputStyle, flex: '1 1 280px', maxWidth: 520, width: 'auto' }} />
         <FilterMenu tourId="lib-filter"

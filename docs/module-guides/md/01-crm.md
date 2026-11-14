@@ -243,7 +243,7 @@ Inquiry form (button **Create Inquiry**). Three sections: Basic Information, Com
 |---|---|---|---|---|
 | Inquiry Number | read-only | — | Preview INQ-YYYYMMDD-NNNN | The real number is assigned by the server on save (sequence per day) |
 | Inquiry Date | read-only | — | Today | — |
-| Lead Source | dropdown | Yes | Website, Google Ads, Facebook / Instagram, WhatsApp, Referral, Phone Call, Email, Walk-in, LinkedIn, Exhibition/Event, Justdial, Other | — |
+| Lead Source | dropdown | Yes | Website, Google Ads, Facebook / Instagram, WhatsApp, Referral, Phone Call, Email, Visiting, LinkedIn, Exhibition/Event, Justdial, Other | — |
 | Customer Requirement Priority | dropdown | Yes | High — Important requirement, quick action needed; Medium — Normal requirement (default); Low — Can be handled later | Old records with a retired value keep it selectable |
 | Status | dropdown | Yes | Requirement Received (default), R&D / Technical Review, Qualified, Quotation Sent, Order Received, Under Production, Closed - Ordered, Closed - Not Ordered | Server rejects any other value |
 | BD Owner | searchable dropdown (admin) / read-only (others) | No | Admin: any user from the user directory. Others: fixed to the logged-in user's name | — |

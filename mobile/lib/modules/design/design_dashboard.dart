@@ -18,8 +18,12 @@ import 'design_reviews.dart';
 class DesignDashboardTab extends StatelessWidget {
   const DesignDashboardTab({super.key});
 
-  void _go(BuildContext context, String title, Widget tab) =>
-      openScreen(context, SubPage(title: title, body: tab));
+  /// Switches to the module tab (portal link to that page); a filtered view
+  /// (e.g. Drawings › Draft) opens as its own page.
+  void _go(BuildContext context, String title, Widget tab, {bool filtered = false}) {
+    if (!filtered && ModuleScaffold.goToTab(context, title)) return;
+    openScreen(context, SubPage(title: title, body: tab));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -70,13 +74,13 @@ class DesignDashboardTab extends StatelessWidget {
             StatTile('Active documents', d['active_documents'],
                 hint: '${n('released_documents')} released', onTap: () => _go(ctx, 'Drawings', const DesignDocumentsTab())),
             StatTile('Released this month', d['released_this_month'], color: hex(n('released_this_month') > 0, Brand.success)),
-            StatTile('Drafts', d['drafts'], onTap: () => _go(ctx, 'Drawings', const DesignDocumentsTab(initialStatus: 'draft'))),
+            StatTile('Drafts', d['drafts'], onTap: () => _go(ctx, 'Drawings', const DesignDocumentsTab(initialStatus: 'draft'), filtered: true)),
             StatTile('In review', d['in_review'],
                 color: hex(n('in_review') > 0, const Color(0xFF2563EB)),
-                onTap: () => _go(ctx, 'Drawings', const DesignDocumentsTab(initialStatus: 'in_review'))),
+                onTap: () => _go(ctx, 'Drawings', const DesignDocumentsTab(initialStatus: 'in_review'), filtered: true)),
             StatTile('In approval', d['in_approval'],
                 color: hex(n('in_approval') > 0, const Color(0xFF7C3AED)),
-                onTap: () => _go(ctx, 'Drawings', const DesignDocumentsTab(initialStatus: 'in_approval'))),
+                onTap: () => _go(ctx, 'Drawings', const DesignDocumentsTab(initialStatus: 'in_approval'), filtered: true)),
             StatTile('Stuck > ${n('overdue_days')} days', d['overdue_in_workflow'],
                 color: hex(n('overdue_in_workflow') > 0, Brand.danger), hint: 'in review or approval'),
             StatTile('BOMs in workflow', d['boms_in_workflow'],

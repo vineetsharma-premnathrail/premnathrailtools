@@ -150,7 +150,7 @@ def test_units_and_lookup_permissions_and_scope(client, db):
     designer = make_user(db, "designer@premnathrail.com", apps=("design",))
     r = client.get("/api/v1/projects/units/lookup", params={"q": p.project_code}, headers=hdr(designer))
     assert r.status_code == 200, r.text
-    assert len(r.json()) == 3 and r.json()[0]["display"].startswith(f"{p.project_code} / 01 · Vehicle 1")
+    assert len(r.json()) == 3 and r.json()[0]["display"] == f"{p.project_code} / 01"
     assert len(client.get("/api/v1/projects/units/lookup", params={"kind": "lot"}, headers=hdr(designer)).json()) == 1
     r = client.get("/api/v1/projects/units/lookup", params={"include_projects": True}, headers=hdr(designer))
     assert len(r.json()) == 4 and r.json()[0]["element_id"] is None

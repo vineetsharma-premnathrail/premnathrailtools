@@ -1,3 +1,4 @@
+from app.core.like import like_escape
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -70,8 +71,8 @@ async def list_plans(
     if not include_inactive:
         query = query.filter(HydMaintenancePlan.is_active == True)  # noqa: E712
     if search:
-        like = f"%{search}%"
-        query = query.filter(HydMaintenancePlan.plan_number.ilike(like) | HydMaintenancePlan.title.ilike(like))
+        like = f"%{like_escape(search)}%"
+        query = query.filter(HydMaintenancePlan.plan_number.ilike(like, escape="\\") | HydMaintenancePlan.title.ilike(like, escape="\\"))
     rows = to_plan_responses(db, query.all())
     if system_type:
         rows = [r for r in rows if r.system_type == system_type]

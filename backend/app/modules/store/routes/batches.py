@@ -1,5 +1,6 @@
 """Batch management — batch list / stock by batch, batch pick for issues,
 mill TC document, block / release, traceability (store/services/batches.py)."""
+from app.core.like import like_escape
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
@@ -56,10 +57,10 @@ async def list_batches(
     if item_id is not None:
         query = query.filter(StoreBatch.item_id == item_id)
     if q and q.strip():
-        like = f"%{q.strip()}%"
-        item_ids = [i for (i,) in db.query(StoreItem.id).filter(or_(StoreItem.item_name.ilike(like), StoreItem.item_code.ilike(like))).all()]
-        query = query.filter(or_(StoreBatch.batch_number.ilike(like), StoreBatch.heat_number.ilike(like), StoreBatch.vendor_name.ilike(like),
-                                 StoreBatch.tc_number.ilike(like), StoreBatch.item_id.in_(item_ids or [-1])))
+        like = f"%{like_escape(q.strip())}%"
+        item_ids = [i for (i,) in db.query(StoreItem.id).filter(or_(StoreItem.item_name.ilike(like, escape="\\"), StoreItem.item_code.ilike(like, escape="\\"))).all()]
+        query = query.filter(or_(StoreBatch.batch_number.ilike(like, escape="\\"), StoreBatch.heat_number.ilike(like, escape="\\"), StoreBatch.vendor_name.ilike(like, escape="\\"),
+                                 StoreBatch.tc_number.ilike(like, escape="\\"), StoreBatch.item_id.in_(item_ids or [-1])))
     rows = query.order_by(StoreBatch.id.desc()).limit(500).all()
     allowed = visible_location_ids(db, user)
     stock = batch_service.batch_stock(db, item_id=item_id, location_id=location_id, location_ids=allowed,

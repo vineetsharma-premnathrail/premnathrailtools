@@ -3758,6 +3758,8 @@ export interface StoreMaterialIssueItem {
   quantity: number
   batch_number?: string | null
   remarks?: string | null
+  /** Name on the delivery challan (the item's name on the vendor's bill). */
+  dc_name?: string | null
   order_project_element_id?: number | null
   /** "PEW-80 / 01 · Vehicle 1" */
   element_display?: string | null

@@ -1,4 +1,5 @@
 """CAPA (8D) register and workflow endpoints. Rules live in services/capa.py."""
+from app.core.like import like_escape
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -128,8 +129,8 @@ async def list_capas(
     if vendor_name:
         q = q.filter(QualityCapa.vendor_name.ilike(vendor_name.strip()))
     if search:
-        like = f"%{search}%"
-        q = q.filter(QualityCapa.capa_number.ilike(like) | QualityCapa.title.ilike(like) | QualityCapa.item_name.ilike(like))
+        like = f"%{like_escape(search)}%"
+        q = q.filter(QualityCapa.capa_number.ilike(like, escape="\\") | QualityCapa.title.ilike(like, escape="\\") | QualityCapa.item_name.ilike(like, escape="\\"))
     capas = q.order_by(QualityCapa.created_at.desc()).all()
     if ncr_id:
         capas = [c for c in capas if c.ncr_id == ncr_id or any(l.ncr_id == ncr_id for l in c.ncr_links)]

@@ -1,3 +1,4 @@
+from app.core.like import like_escape
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
@@ -101,8 +102,8 @@ async def list_circuits(
     elif not include_superseded:
         query = query.filter(HydCircuit.status != "superseded")
     if search:
-        like = f"%{search}%"
-        query = query.filter(HydCircuit.circuit_number.ilike(like) | HydCircuit.title.ilike(like) | HydCircuit.drawing_number.ilike(like))
+        like = f"%{like_escape(search)}%"
+        query = query.filter(HydCircuit.circuit_number.ilike(like, escape="\\") | HydCircuit.title.ilike(like, escape="\\") | HydCircuit.drawing_number.ilike(like, escape="\\"))
     return _to_responses(db, query.order_by(HydCircuit.id.desc()).all())
 
 

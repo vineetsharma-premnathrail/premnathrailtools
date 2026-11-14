@@ -31,6 +31,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from jose import JWTError, jwt
 from app.core.config import settings
 from .rate_store import build_rate_store
+from .file_safety import harden_file_response
 
 logger = logging.getLogger("owasp")
 
@@ -625,7 +626,13 @@ class OWASPMiddleware(BaseHTTPMiddleware):
             h["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
             h["Pragma"] = "no-cache"
         elif path.startswith("/api/"):
-            h["Content-Security-Policy"] = "default-src 'none'"
+            # Uploaded files: type from the file's extension, never the uploader's
+            # claim, so a file can be shown or saved but never run as a page/script.
+            is_file = harden_file_response(path, h)
+            # sandbox also stops script in a file opened straight from its /api URL;
+            # not on PDFs, because the browser's PDF viewer refuses to run sandboxed.
+            sandbox = is_file and not (h.get("content-type") or "").startswith("application/pdf")
+            h["Content-Security-Policy"] = "default-src 'none'; sandbox" if sandbox else "default-src 'none'"
             h["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
             h["Pragma"] = "no-cache"
         else:

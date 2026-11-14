@@ -1,5 +1,6 @@
 """Inspection lots: list / My Inspections, manual creation, results,
 decision, close. All rules live in services/lots.py."""
+from app.core.like import like_escape
 import os
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
@@ -219,9 +220,9 @@ async def list_lots(
         q = q.filter(QualityInspectionLot.status.in_(QUALITY_LOT_OPEN_STATUSES)).filter(
             (QualityInspectionLot.assigned_to_id == user.id) | (QualityInspectionLot.assigned_to_id.is_(None)))
     if search:
-        like = f"%{search}%"
-        q = q.filter(QualityInspectionLot.lot_number.ilike(like) | QualityInspectionLot.item_name.ilike(like)
-                     | QualityInspectionLot.source_reference.ilike(like) | QualityInspectionLot.vendor_name.ilike(like))
+        like = f"%{like_escape(search)}%"
+        q = q.filter(QualityInspectionLot.lot_number.ilike(like, escape="\\") | QualityInspectionLot.item_name.ilike(like, escape="\\")
+                     | QualityInspectionLot.source_reference.ilike(like, escape="\\") | QualityInspectionLot.vendor_name.ilike(like, escape="\\"))
     return _to_responses(db, q.order_by(QualityInspectionLot.id.desc()).limit(500).all())
 
 

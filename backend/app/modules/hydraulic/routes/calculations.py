@@ -1,3 +1,4 @@
+from app.core.like import like_escape
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -80,8 +81,8 @@ async def list_calculations(
     if system_id:
         query = query.filter(HydCalculation.system_id == system_id)
     if search:
-        like = f"%{search}%"
-        query = query.filter(HydCalculation.calc_number.ilike(like) | HydCalculation.title.ilike(like))
+        like = f"%{like_escape(search)}%"
+        query = query.filter(HydCalculation.calc_number.ilike(like, escape="\\") | HydCalculation.title.ilike(like, escape="\\"))
     return _to_responses(db, query.order_by(HydCalculation.id.desc()).all())
 
 

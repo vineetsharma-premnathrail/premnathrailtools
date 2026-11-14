@@ -53,7 +53,7 @@ export default function FolderSheet({ mode, folders, folder, parentId, onClose, 
   const confidential = forcedConfidential || form.confidential
   // A parent further up that is a Pricing folder applies to this folder's documents as well.
   const pricingAbove = isPricingFolder(folders, parentIdNum)
-  // Editing / moving out of confidentiality shows the files to everyone with Sales Library access.
+  // Editing / moving out of confidentiality shows the files to everyone with Knowledge Hub access.
   const fileCount = folder ? folderTotal(folders, folder.id) : 0
   const becomesPublic = mode !== 'create' && !!folder && fileCount > 0 && isConfidentialFolder(folders, folder.id) && !confidential
 
@@ -154,7 +154,7 @@ export default function FolderSheet({ mode, folders, folder, parentId, onClose, 
       </div>
     </FormSheet>
     <ConfirmDialog open={askPublic} title="Make these files visible to more people?" confirmLabel="Continue" danger={false}
-      message={`This makes ${fileCount} ${fileCount === 1 ? 'file' : 'files'} visible to everyone with Sales Library access. Continue?`}
+      message={`This makes ${fileCount} ${fileCount === 1 ? 'file' : 'files'} visible to everyone with Knowledge Hub access. Continue?`}
       onConfirm={submit} onCancel={() => setAskPublic(false)} />
     </>
   )

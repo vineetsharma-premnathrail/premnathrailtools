@@ -13,6 +13,7 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.data_scope import apply_scope, ensure_in_scope, register_scoped
@@ -29,7 +30,9 @@ from app.modules.store.services.batches import is_batch_managed
 from app.modules.store.access import store_plant_column
 from app.modules.store.models.item import StoreItem
 from app.modules.store.models.location import StoreLocation
-from app.modules.store.models.pre_po_receipt import STORE_PRE_PO_STATUSES, StorePrePoReceipt, StorePrePoReceiptItem
+from app.modules.store.models.pre_po_receipt import (
+    STORE_PRE_PO_STATUSES, StoreItemVendorName, StorePrePoReceipt, StorePrePoReceiptItem, bill_name_key,
+)
 from app.modules.store.schemas.pre_po_receipt import PrePoReceiptCancel, PrePoReceiptCreate, PrePoReceiptResponse
 from app.modules.store.services.plant_access import ensure_location_allowed, visible_location_ids
 
@@ -82,6 +85,69 @@ def _own_store_id(db: Session, user: User, picked: int | None) -> int | None:
     raise HTTPException(status_code=422, detail=f"Pick the store the goods are held in - one of your stores: {names}.")
 
 
+def _vendor_by_name(db: Session, user: User, typed: str | None) -> Vendor:
+    """Vendor not in the list (owner, 2026-11-13): the store types the name. The same name (any case /
+    spacing) reuses the existing master entry; otherwise a vendor is created with just the name, for
+    Procurement to complete (GSTIN, address, bank) in Procurement > Vendors."""
+    name = " ".join((typed or "").split())
+    if not name:
+        raise HTTPException(status_code=422, detail="Pick the vendor the goods came from, or type its name as printed on the bill.")
+    found = db.query(Vendor).filter(func.lower(func.trim(Vendor.name)) == name.lower()).order_by(Vendor.id.asc()).first()
+    if found is not None:
+        return found
+    from app.modules.p2p.routes.vendors import _next_code
+    vendor = Vendor(code=_next_code(db), name=name, status="active", created_by_id=user.id)
+    db.add(vendor)
+    db.flush()
+    # The vendor master audit (core/audit_registry.py) records who added it.
+    return vendor
+
+
+def _remember_bill_names(db: Session, receipt: StorePrePoReceipt, user: User) -> None:
+    """Learn vendor + "Name on invoice" -> item from the receipt lines (owner, 2026-11-13). The same
+    name picked for another item later moves to that item (the store corrected it)."""
+    for line in receipt.items:
+        key = bill_name_key(line.invoice_item_name)
+        if not key or not receipt.vendor_id:
+            continue
+        row = db.query(StoreItemVendorName).filter(StoreItemVendorName.vendor_id == receipt.vendor_id,
+                                                   StoreItemVendorName.name_key == key).first()
+        if row is None:
+            db.add(StoreItemVendorName(vendor_id=receipt.vendor_id, store_item_id=line.store_item_id, invoice_name=line.invoice_item_name,
+                                       name_key=key, times_used=1, last_used_on=receipt.received_date, created_by_id=user.id))
+            continue
+        row.times_used = 1 if row.store_item_id != line.store_item_id else (row.times_used or 0) + 1
+        row.store_item_id = line.store_item_id
+        row.invoice_name = line.invoice_item_name
+        row.last_used_on = receipt.received_date
+
+
+@router.get("/bill-names", response_model=list[dict])
+async def list_bill_names(
+    vendor_id: int | None = None,
+    store_item_id: int | None = None,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_tab_access("store", "grn")),
+    _feat: User = Depends(require_feature_action("store", "grn", "before_po", "view")),  # Before PO tab
+):
+    """Remembered names on vendor bills: for one vendor (fills the item while recording a receipt)
+    or for one item (shown on the Item Master item)."""
+    if vendor_id is None and store_item_id is None:
+        raise HTTPException(status_code=422, detail="Give a vendor or an item to list the names on vendor bills for.")
+    q = (db.query(StoreItemVendorName, StoreItem.item_code, StoreItem.item_name, Vendor.name)
+         .join(StoreItem, StoreItem.id == StoreItemVendorName.store_item_id)
+         .join(Vendor, Vendor.id == StoreItemVendorName.vendor_id))
+    if vendor_id is not None:
+        q = q.filter(StoreItemVendorName.vendor_id == vendor_id)
+    if store_item_id is not None:
+        q = q.filter(StoreItemVendorName.store_item_id == store_item_id)
+    rows = q.order_by(Vendor.name.asc(), StoreItemVendorName.invoice_name.asc()).limit(2000).all()
+    return [{"invoice_name": r.invoice_name, "name_key": r.name_key, "store_item_id": r.store_item_id, "item_code": code,
+             "item_name": item_name, "vendor_id": r.vendor_id, "vendor_name": vendor_name, "times_used": r.times_used,
+             "last_used_on": r.last_used_on.isoformat() if r.last_used_on else None}
+            for r, code, item_name, vendor_name in rows]
+
+
 @router.get("", response_model=list[PrePoReceiptResponse])
 async def list_pre_po_receipts(
     status: str | None = None,
@@ -111,7 +177,7 @@ async def create_pre_po_receipt(
     if payload.received_date > date.today():
         raise HTTPException(status_code=422, detail=f"Received date {payload.received_date:%d-%b-%Y} is in the future - goods can only be booked "
                                                     "once they have arrived. Enter today's date or an earlier one.")
-    vendor = db.get(Vendor, payload.vendor_id)
+    vendor = db.get(Vendor, payload.vendor_id) if payload.vendor_id else _vendor_by_name(db, user, payload.vendor_name)
     if vendor is None:
         raise HTTPException(status_code=400, detail="That vendor is not in the vendor master - pick the vendor from the list, "
                                                     "or ask Procurement to add it in Procurement > Vendors.")
@@ -155,6 +221,8 @@ async def create_pre_po_receipt(
         raise HTTPException(status_code=422, detail="The challan date is after the date the goods were received - check the date printed on the delivery challan, or correct the Received on date.")
     if payload.vendor_invoice_date and payload.vendor_invoice_date > payload.received_date:
         raise HTTPException(status_code=422, detail="The invoice date is after the date the goods were received - check the date printed on the vendor's bill, or correct the Received on date.")
+    if payload.manual_po_date and not (payload.manual_po_number or "").strip():
+        raise HTTPException(status_code=422, detail="A PO date is filled in but no PO number - type the PO number as printed on the PO, or clear the PO date.")
     receipt = StorePrePoReceipt(
         receipt_number=generate_receipt_number(db), vendor_id=vendor.id, vendor_name=vendor.name,
         received_date=payload.received_date, store_location_id=location_id,
@@ -162,6 +230,8 @@ async def create_pre_po_receipt(
         vendor_invoice_number=(payload.vendor_invoice_number or "").strip() or None,
         vendor_invoice_date=payload.vendor_invoice_date,
         delivery_challan_date=payload.delivery_challan_date,
+        manual_po_number=(payload.manual_po_number or "").strip() or None,
+        manual_po_date=payload.manual_po_date,
         remarks=(payload.remarks or "").strip() or None, status="pending_po", created_by_id=user.id,
     )
     for line in payload.items:
@@ -172,6 +242,7 @@ async def create_pre_po_receipt(
             invoice_item_name=(line.invoice_item_name or "").strip() or None))
     db.add(receipt)
     db.flush()
+    _remember_bill_names(db, receipt, user)
     # Goods go into stock now (Free, or Quality + lot); a refusal rolls the whole receipt back with the reason.
     post_receipt_stock(db, receipt, user)
     notify_receipt_recorded(db, receipt, user)

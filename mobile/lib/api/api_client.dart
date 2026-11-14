@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
+import '../auth/app_lock.dart';
 import '../auth/auth_service.dart';
 import '../config.dart';
 
@@ -27,6 +28,11 @@ class ApiClient {
       onRequest: (options, handler) {
         final token = AuthService.instance.sessionToken;
         if (token != null) options.headers['Authorization'] = 'Bearer $token';
+        // App lock: only calls made while the person is using the app count
+        // as activity (the bell's background refresh does not).
+        if (AppLock.instance.userActive && !options.path.startsWith('/notifications/unread-count')) {
+          options.headers['X-User-Active'] = '1';
+        }
         _Idempotency.attach(options);
         handler.next(options);
       },
@@ -60,6 +66,12 @@ class ApiClient {
         // (network drop / timeout): keep it, the retry replays the first save.
         if (status != null) _Idempotency.settled(options);
 
+        // The session is locked (app password) - show the lock screen.
+        if (status == 423) {
+          final d = error.response?.data;
+          AppLock.instance.onLocked(d is Map ? d['detail']?.toString() : null);
+        }
+
         // The portal session token lives 15 minutes; renew it silently with a
         // fresh Microsoft token and replay the request once.
         final isAuthCall = options.path.startsWith('/auth/');
@@ -80,34 +92,68 @@ class ApiClient {
     return dio;
   }
 
-  /// A message the user can act on: the server's own reason when it gave one,
-  /// otherwise what went wrong with the connection and what to check.
+  /// A message a user can act on - never code, error classes or raw server
+  /// data. The server's own reason is used when it gave one (those are
+  /// written for people); otherwise a plain reason + what to do. The real
+  /// error still goes to the debug log for diagnosis.
   static String describe(Object error) {
+    if (kDebugMode && error is! String) debugPrint('describe(): $error');
+    if (error is String) return error;
     if (error is DioException) {
       final data = error.response?.data;
+      final code = error.response?.statusCode;
       final detail = data is Map ? data['detail'] : null;
-      if (detail is String && detail.isNotEmpty) return detail;
-      final fields = _validationText(detail);
+      final fields = _validationText(data is Map && data['errors'] is List ? data['errors'] : detail);
       if (fields != null) return fields;
+      // 5xx replies can carry internal text - never show it.
+      if (detail is String && detail.trim().isNotEmpty && (code == null || code < 500)) return detail.trim();
       switch (error.type) {
         case DioExceptionType.connectionTimeout:
-        case DioExceptionType.receiveTimeout:
         case DioExceptionType.sendTimeout:
         case DioExceptionType.connectionError:
-          return 'Could not reach the server (${AppConfig.apiBaseUrl}). '
-              'Check your internet connection and try again; your last save is not repeated twice.';
+          return 'Could not reach the server. Check your internet connection and try again.';
+        case DioExceptionType.receiveTimeout:
+          return 'The server is taking too long to answer. Wait a moment and try again - '
+              'a save you already sent is not done twice.';
+        case DioExceptionType.cancel:
+          return 'The request was stopped. Try again.';
         default:
-          final code = error.response?.statusCode;
-          if (code != null) {
-            final text = data is String ? data.trim() : (data == null ? '' : '$data');
-            return text.isEmpty
-                ? 'The server returned error $code with no reason. Please try again in a few minutes.'
-                : 'The server returned error $code: $text';
-          }
+          break;
       }
+      switch (code) {
+        case 400:
+          return 'This could not be done with the details given. Check the form and try again.';
+        case 401:
+          return 'Your login has ended. Close and open the app to log in again.';
+        case 403:
+          return 'You don\'t have permission to do this. Ask your admin to give your role access.';
+        case 404:
+          return 'This record was not found - it may have been deleted or moved. Go back and refresh the list.';
+        case 409:
+          return 'Someone else changed this record just now. Go back, refresh and try again.';
+        case 413:
+          return 'The file is too large to upload. Choose a smaller file (or a lower-quality photo).';
+        case 422:
+          return 'Some details are missing or not valid. Check the form and try again.';
+        case 423:
+          return 'The app is locked. Enter your app password to continue.';
+        case 429:
+          return 'Too many tries in a short time. Wait a minute and try again.';
+      }
+      if (code != null && code >= 500) {
+        return 'The server had a problem with this request. Try again in a few minutes; '
+            'if it keeps happening, tell your admin.';
+      }
+      return 'Something went wrong talking to the server. Try again.';
     }
-    if (error is String) return error;
-    return error.toString().replaceFirst('Exception: ', '');
+    // Our own plain-language errors: throw Exception('...').
+    final text = error.toString();
+    if (error.runtimeType.toString() == '_Exception' && text.startsWith('Exception: ')) {
+      return text.substring('Exception: '.length);
+    }
+    // Anything else is a program error - show a calm message, not its text.
+    return 'Something went wrong on this screen. Go back and open it again; '
+        'if it keeps happening, tell your admin.';
   }
 
   /// FastAPI 422: [{loc: [body, field], msg: ...}] -> "Field: message" lines.

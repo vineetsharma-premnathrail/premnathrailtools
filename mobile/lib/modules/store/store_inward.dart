@@ -22,7 +22,9 @@ export 'store_grn.dart' show GrnTab;
 const _bpoLabel = {'pending_po': 'PO pending', 'po_created': 'PO created', 'closed': 'Closed', 'cancelled': 'Cancelled'};
 const _bpoColor = {'pending_po': Color(0xFFEA580C), 'po_created': cBlue, 'closed': cGreen, 'cancelled': Color(0xFF78716C)};
 const _bpoNote =
-    "Goods recorded here are held in store and are NOT in stock yet. Stock is added by the GRN once Procurement's PO is approved.";
+    "Goods go into stock as soon as a receipt is saved — Free stock, or Quality stock for items that need a quality check — so they can be issued straight away. The GRN against Procurement's PO later settles the receipt; stock is not added a second time.";
+const _bpoFormNote =
+    'Goods go into stock as soon as this is saved — Free stock, or Quality stock for items that need a quality check. Rate is optional; the PO rate replaces it when the PO is received.';
 const _docLabel = {'invoice': 'Invoice', 'challan': 'Challan', 'other': 'Other'};
 
 bool get _bpoCanCreate => can('grn', 'create') && canFeature('grn', 'before_po', 'create');
@@ -81,7 +83,12 @@ class _BeforePoTabState extends State<BeforePoTab> {
             : 'No receipt matches the search or the selected count — change the search, or tap the highlighted count again to show all.',
         header: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           const StorePageHeader('Before PO',
-              subtitle: 'Material that arrived before its purchase order. Procurement makes the PO from these receipts.'),
+              subtitle:
+                  'Material that arrived before its purchase order — already in stock. Procurement makes the PO from these receipts.'),
+          if (!_bpoCanCreate)
+            const Padding(
+                padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Hint('Recording a receipt (it adds stock) needs Create permission on GRN.')),
           const Padding(padding: EdgeInsets.fromLTRB(16, 0, 16, 4), child: InfoNote(_bpoNote, color: Color(0xFFEA580C))),
           ChipRow([
             for (final s in const ['pending_po', 'po_created', 'closed'])
@@ -118,22 +125,25 @@ class _BeforePoTabState extends State<BeforePoTab> {
 }
 
 class _BpoLine {
-  String? type;
-  String? category;
   int? itemId;
+  final invoiceName = TextEditingController();
   final qty = TextEditingController();
+  final rate = TextEditingController();
   final remarks = TextEditingController();
 }
 
+// Item types a Before PO receipt may carry: the "stock" purpose's types;
+// types Store added beyond the standard five stay offered.
 const _standardTypes = ['material', 'service', 'asset', 'consumable', 'tool_equipment'];
 const _stockTypes = ['material', 'consumable', 'tool_equipment'];
 bool _typeFits(Object? t) => !_standardTypes.contains(t ?? '') || _stockTypes.contains(t ?? '');
 
 Future<Json?> openBeforePoForm(BuildContext context) async {
-  List<Json> vendors, items, locations;
+  List<Json> vendors, locations;
   try {
-    vendors = (await Api.list('/store/material-issues/lookups/vendors')).rows;
-    items = await StoreData.items(activeOnly: true);
+    vendors = (await Api.list('/store/material-issues/lookups/vendors')).rows
+      ..sort((a, b) => '${a['label']}'.compareTo('${b['label']}'));
+    await StoreData.items(activeOnly: true);
     locations = (await StoreData.locations()).where((l) => l['is_active'] != false).toList();
   } catch (e) {
     if (context.mounted) {
@@ -144,80 +154,52 @@ Future<Json?> openBeforePoForm(BuildContext context) async {
   if (!context.mounted) return null;
   // A store person books into their own store only (the server enforces it
   // too): the stores they manage, else the stores of their plant. Admins pick any.
-  final isAdmin = Perm.isAdmin;
+  final isAdmin = Perm.user['role'] == 'admin';
   final managed = locations.where((l) => l['manager_user_id'] != null && l['manager_user_id'] == Perm.userId).toList();
   final own = isAdmin ? locations : (managed.isNotEmpty ? managed : locations);
   final locked = !isAdmin && own.length == 1 ? own.first : null;
   int? vendor;
   DateTime received = DateTime.now();
   int? loc = toInt(locked?['id']);
+  // Tax invoice or delivery challan — only the chosen document's fields show and are saved.
+  String docType = 'invoice';
   final challan = TextEditingController(), invoice = TextEditingController(), remarks = TextEditingController();
+  DateTime? invoiceDate, challanDate;
   MultipartFile? invoiceFile, challanFile;
   final lines = <_BpoLine>[_BpoLine()];
-  final present = {for (final i in items) if (i['item_type'] != null) '${i['item_type']}'};
-  final typeOptions = [
-    ..._stockTypes.where((t) => present.isEmpty || present.contains(t)),
-    ...(present.where((t) => !_standardTypes.contains(t)).toList()..sort()),
-  ];
-  List<String> catsFor(String? type) => ({
-        for (final i in items)
-          if ((type == null ? _typeFits(i['item_type']) : i['item_type'] == type) && i['category'] != null)
-            '${i['category']}'
-      }.toList()
-        ..sort());
   Json? saved;
 
   Widget lineBox(int i, StateSetter setS) {
     final l = lines[i];
     final it = l.itemId == null ? null : StoreData.itemById[l.itemId];
-    final lineType = l.type ?? (it != null && typeOptions.contains(it['item_type']) ? '${it['item_type']}' : null);
-    final cats = catsFor(lineType);
-    final lineCat = l.category ?? (it != null && it['item_type'] == lineType ? it['category']?.toString() : null);
-    final ready = l.itemId != null || (lineType != null && (lineCat != null || cats.isEmpty));
     final used = {for (final x in lines) if (x != l && x.itemId != null) x.itemId};
+    final tech = it == null ? '' : '${it['specification'] ?? it['description'] ?? '—'}';
     return LineBox(
       key: ObjectKey(l),
       title: 'Line ${i + 1}',
       onRemove: lines.length == 1 ? null : () => setS(() => lines.remove(l)),
       children: [
-        AppSelect<String>(
-          label: '1. Type',
-          required: true,
-          value: lineType,
-          options: [for (final t in typeOptions) Option(t, humanize(t))],
-          onChanged: (o) => setS(() {
-            l.type = o?.value;
-            if (!catsFor(l.type).contains(l.category)) l.category = null;
-            if (it != null && it['item_type'] != l.type) l.itemId = null;
-          }),
-        ),
-        AppSelect<String>(
-          label: lineType == null ? 'Pick the type first' : (cats.isEmpty ? 'No categories' : '2. Category'),
-          enabled: lineType != null && cats.isNotEmpty,
-          value: lineCat,
-          options: [for (final c in cats) Option(c, c)],
-          onChanged: (o) => setS(() {
-            l.type = lineType;
-            l.category = o?.value;
-            if (it != null && it['category'] != l.category) l.itemId = null;
-          }),
-        ),
+        // One search over every stock item (code, name and technical details).
         ItemSelect(
-          label: '3. Item (Item Master)',
-          enabled: ready,
+          label: 'Item (Item Master)',
           activeOnly: true,
           value: l.itemId,
-          where: (x) =>
-              !used.contains(toInt(x['id'])) &&
-              (lineType != null ? x['item_type'] == lineType : _typeFits(x['item_type'])) &&
-              (lineCat == null || x['category'] == lineCat),
+          where: (x) => !used.contains(toInt(x['id'])) && _typeFits(x['item_type']),
           onChanged: (x) => setS(() => l.itemId = toInt(x?['id'])),
         ),
+        AppTextField(
+            key: ValueKey('tech-${l.itemId}'),
+            label: 'Technical details',
+            initialValue: tech,
+            enabled: false,
+            hint: 'Shows after the item is picked'),
+        AppTextField(label: 'Name on invoice', controller: l.invoiceName, hint: 'As written on the bill'),
         AppTextField(
             label: 'Quantity${it?['uom'] != null ? ' (${it!['uom']})' : ''}',
             required: true,
             controller: l.qty,
             keyboardType: AppTextField.number),
+        AppTextField(label: 'Rate (₹/unit)', controller: l.rate, keyboardType: AppTextField.number, hint: 'If known'),
         AppTextField(label: 'Remarks', controller: l.remarks),
       ],
     );
@@ -229,7 +211,7 @@ Future<Json?> openBeforePoForm(BuildContext context) async {
     saveLabel: 'Save receipt',
     builder: (ctx, setS) => [
       const Hint('Goods that arrived before their purchase order'),
-      const InfoNote(_bpoNote, color: Color(0xFFEA580C)),
+      const InfoNote(_bpoFormNote, color: Color(0xFFEA580C)),
       const FormHeading('Receipt'),
       AppSelect<int>(
           label: 'Vendor',
@@ -243,74 +225,102 @@ Future<Json?> openBeforePoForm(BuildContext context) async {
         AppTextField(label: 'Store', initialValue: txt(locked['name']), enabled: false)
       else
         LocationSelect(
-            label: 'Store', required: !isAdmin, only: own, value: loc, onChanged: (l) => setS(() => loc = toInt(l?['id']))),
-      AppTextField(label: 'Delivery challan no.', controller: challan),
-      AppTextField(label: 'Vendor invoice no.', controller: invoice, hint: 'As on the bill'),
+            label: 'Store (the goods go into)',
+            only: own,
+            value: loc,
+            onChanged: (l) => setS(() => loc = toInt(l?['id']))),
       AppTextField(
           label: 'Remarks',
           controller: remarks,
           maxLines: 3,
           hint: 'Condition on arrival, who brought it, why there is no PO yet…'),
-      const FormHeading('Invoice & challan files'),
-      Wrap(spacing: 8, runSpacing: 8, children: [
-        PillButton(invoiceFile == null ? 'Vendor invoice' : 'Invoice: ${invoiceFile!.filename}',
+      const FormHeading('Vendor Documents'),
+      const Caps('Goods came with'),
+      ChipRow([
+        for (final (v, label) in const [('invoice', 'Tax Invoice'), ('challan', 'Delivery Challan')])
+          CountChip(label, null, selected: docType == v, onTap: () => setS(() => docType = v)),
+      ]),
+      if (docType == 'invoice') ...[
+        AppTextField(label: 'Invoice no.', controller: invoice, hint: 'As on the bill'),
+        DateField(label: 'Invoice date', value: invoiceDate, onChanged: (d) => setS(() => invoiceDate = d)),
+        PillButton(invoiceFile == null ? 'Invoice file' : 'Invoice: ${invoiceFile!.filename}',
             icon: Icons.attach_file_rounded,
             onPressed: () async {
-              final f = await Files.pickFile();
+              final f = await Files.pickFile(extensions: const ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx']);
               if (f != null) setS(() => invoiceFile = f);
             }),
-        PillButton(challanFile == null ? 'Delivery challan' : 'Challan: ${challanFile!.filename}',
+      ] else ...[
+        AppTextField(label: 'Delivery challan no.', controller: challan),
+        DateField(label: 'Challan date', value: challanDate, onChanged: (d) => setS(() => challanDate = d)),
+        PillButton(challanFile == null ? 'Challan file' : 'Challan: ${challanFile!.filename}',
             icon: Icons.attach_file_rounded,
             onPressed: () async {
-              final f = await Files.pickFile();
+              final f = await Files.pickFile(extensions: const ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx']);
               if (f != null) setS(() => challanFile = f);
             }),
-      ]),
-      const Hint('Procurement sees these files on the PO. More can be attached later from the receipt.'),
+      ],
+      const Hint('Procurement sees the file on the PO. More can be attached later from the receipt.'),
       FormHeading('Items received (${lines.length})'),
       for (var i = 0; i < lines.length; i++) lineBox(i, setS),
       AddLineButton('Add line', onPressed: () => setS(() => lines.add(_BpoLine()))),
       const Hint(
-          "Pick the type, then the category, then the Item Master item, so Procurement's PO carries the same item. An item can be on one line only."),
+          "Search the Item Master item by code, name or technical details, so Procurement's PO carries the same item. An item can be on one line only. Batch- or serial-controlled items cannot be booked here — record those with a GRN after the PO."),
     ],
     onSave: () async {
       if (vendor == null) throw 'Pick the vendor the goods came from — Procurement makes the PO to this vendor.';
-      if (!isAdmin && locked == null && loc == null) {
+      if (locked == null && loc == null) {
         throw own.isNotEmpty
-            ? 'Pick the store the goods are held in.'
+            ? "Pick the store the goods went into — the receipt puts them into that store's stock."
             : 'No store is linked to you, so goods cannot be booked. Ask an admin to make you the manager of your store in Store › Settings › Stores.';
+      }
+      final day = DateTime(received.year, received.month, received.day);
+      if (docType == 'challan' && challanDate != null && challanDate!.isAfter(day)) {
+        throw 'The challan date is after the date the goods were received — check the date printed on the delivery challan, or correct the Received on date.';
+      }
+      if (docType == 'invoice' && invoiceDate != null && invoiceDate!.isAfter(day)) {
+        throw "The invoice date is after the date the goods were received — check the date printed on the vendor's bill, or correct the Received on date.";
       }
       final filled = lines.where((l) => l.itemId != null || l.qty.text.trim().isNotEmpty).toList();
       if (filled.isEmpty) throw 'Add at least one item with its quantity.';
       for (final l in filled) {
+        final name = l.itemId == null ? 'A line' : txt(StoreData.itemById[l.itemId]?['item_name']);
         if (l.itemId == null) throw 'Pick the Item Master item on every line, or remove the empty line.';
-        if ((parseNum(l.qty.text) ?? 0) <= 0) {
-          throw '${txt(StoreData.itemById[l.itemId]?['item_name'])}: enter the quantity received (above 0).';
+        if ((parseNum(l.qty.text) ?? 0) <= 0) throw '$name: enter the quantity received (above 0).';
+        if (l.rate.text.trim().isNotEmpty && (parseNum(l.rate.text) ?? 0) <= 0) {
+          throw '$name: the rate must be more than 0 — or leave it blank if you do not know it yet.';
         }
       }
       saved = jsonMap(await Api.post('/store/pre-po-receipts', data: {
         'vendor_id': vendor,
         'received_date': apiDate(received),
         'store_location_id': loc,
-        'delivery_challan_number': blankToNull(challan.text),
-        'vendor_invoice_number': blankToNull(invoice.text),
+        'delivery_challan_number': docType == 'challan' ? blankToNull(challan.text) : null,
+        'delivery_challan_date': docType == 'challan' && challanDate != null ? apiDate(challanDate!) : null,
+        'vendor_invoice_number': docType == 'invoice' ? blankToNull(invoice.text) : null,
+        'vendor_invoice_date': docType == 'invoice' && invoiceDate != null ? apiDate(invoiceDate!) : null,
         'remarks': blankToNull(remarks.text),
         'items': [
           for (final l in filled)
-            {'store_item_id': l.itemId, 'quantity': parseNum(l.qty.text), 'remarks': blankToNull(l.remarks.text)},
+            {
+              'store_item_id': l.itemId,
+              'quantity': parseNum(l.qty.text),
+              'unit_rate': parseNum(l.rate.text),
+              'remarks': blankToNull(l.remarks.text),
+              'invoice_item_name': blankToNull(l.invoiceName.text),
+            },
         ],
       }));
     },
   );
   if (!ok || saved == null) return null;
-  // Files go up after the receipt exists; a failed upload doesn't undo it.
+  // The chosen document's file goes up after the receipt exists; a failed upload doesn't undo it.
   final notes = <String>[];
-  for (final (f, t) in [(invoiceFile, 'invoice'), (challanFile, 'challan')]) {
-    if (f == null) continue;
+  final file = docType == 'invoice' ? invoiceFile : challanFile;
+  if (file != null) {
     try {
-      await uploadMultipart('/store/pre-po-receipts/${saved!['id']}/attachments', f, fields: {'doc_type': t});
+      await uploadMultipart('/store/pre-po-receipts/${saved!['id']}/attachments', file, fields: {'doc_type': docType});
     } catch (e) {
-      notes.add('${f.filename}: ${ApiClient.describe(e)}');
+      notes.add('${file.filename}: ${ApiClient.describe(e)}');
     }
   }
   if (notes.isNotEmpty && context.mounted) {
@@ -338,7 +348,12 @@ class _BeforePoDetailScreenState extends State<BeforePoDetailScreen> {
         builder: (ctx, r, reload) {
           final pending = r['status'] == 'pending_po';
           final open = r['status'] != 'cancelled';
+          final posted = r['stock_posted'] == true;
+          final items = jsonList(r['items']);
           final base = '/store/pre-po-receipts/${r['id']}';
+          String stockText(Json i) => i['receipt_posting'] == 'quality'
+              ? 'Quality${i['inspection_lot_number'] != null ? ' — ${i['inspection_lot_number']}' : ''}'
+              : (i['receipt_posting'] == 'free' ? 'Free stock' : '—');
           Future<void> attach(String type) async {
             final res = await pickAndUpload(ctx, '$base/attachments', fields: {'doc_type': type});
             if (res != null) setState(() => _v++);
@@ -362,8 +377,9 @@ class _BeforePoDetailScreenState extends State<BeforePoDetailScreen> {
                     secondaryAction('Cancel receipt', () async {
                       final reason = await promptDialog(ctx,
                           title: 'Cancel ${txt(r['receipt_number'])}?',
-                          message:
-                              "The receipt leaves Procurement's Before PO list. Give the reason, e.g. goods returned to the vendor.",
+                          message: posted
+                              ? "The receipt leaves Procurement's Before PO list and its stock is taken back out of the store. This is refused if any of it was already issued — return it to the store first — or if a quality lot has no decision yet. Give the reason, e.g. goods returned to the vendor."
+                              : "The receipt leaves Procurement's Before PO list. Give the reason, e.g. goods returned to the vendor.",
                           label: 'Why is this receipt being cancelled?',
                           confirmLabel: 'Cancel receipt');
                       if (reason == null || !ctx.mounted) return;
@@ -376,7 +392,10 @@ class _BeforePoDetailScreenState extends State<BeforePoDetailScreen> {
               SummaryCard(
                 title: txt(r['receipt_number']),
                 text: '${txt(r['vendor_name'])} · received ${fmtDate(r['received_date'])}',
-                badges: [pill(_bpoLabel[r['status']] ?? humanize(r['status']), _bpoColor[r['status']] ?? cGrey)],
+                badges: [
+                  pill(_bpoLabel[r['status']] ?? humanize(r['status']), _bpoColor[r['status']] ?? cGrey),
+                  if (posted && open) pill('In stock', cGreen),
+                ],
               ),
               if (r['status'] == 'cancelled' && r['cancel_reason'] != null)
                 Padding(
@@ -397,12 +416,19 @@ class _BeforePoDetailScreenState extends State<BeforePoDetailScreen> {
                     r['po_number'] == null ? null : '${r['po_number']}${r['po_status'] != null ? ' · ${humanize(r['po_status'])}' : ''}'),
                 if (r['remarks'] != null) FieldRow('Remarks', r['remarks']),
               ]),
-              DetailSection('Items received (${jsonList(r['items']).length})', children: [
-                for (final i in jsonList(r['items']))
+              DetailSection('Items received (${items.length})', children: [
+                for (final i in items)
                   LineTile(
                     title: '${txt(i['item_code'])} — ${txt(i['item_name'])}',
                     trailing: fmtQ(i['quantity'], i['unit']),
-                    subtitle: i['remarks']?.toString(),
+                    subtitle: i['invoice_item_name'] != null ? 'On invoice: ${i['invoice_item_name']}' : null,
+                    facts: [
+                      if (items.any((x) => x['unit_rate'] != null))
+                        MiniFact('Rate', i['unit_rate'] != null ? fmtMoney(i['unit_rate']) : '—'),
+                      if (posted) MiniFact('Stock', stockText(i)),
+                      if (posted) MiniFact('Settled by GRN', '${fmtQ(i['settled_qty'] ?? 0)} of ${fmtQ(i['quantity'])}'),
+                      MiniFact('Remarks', txt(i['remarks'])),
+                    ],
                   ),
               ]),
               DetailSection('Invoice & challan files', children: [

@@ -2,6 +2,7 @@
 projects, machines and Store items but usually don't hold those modules'
 apps, so these read-only lists are served under the design permission
 (same approach as production/routes/lookups.py)."""
+from app.core.like import like_escape
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session, selectinload
 
@@ -49,8 +50,8 @@ async def lookup_users(db: Session = Depends(get_db)):
 async def lookup_projects(search: str | None = None, db: Session = Depends(get_db)):
     query = db.query(PmProject)
     if search:
-        like = f"%{search}%"
-        query = query.filter(PmProject.project_code.ilike(like) | PmProject.name.ilike(like))
+        like = f"%{like_escape(search)}%"
+        query = query.filter(PmProject.project_code.ilike(like, escape="\\") | PmProject.name.ilike(like, escape="\\"))
     return [
         DesignLookupOption(id=p.id, code=p.project_code, label=f"{p.project_code} — {p.name}", extra=p.status)
         for p in query.order_by(PmProject.created_at.desc()).limit(300).all()
@@ -61,8 +62,8 @@ async def lookup_projects(search: str | None = None, db: Session = Depends(get_d
 async def lookup_machines(search: str | None = None, db: Session = Depends(get_db)):
     query = db.query(Project).filter(Project.is_deleted == False)  # noqa: E712
     if search:
-        like = f"%{search}%"
-        query = query.filter(Project.serial_number.ilike(like) | Project.model_name.ilike(like) | Project.client_company.ilike(like))
+        like = f"%{like_escape(search)}%"
+        query = query.filter(Project.serial_number.ilike(like, escape="\\") | Project.model_name.ilike(like, escape="\\") | Project.client_company.ilike(like, escape="\\"))
     return [
         DesignLookupOption(id=p.id, code=p.serial_number, label=machine_label(p) or p.serial_number, extra=p.status)
         for p in query.order_by(Project.created_at.desc()).limit(300).all()
@@ -77,8 +78,8 @@ async def lookup_items(
 ):
     query = db.query(StoreItem).filter(StoreItem.status == "active")
     if search:
-        like = f"%{search}%"
-        query = query.filter(StoreItem.item_code.ilike(like) | StoreItem.item_name.ilike(like) | StoreItem.part_number.ilike(like))
+        like = f"%{like_escape(search)}%"
+        query = query.filter(StoreItem.item_code.ilike(like, escape="\\") | StoreItem.item_name.ilike(like, escape="\\") | StoreItem.part_number.ilike(like, escape="\\"))
     return [
         DesignLookupOption(id=i.id, code=i.item_code, label=f"{i.item_code} — {i.item_name}", extra=i.part_number)
         for i in query.order_by(StoreItem.item_code).limit(limit).all()
@@ -99,8 +100,8 @@ async def lookup_documents(
     """Active documents for the ECN "affected documents" picker."""
     query = db.query(DesignDocument).filter(DesignDocument.is_deleted == False, DesignDocument.status == "active")  # noqa: E712
     if search:
-        like = f"%{search}%"
-        query = query.filter(DesignDocument.doc_number.ilike(like) | DesignDocument.title.ilike(like))
+        like = f"%{like_escape(search)}%"
+        query = query.filter(DesignDocument.doc_number.ilike(like, escape="\\") | DesignDocument.title.ilike(like, escape="\\"))
     return [
         DesignLookupOption(id=d.id, code=d.doc_number, label=f"{d.doc_number} — {d.title}", extra=d.document_type)
         for d in query.order_by(DesignDocument.doc_number).limit(limit).all()
@@ -112,7 +113,7 @@ async def lookup_customers(search: str | None = None, db: Session = Depends(get_
     """CRM organizations — the customers drawings and submissions are for."""
     query = db.query(Organization).filter(Organization.is_deleted == False)  # noqa: E712
     if search:
-        query = query.filter(Organization.name.ilike(f"%{search}%") | Organization.org_code.ilike(f"%{search}%"))
+        query = query.filter(Organization.name.ilike(f"%{like_escape(search)}%", escape="\\") | Organization.org_code.ilike(f"%{like_escape(search)}%", escape="\\"))
     return [DesignLookupOption(id=o.id, code=o.org_code, label=o.name, extra=o.railway_zone) for o in query.order_by(Organization.name).limit(500).all()]
 
 
@@ -122,15 +123,15 @@ async def lookup_crm_records(source: str = "inquiry", search: str | None = None,
     if source == "tender":
         query = db.query(Tender).filter(Tender.is_deleted == False)  # noqa: E712
         if search:
-            like = f"%{search}%"
-            query = query.filter(Tender.tender_number.ilike(like) | Tender.tender_name.ilike(like) | Tender.universal_id.ilike(like))
+            like = f"%{like_escape(search)}%"
+            query = query.filter(Tender.tender_number.ilike(like, escape="\\") | Tender.tender_name.ilike(like, escape="\\") | Tender.universal_id.ilike(like, escape="\\"))
         return [
             DesignLookupOption(id=t.id, code=t.tender_number or t.universal_id, label=f"{t.tender_number or t.universal_id}" + (f" — {t.tender_name}" if t.tender_name else ""), extra=str(t.org_id))
             for t in query.order_by(Tender.id.desc()).limit(300).all()
         ]
     query = db.query(Inquiry).filter(Inquiry.is_deleted == False)  # noqa: E712
     if search:
-        query = query.filter(Inquiry.universal_id.ilike(f"%{search}%"))
+        query = query.filter(Inquiry.universal_id.ilike(f"%{like_escape(search)}%", escape="\\"))
     return [DesignLookupOption(id=i.id, code=i.universal_id, label=f"Inquiry {i.universal_id}", extra=str(i.org_id)) for i in query.order_by(Inquiry.id.desc()).limit(300).all()]
 
 
@@ -149,7 +150,7 @@ async def lookup_quality_records(kind: str = "ncr", search: str | None = None, d
     model, number = (QualityCapa, QualityCapa.capa_number) if kind == "capa" else (QualityNcr, QualityNcr.ncr_number)
     query = db.query(model).filter(model.is_deleted == False)  # noqa: E712
     if search:
-        query = query.filter(number.ilike(f"%{search}%"))
+        query = query.filter(number.ilike(f"%{like_escape(search)}%", escape="\\"))
     out = []
     for r in query.order_by(model.id.desc()).limit(300).all():
         code = getattr(r, "capa_number", None) or getattr(r, "ncr_number", None)
@@ -162,8 +163,8 @@ async def lookup_quality_records(kind: str = "ncr", search: str | None = None, d
 async def lookup_boms(search: str | None = None, released_only: bool = False, db: Session = Depends(get_db)):
     query = db.query(DesignBom).options(selectinload(DesignBom.revisions)).filter(DesignBom.is_deleted == False, DesignBom.status == "active")  # noqa: E712
     if search:
-        like = f"%{search}%"
-        query = query.filter(DesignBom.bom_number.ilike(like) | DesignBom.title.ilike(like))
+        like = f"%{like_escape(search)}%"
+        query = query.filter(DesignBom.bom_number.ilike(like, escape="\\") | DesignBom.title.ilike(like, escape="\\"))
     out = []
     for b in query.order_by(DesignBom.bom_number).limit(500).all():
         rel = released_bom_revision(b)
@@ -178,8 +179,8 @@ async def lookup_released_documents(search: str | None = None, db: Session = Dep
     """Drawings with a released revision — what an ECR can be raised against."""
     query = db.query(DesignDocument).options(selectinload(DesignDocument.revisions)).filter(DesignDocument.is_deleted == False, DesignDocument.status == "active")  # noqa: E712
     if search:
-        like = f"%{search}%"
-        query = query.filter(DesignDocument.doc_number.ilike(like) | DesignDocument.title.ilike(like))
+        like = f"%{like_escape(search)}%"
+        query = query.filter(DesignDocument.doc_number.ilike(like, escape="\\") | DesignDocument.title.ilike(like, escape="\\"))
     out = []
     for d in query.order_by(DesignDocument.doc_number).limit(1000).all():
         rel = released_revision(d)

@@ -2,6 +2,7 @@
 the contract inspection requirement on ERP machines / orders, and the
 dispatch release check (rule 8). Rules live in services/inspection_calls.py
 and services/dispatch.py."""
+from app.core.like import like_escape
 import os
 from datetime import date
 
@@ -109,9 +110,9 @@ async def list_contracts(search: str | None = None, required_only: bool = False,
     if required_only:
         q = q.filter(Project.third_party_inspection_required.is_(True))
     if search:
-        like = f"%{search}%"
-        q = q.filter(Project.serial_number.ilike(like) | Project.po_number.ilike(like) | Project.client_company.ilike(like)
-                     | Project.model_name.ilike(like))
+        like = f"%{like_escape(search)}%"
+        q = q.filter(Project.serial_number.ilike(like, escape="\\") | Project.po_number.ilike(like, escape="\\") | Project.client_company.ilike(like, escape="\\")
+                     | Project.model_name.ilike(like, escape="\\"))
     agencies = _agencies(db)
     return [{"id": p.id, "label": _project_label(p), "po_number": p.po_number, "client_company": p.client_company,
              "delivery_date": p.delivery_date, "third_party_inspection_required": bool(p.third_party_inspection_required),
@@ -196,10 +197,10 @@ async def list_calls(status_filter: str | None = Query(None, alias="status"), er
     if order_project_element_id:
         q = q.filter(QualityInspectionCall.order_project_element_id == order_project_element_id)
     if search:
-        like = f"%{search}%"
-        q = q.filter(QualityInspectionCall.call_number.ilike(like) | QualityInspectionCall.item_name.ilike(like)
-                     | QualityInspectionCall.order_reference.ilike(like) | QualityInspectionCall.certificate_number.ilike(like)
-                     | QualityInspectionCall.customer_name.ilike(like))
+        like = f"%{like_escape(search)}%"
+        q = q.filter(QualityInspectionCall.call_number.ilike(like, escape="\\") | QualityInspectionCall.item_name.ilike(like, escape="\\")
+                     | QualityInspectionCall.order_reference.ilike(like, escape="\\") | QualityInspectionCall.certificate_number.ilike(like, escape="\\")
+                     | QualityInspectionCall.customer_name.ilike(like, escape="\\"))
     return _responses(db, q.order_by(QualityInspectionCall.id.desc()).limit(500).all())
 
 

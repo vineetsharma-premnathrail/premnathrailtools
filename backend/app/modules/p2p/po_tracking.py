@@ -22,6 +22,7 @@ Only `with_vendor` and `partly_received` are still awaited from the vendor —
 only those can be overdue, count in open value, or get a reminder."""
 from __future__ import annotations
 
+from app.core.like import like_escape
 import re
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -254,12 +255,12 @@ def tracking(db: Session, query, *, stage: str | None = None, search: str | None
         q = q.filter(P2PPurchaseOrder.items.any(P2PPurchaseOrderItem.order_project_id == order_project_id))
     term = (search or "").strip()
     if term:
-        like = f"%{term}%"
+        like = f"%{like_escape(term)}%"
         q = q.filter(or_(
-            P2PPurchaseOrder.po_number.ilike(like), P2PPurchaseOrder.vendor_name.ilike(like),
-            P2PRequest.p2p_number.ilike(like), P2PRequest.project_label.ilike(like),
-            P2PPurchaseOrder.items.any(or_(P2PPurchaseOrderItem.item_name.ilike(like), P2PPurchaseOrderItem.part_code.ilike(like),
-                                           P2PPurchaseOrderItem.store_item.has(StoreItem.item_code.ilike(like)))),
+            P2PPurchaseOrder.po_number.ilike(like, escape="\\"), P2PPurchaseOrder.vendor_name.ilike(like, escape="\\"),
+            P2PRequest.p2p_number.ilike(like, escape="\\"), P2PRequest.project_label.ilike(like, escape="\\"),
+            P2PPurchaseOrder.items.any(or_(P2PPurchaseOrderItem.item_name.ilike(like, escape="\\"), P2PPurchaseOrderItem.part_code.ilike(like, escape="\\"),
+                                           P2PPurchaseOrderItem.store_item.has(StoreItem.item_code.ilike(like, escape="\\")))),
         ))
     pos = q.all()
     infos = load_infos(db, pos)

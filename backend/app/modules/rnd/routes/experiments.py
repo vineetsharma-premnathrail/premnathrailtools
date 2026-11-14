@@ -1,3 +1,4 @@
+from app.core.like import like_escape
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -131,8 +132,8 @@ async def list_experiments(
     if experiment_type:
         query = query.filter(RndExperiment.experiment_type == experiment_type)
     if search:
-        like = f"%{search}%"
-        query = query.filter((RndExperiment.title.ilike(like)) | (RndExperiment.experiment_number.ilike(like)))
+        like = f"%{like_escape(search)}%"
+        query = query.filter((RndExperiment.title.ilike(like, escape="\\")) | (RndExperiment.experiment_number.ilike(like, escape="\\")))
     return [_to_response(db, e) for e in query.order_by(RndExperiment.created_at.desc()).all()]
 
 

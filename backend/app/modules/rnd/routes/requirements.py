@@ -12,6 +12,7 @@ requirement; people outside R&D see only the requirements they hold a task on
 open through requirement_work's /documents/{id}/content, which checks that
 access first.
 """
+from app.core.like import like_escape
 from datetime import datetime
 from typing import Literal
 
@@ -122,7 +123,7 @@ async def list_requirements(
     if status and status not in ("submitted", "accepted", "returned", "responded", "closed"):
         raise HTTPException(status_code=422, detail=f"Status '{status}' isn't valid — pick submitted, accepted, returned, responded or closed.")
     rows: list[dict] = []
-    term = f"%{search.strip()}%" if search and search.strip() else None
+    term = f"%{like_escape(search.strip())}%" if search and search.strip() else None
     visible = ra.visible_keys(db, user)  # None = all
     can_review = ra.can_accept(db, user)
 
@@ -141,7 +142,7 @@ async def list_requirements(
         if ids is not None:
             q = q.filter(model.id.in_(ids))
         if term:
-            q = q.filter(or_(*[c.ilike(term) for c in search_cols], Organization.name.ilike(term)))
+            q = q.filter(or_(*[c.ilike(term, escape="\\") for c in search_cols], Organization.name.ilike(term, escape="\\")))
         records = q.all()
         stats = _send_stats(db, src, [r.id for r, _ in records])
         reqs = requirement_movement.latest_requests(db, src, [r.id for r, _ in records])

@@ -5,6 +5,7 @@ multi-level explosion, export, where-used and new-item requests.
 The released BOM is what Purchase buys, Store issues and Production builds,
 so release notifies those apps — a notification, never an automatic stock
 or purchase document (PM/Store stay unlinked for now)."""
+from app.core.like import like_escape
 import csv
 import io
 from datetime import datetime, timezone
@@ -387,9 +388,9 @@ async def list_boms(
     if owner_id:
         query = query.filter(DesignBom.owner_id == owner_id)
     if search:
-        like = f"%{search.strip()}%"
-        item_ids = [i for (i,) in db.query(StoreItem.id).filter(StoreItem.item_code.ilike(like) | StoreItem.item_name.ilike(like)).limit(500).all()]
-        query = query.filter(DesignBom.bom_number.ilike(like) | DesignBom.title.ilike(like) | DesignBom.product_item_id.in_(item_ids))
+        like = f"%{like_escape(search.strip())}%"
+        item_ids = [i for (i,) in db.query(StoreItem.id).filter(StoreItem.item_code.ilike(like, escape="\\") | StoreItem.item_name.ilike(like, escape="\\")).limit(500).all()]
+        query = query.filter(DesignBom.bom_number.ilike(like, escape="\\") | DesignBom.title.ilike(like, escape="\\") | DesignBom.product_item_id.in_(item_ids))
     boms = query.order_by(DesignBom.updated_at.desc(), DesignBom.id.desc()).limit(2000).all()
     if not is_team(db, user):
         boms = [b for b in boms if any(r.status in VIEWER_STATUSES for r in live_bom_revisions(b))]

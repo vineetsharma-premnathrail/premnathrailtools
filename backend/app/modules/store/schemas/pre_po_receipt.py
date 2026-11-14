@@ -21,13 +21,19 @@ class PrePoReceiptItemCreate(BaseModel):
 
 
 class PrePoReceiptCreate(BaseModel):
-    vendor_id: int
+    # A vendor from the vendor master, or (owner, 2026-11-13) a typed name: the master entry is then
+    # found by that name or created in the background for Procurement to complete.
+    vendor_id: int | None = None
+    vendor_name: str | None = Field(default=None, max_length=200)
     received_date: date
     store_location_id: int | None = None
     delivery_challan_number: str | None = Field(default=None, max_length=100)
     delivery_challan_date: date | None = None
     vendor_invoice_number: str | None = Field(default=None, max_length=100)
     vendor_invoice_date: date | None = None
+    # PO not in the portal's PO list: its number / date as on the PO (Tally / vendor).
+    manual_po_number: str | None = Field(default=None, max_length=100)
+    manual_po_date: date | None = None
     remarks: str | None = Field(default=None, max_length=2000)
     items: list[PrePoReceiptItemCreate] = Field(min_length=1)
 
@@ -84,6 +90,8 @@ class PrePoReceiptResponse(BaseModel):
     delivery_challan_date: date | None = None
     vendor_invoice_number: str | None = None
     vendor_invoice_date: date | None = None
+    manual_po_number: str | None = None
+    manual_po_date: date | None = None
     remarks: str | None = None
     status: str
     p2p_request_id: int | None = None

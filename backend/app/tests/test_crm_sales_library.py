@@ -1,4 +1,4 @@
-"""CRM › Sales Library: folders, documents + versions, confidential access, pricing expiry, links, search,
+"""CRM › Knowledge Hub: folders, documents + versions, confidential access, pricing expiry, links, search,
 favourites, share. SharePoint is faked in memory."""
 from datetime import date, timedelta
 
@@ -112,7 +112,7 @@ def test_every_route_is_denied_without_the_tab_permission(client, db, team):
     assert client.get(f"{API}/folders", headers=h).status_code == 403
     assert client.get(f"{API}/documents", headers=h).status_code == 403
     r = client.post(f"{API}/folders", json={"name": "X"}, headers=h)
-    assert r.status_code == 403 and "Sales Library" in r.json()["detail"]
+    assert r.status_code == 403 and "Knowledge Hub" in r.json()["detail"]
     assert client.get(f"{API}/products/1/resources", headers=h).status_code == 403
     assert client.post(f"{API}/documents/1/favorite", headers=h).status_code == 403
 
@@ -327,7 +327,7 @@ def test_upload_token_checks(client, db, team):
     # a token from CRM Documents (no library kind) is not accepted
     crm_token = create_upload_token({"user_id": ed.id, "folder": "CRM-media/x", "file_name": "a.pdf", "file_size": 10})
     r = client.post(f"{API}/documents/complete-upload", headers=auth(ed), json={"upload_token": crm_token, "drive_item_id": "I"})
-    assert r.status_code == 400 and "Sales Library" in r.json()["detail"]
+    assert r.status_code == 400 and "Knowledge Hub" in r.json()["detail"]
     ok = client.post(f"{API}/documents/complete-upload", headers=auth(ed), json={"upload_token": s["upload_token"], "drive_item_id": "I"})
     assert ok.status_code == 200
     replay = client.post(f"{API}/documents/complete-upload", headers=auth(ed), json={"upload_token": s["upload_token"], "drive_item_id": "I"})
@@ -621,7 +621,7 @@ def test_built_in_folders_without_a_creator_are_admin_only_to_rename_move_delete
     for r in (client.patch(f"{API}/folders/{seeded.id}", json={"name": "Forms"}, headers=h),
               client.patch(f"{API}/folders/{seeded.id}", json={"parent_id": other["id"]}, headers=h),
               client.delete(f"{API}/folders/{seeded.id}", headers=h)):
-        assert r.status_code == 403 and "built-in Sales Library folder" in r.json()["detail"]
+        assert r.status_code == 403 and "built-in Knowledge Hub folder" in r.json()["detail"]
     # other edits (description) stay open to editors
     assert client.patch(f"{API}/folders/{seeded.id}", json={"description": "Standard forms"}, headers=h).status_code == 200
     assert client.patch(f"{API}/folders/{seeded.id}", json={"name": "Forms"}, headers=auth(admin)).status_code == 200

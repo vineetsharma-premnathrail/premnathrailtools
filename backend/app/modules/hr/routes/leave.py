@@ -4,6 +4,7 @@ Owner: Agent C. HR-management endpoints use `Depends(require_hr)`;
 self-service endpoints use `Depends(get_current_user)` (see
 app/modules/hr/services/access.py). Business rules live in
 app/modules/hr/services/leave.py."""
+from app.core.like import like_escape
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
@@ -194,8 +195,8 @@ async def list_balances(
     if leave_type_id:
         q = q.filter(HrLeaveBalance.leave_type_id == leave_type_id)
     if search and search.strip():
-        term = f"%{search.strip()}%"
-        q = q.join(User, User.id == HrLeaveBalance.user_id).filter(or_(User.name.ilike(term), User.email.ilike(term)))
+        term = f"%{like_escape(search.strip())}%"
+        q = q.join(User, User.id == HrLeaveBalance.user_id).filter(or_(User.name.ilike(term, escape="\\"), User.email.ilike(term, escape="\\")))
     rows = q.all()
     res = _balance_responses(db, rows)
     res.sort(key=lambda r: ((r.user_name or "").lower(), r.leave_type_code or ""))
@@ -397,9 +398,9 @@ async def list_requests(
 ):
     q = _apply_filters(apply_scope(db.query(HrLeaveRequest), user, HrLeaveRequest), status, user_id, leave_type_id, date_from, date_to)
     if search and search.strip():
-        term = f"%{search.strip()}%"
+        term = f"%{like_escape(search.strip())}%"
         q = q.join(User, User.id == HrLeaveRequest.user_id).filter(
-            or_(User.name.ilike(term), User.email.ilike(term), HrLeaveRequest.request_no.ilike(term))
+            or_(User.name.ilike(term, escape="\\"), User.email.ilike(term, escape="\\"), HrLeaveRequest.request_no.ilike(term, escape="\\"))
         )
     rows = q.order_by(HrLeaveRequest.from_date.desc(), HrLeaveRequest.id.desc()).limit(limit).all()
     return _request_responses(db, rows, user)

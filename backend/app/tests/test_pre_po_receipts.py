@@ -3,6 +3,7 @@ go into stock at once since 2026-11-06 - see test_pre_po_stock.py); Procurement 
 the Tally PO on it (Upload PO), which links the receipt; the PO goes through normal
 approval and GRN; the GRN settles the stock and closes the receipt."""
 from datetime import date
+from sqlalchemy import func
 
 from app.modules.accounts.models.vendor import Vendor
 from app.modules.main.models.audit_log import AuditLog
@@ -392,3 +393,70 @@ def test_attach_download_delete_permissions(client, db, monkeypatch):
     assert client.post(f"{STORE}/{rid}/cancel", json={"reason": "Returned"}, headers=auth_header(keeper)).status_code == 200
     late = client.post(f"{STORE}/{rid}/attachments", data={"doc_type": "other"}, files=files, headers=auth_header(keeper))
     assert late.status_code == 409 and "cancelled" in late.json()["detail"]
+
+
+def test_po_not_in_list_keeps_the_typed_po_number_and_date(client, db):
+    """Record Goods Receipt › PO not in list (owner, 2026-11-13): the PO made in Tally / by the vendor is typed."""
+    keeper = _store_user(db, "bpo.keeper.manualpo@premnathrail.com")
+    v, item = _vendor(db, "V-BPO-MPO"), master_item(db, "Washer BPO", code="BPO-MPO", uom="Nos")
+    r = client.post(STORE, json=_body(v, item, 5, manual_po_number="  TPO/25-26/118 ", manual_po_date="2026-11-01"),
+                    headers=auth_header(keeper))
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["manual_po_number"] == "TPO/25-26/118" and body["manual_po_date"] == "2026-11-01"
+    assert body["po_number"] is None and body["stock_posted"] is True  # not a portal PO; goods still in stock at once
+    got = client.get(f"{STORE}/{body['id']}", headers=auth_header(keeper)).json()
+    assert got["manual_po_number"] == "TPO/25-26/118"
+
+    r = client.post(STORE, json=_body(v, item, 5, manual_po_date="2026-11-01"), headers=auth_header(keeper))
+    assert r.status_code == 422 and "PO number" in r.json()["detail"]
+    assert client.post(STORE, json=_body(v, item, 5, manual_po_number="P" * 101), headers=auth_header(keeper)).status_code == 422
+
+
+def test_vendor_not_in_the_list_is_typed_and_added_once(client, db):
+    """Vendor typed by name (owner, 2026-11-13): created in the background, the same name reuses it."""
+    keeper = _store_user(db, "bpo.keeper.newvendor@premnathrail.com")
+    item = master_item(db, "Nut BPO", code="BPO-NV", uom="Nos")
+    body = {"vendor_name": "  Shree   Ganesh Traders ", "received_date": date.today().isoformat(),
+            "items": [{"store_item_id": item.id, "quantity": 3}]}
+    r = client.post(STORE, json=body, headers=auth_header(keeper))
+    assert r.status_code == 200, r.text
+    v = db.query(Vendor).filter(Vendor.name == "Shree Ganesh Traders").one()
+    assert r.json()["vendor_id"] == v.id and v.status == "active" and v.code.startswith("V-") and v.created_by_id == keeper.id
+    assert db.query(AuditLog).filter(AuditLog.entity_type == "vendor", AuditLog.entity_id == v.id).count() == 1
+
+    r = client.post(STORE, json={**body, "vendor_name": "shree ganesh traders"}, headers=auth_header(keeper))
+    assert r.status_code == 200 and r.json()["vendor_id"] == v.id
+    assert db.query(Vendor).filter(func.lower(Vendor.name) == "shree ganesh traders").count() == 1
+
+    r = client.post(STORE, json={**body, "vendor_name": "   "}, headers=auth_header(keeper))
+    assert r.status_code == 422 and "type its name" in r.json()["detail"]
+
+
+def test_name_on_invoice_is_remembered_per_vendor(client, db):
+    """Vendor + Name on invoice -> item, learnt from receipts (owner, 2026-11-13)."""
+    keeper = _store_user(db, "bpo.keeper.billnames@premnathrail.com")
+    v, other = _vendor(db, "V-BPO-BN"), _vendor(db, "V-BPO-BN2")
+    bearing, seal = master_item(db, "Bearing 6205", code="BPO-BN1", uom="Nos"), master_item(db, "Seal 40", code="BPO-BN2", uom="Nos")
+    line = lambda item, name: {"store_item_id": item.id, "quantity": 2, "invoice_item_name": name}  # noqa: E731
+    base = {"vendor_id": v.id, "received_date": date.today().isoformat()}
+    assert client.post(STORE, json={**base, "items": [line(bearing, "SKF 6205-2RS1  Deep Groove")]}, headers=auth_header(keeper)).status_code == 200
+    names = client.get(f"{STORE}/bill-names", params={"vendor_id": v.id}, headers=auth_header(keeper)).json()
+    assert [(n["name_key"], n["store_item_id"], n["times_used"]) for n in names] == [("skf 6205-2rs1 deep groove", bearing.id, 1)]
+
+    # Same name again (other case / spacing): one row, used twice. Another vendor learns its own name.
+    client.post(STORE, json={**base, "items": [line(bearing, "skf 6205-2RS1 deep groove")]}, headers=auth_header(keeper))
+    client.post(STORE, json={**base, "vendor_id": other.id, "items": [line(bearing, "BRG 6205")]}, headers=auth_header(keeper))
+    names = client.get(f"{STORE}/bill-names", params={"vendor_id": v.id}, headers=auth_header(keeper)).json()
+    assert len(names) == 1 and names[0]["times_used"] == 2
+    by_item = client.get(f"{STORE}/bill-names", params={"store_item_id": bearing.id}, headers=auth_header(keeper)).json()
+    assert sorted(n["vendor_name"] for n in by_item) == sorted([v.name, other.name])
+
+    # The store corrects it: the name now points to the other item.
+    client.post(STORE, json={**base, "items": [line(seal, "SKF 6205-2RS1 Deep Groove")]}, headers=auth_header(keeper))
+    names = client.get(f"{STORE}/bill-names", params={"vendor_id": v.id}, headers=auth_header(keeper)).json()
+    assert [(n["store_item_id"], n["times_used"]) for n in names] == [(seal.id, 1)]
+
+    assert client.get(f"{STORE}/bill-names", headers=auth_header(keeper)).status_code == 422
+    outsider = make_user(db, "bpo.outsider.billnames@premnathrail.com", assigned_apps=("crm",))
+    assert client.get(f"{STORE}/bill-names", params={"vendor_id": v.id}, headers=auth_header(outsider)).status_code == 403

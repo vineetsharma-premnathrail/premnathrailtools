@@ -3,6 +3,7 @@ revisions that go draft → submitted → approved/rejected. Approving a
 revision supersedes the drawing's previous approved one. Files live in
 SharePoint under Electrical-media/<job number>/<drawing number>/ and are
 streamed through the backend — the raw SharePoint URL is never exposed."""
+from app.core.like import like_escape
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, Form, Query, Response
@@ -202,9 +203,9 @@ async def list_drawings(
     if as_built is not None:
         query = query.filter(ElectricalDrawing.is_as_built == as_built)
     if search:
-        like = f"%{search}%"
+        like = f"%{like_escape(search)}%"
         query = query.filter(
-            ElectricalDrawing.drawing_number.ilike(like) | ElectricalDrawing.title.ilike(like) | ElectricalJob.job_number.ilike(like)
+            ElectricalDrawing.drawing_number.ilike(like, escape="\\") | ElectricalDrawing.title.ilike(like, escape="\\") | ElectricalJob.job_number.ilike(like, escape="\\")
         )
     responses = _to_responses(db, query.order_by(ElectricalDrawing.updated_at.desc()).all())
     if revision_status:

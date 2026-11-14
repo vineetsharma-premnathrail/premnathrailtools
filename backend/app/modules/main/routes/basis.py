@@ -1,5 +1,6 @@
 """Organization › System Monitor: background jobs (SM37) and system errors
 (SM21 / ST22). The denied-access trace (SU53) lives in routes/grc.py."""
+from app.core.like import like_escape
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 
@@ -95,9 +96,9 @@ async def list_errors(days: int = 7, path: str | None = None, user_id: int | Non
     if user_id:
         query = query.filter(SystemErrorLog.user_id == user_id)
     if q:
-        like = f"%{q.strip()}%"
-        query = query.filter((SystemErrorLog.error_ref.ilike(like)) | (SystemErrorLog.message.ilike(like))
-                             | (SystemErrorLog.exception_type.ilike(like)))
+        like = f"%{like_escape(q.strip())}%"
+        query = query.filter((SystemErrorLog.error_ref.ilike(like, escape="\\")) | (SystemErrorLog.message.ilike(like, escape="\\"))
+                             | (SystemErrorLog.exception_type.ilike(like, escape="\\")))
     rows = query.order_by(SystemErrorLog.id.desc()).limit(min(max(limit, 1), 1000)).all()
     names = _names(db, {r.user_id for r in rows})
     return [_error_out(r, names) for r in rows]

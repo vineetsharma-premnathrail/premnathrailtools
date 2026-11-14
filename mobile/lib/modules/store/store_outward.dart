@@ -222,7 +222,7 @@ Future<Json?> openIssueForm(BuildContext context, {bool challan = false}) async 
   try {
     final r = await Future.wait<Object>([
       docTypes('issue'),
-      Api.get('/store/material-issues/form-standard'),
+      Api.get('/store/material-issues/form-standard').then((v) => v as Object),
       Api.list('/store/material-issues/dispatch-projects').then((p) => p.rows, onError: (Object _) => <Json>[]),
       StoreData.items(),
     ]);

@@ -6,6 +6,7 @@ app/modules/hr/services/access.py). Checklist item owners who don't have
 the hr app (IT, store, the new manager…) can still see the event they have
 a task on and mark their own items done. Business logic lives in
 app/modules/hr/services/lifecycle.py."""
+from app.core.like import like_escape
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -329,12 +330,12 @@ async def list_events(
     if user_id:
         query = query.filter(HrLifecycleEvent.user_id == user_id)
     if q and q.strip():
-        like = f"%{q.strip().lower()}%"
-        matching_users = db.query(User.id).filter(or_(func.lower(User.name).like(like), func.lower(User.email).like(like)))
+        like = f"%{like_escape(q.strip().lower())}%"
+        matching_users = db.query(User.id).filter(or_(func.lower(User.name).like(like, escape="\\"), func.lower(User.email).like(like, escape="\\")))
         query = query.filter(or_(
-            func.lower(HrLifecycleEvent.event_no).like(like),
-            func.lower(HrLifecycleEvent.candidate_name).like(like),
-            func.lower(HrLifecycleEvent.candidate_email).like(like),
+            func.lower(HrLifecycleEvent.event_no).like(like, escape="\\"),
+            func.lower(HrLifecycleEvent.candidate_name).like(like, escape="\\"),
+            func.lower(HrLifecycleEvent.candidate_email).like(like, escape="\\"),
             HrLifecycleEvent.user_id.in_(matching_users),
         ))
     events = query.order_by(HrLifecycleEvent.created_at.desc(), HrLifecycleEvent.id.desc()).limit(limit).all()

@@ -97,8 +97,10 @@ def test_limits_and_dangerous_types(client, db, graph):
     user = make_user(db, "crm.user2@premnathrail.com")
     too_big = start(client, user, file_size=101 * GB)
     assert too_big.status_code == 413 and "100 GB" in too_big.json()["detail"]
-    html = start(client, user, file_name="evil.html", content_type="text/html")
-    assert html.status_code == 400
+    # Owner decision 2026-11-12: every format may be uploaded; a web page is
+    # served back as plain text (app/middleware/file_safety.py), so it never runs.
+    html = start(client, user, file_name="page.html", content_type="text/html")
+    assert html.status_code == 200, html.text
 
 
 def test_size_mismatch_or_fake_content_is_rejected_and_deleted(client, db, graph):

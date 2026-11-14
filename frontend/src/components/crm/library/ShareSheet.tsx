@@ -35,7 +35,7 @@ export default function ShareSheet({ doc, onClose, onShared }: { doc: LibDocumen
       const res = await salesLibraryApi.share(doc.id, { user_ids: picked.map(Number), message: message.trim() || undefined })
       const skipped = res.skipped?.length ?? 0
       onShared(res.sent, skipped
-        ? `${skipped} ${skipped === 1 ? 'person' : 'people'} can't receive this file — they need CRM › Sales Library access (and Confidential folders for a confidential file). Ask an admin to grant it.`
+        ? `${skipped} ${skipped === 1 ? 'person' : 'people'} can't receive this file — they need CRM › Knowledge Hub access (and Confidential folders for a confidential file). Ask an admin to grant it.`
         : '')
     } catch (err) {
       setError(extractErrorMessages(err, 'The document could not be shared. Check your connection and try again.'))
@@ -46,14 +46,14 @@ export default function ShareSheet({ doc, onClose, onShared }: { doc: LibDocumen
 
   return (
     <FormSheet width={560} icon="send" busy={busy} onClose={onClose} onSubmit={submit} title="Share document"
-      subtitle={`${doc.title} — colleagues get a notification that opens it in the Sales Library.`}
+      subtitle={`${doc.title} — colleagues get a notification that opens it in the Knowledge Hub.`}
       footer={<>
         <button type="button" onClick={onClose} disabled={busy} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
         <button type="submit" disabled={busy || !!loadError} style={sheetBtn('primary', SHEET.BLUE, busy || !!loadError)}><SheetIcon name="send" size={16} />{busy ? 'Sharing…' : 'Share'}</button>
       </>}>
       <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
         <SheetError error={error || loadError} />
-        <SheetField label="Share with" required hint="Only people who can open the Sales Library (and this folder, if it is confidential) will be able to open it.">
+        <SheetField label="Share with" required hint="Only people who can open the Knowledge Hub (and this folder, if it is confidential) will be able to open it.">
           <div><MultiPicker options={users} selected={picked} onChange={setPicked} placeholder="Add a colleague…" hex="#2563eb" disabled={busy} /></div>
         </SheetField>
         <SheetField label={<>Message <Optional /></>}>

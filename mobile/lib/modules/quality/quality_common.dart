@@ -457,7 +457,7 @@ Future<List<MultipartFile>> choosePhotos(BuildContext context) async {
         return await Files.pickFiles();
     }
   } catch (e) {
-    if (context.mounted) showSnack(context, 'Could not get the photo: $e', error: true);
+    if (context.mounted) showSnack(context, 'Could not get the photo. ${ApiClient.describe(e)}', error: true);
   }
   return [];
 }

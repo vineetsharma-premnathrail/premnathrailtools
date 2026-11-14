@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../modules.dart';
+import '../../record_router.dart';
 import '../../ui/app_frame.dart';
 import '../../ui/widgets.dart';
 import 'crm_common.dart';
@@ -13,11 +14,16 @@ import 'crm_reports_settings.dart';
 /// CRM - native copy of frontend/src/app/dashboard/crm/ (CrmNav tabs, Products with
 /// Pricing inside, Settings as the gear next to the bell).
 class CrmModuleHome extends StatelessWidget {
-  const CrmModuleHome({super.key, required this.module});
+  const CrmModuleHome({super.key, required this.module, this.initialTabLabel});
   final ErpModule module;
 
+  /// Tab to open first (links from alerts / approvals); null = the first tab.
+  final String? initialTabLabel;
+
   @override
-  Widget build(BuildContext context) => ModuleScaffold(
+  Widget build(BuildContext context) => startOnTab(_scaffold(context), initialTabLabel);
+
+  ModuleScaffold _scaffold(BuildContext context) => ModuleScaffold(
         module: module,
         topActions: [
           if (CrmPerm.tab('settings') && CrmPerm.can('settings', 'view'))

@@ -1,3 +1,4 @@
+from app.core.like import like_escape
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -79,10 +80,10 @@ async def list_components(
     if status_filter:
         query = query.filter(HydComponent.status == status_filter)
     if search:
-        like = f"%{search}%"
+        like = f"%{like_escape(search)}%"
         query = query.filter(
-            HydComponent.code.ilike(like) | HydComponent.name.ilike(like) | HydComponent.manufacturer.ilike(like)
-            | HydComponent.model_number.ilike(like) | HydComponent.part_number.ilike(like)
+            HydComponent.code.ilike(like, escape="\\") | HydComponent.name.ilike(like, escape="\\") | HydComponent.manufacturer.ilike(like, escape="\\")
+            | HydComponent.model_number.ilike(like, escape="\\") | HydComponent.part_number.ilike(like, escape="\\")
         )
     return _to_responses(db, query.order_by(HydComponent.code).all(), _tab)
 

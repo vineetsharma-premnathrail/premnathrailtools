@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../modules.dart';
+import '../../record_router.dart';
 import '../../ui/app_frame.dart';
 import '../../ui/widgets.dart';
 import 'dashboard_tab.dart';
@@ -14,8 +15,11 @@ import 'settings_screen.dart';
 /// portal's ErpNav tabs (Dashboard, Service Requests, Contracts, Reports,
 /// Recycle Bin) and Settings as the gear next to the bell.
 class ServiceModuleHome extends StatefulWidget {
-  const ServiceModuleHome({super.key, required this.module});
+  const ServiceModuleHome({super.key, required this.module, this.initialTabLabel});
   final ErpModule module;
+
+  /// Tab to open first (links from alerts / approvals); null = the first tab.
+  final String? initialTabLabel;
 
   @override
   State<ServiceModuleHome> createState() => _ServiceModuleHomeState();
@@ -72,7 +76,7 @@ class _ServiceModuleHomeState extends State<ServiceModuleHome> {
       final i = visible.indexWhere((t) => t.label == 'Service Requests');
       initial = i < 0 ? 0 : i;
     }
-    return ModuleScaffold(
+    final scaffold = ModuleScaffold(
       key: ValueKey(_key),
       module: widget.module,
       initialTab: initial,
@@ -86,6 +90,8 @@ class _ServiceModuleHomeState extends State<ServiceModuleHome> {
           ),
       ],
     );
+    // A link's start tab applies until the Dashboard's "View all" moves on.
+    return _key == 0 ? startOnTab(scaffold, widget.initialTabLabel) : scaffold;
   }
 }
 

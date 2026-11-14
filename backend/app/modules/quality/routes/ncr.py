@@ -1,4 +1,5 @@
 """NCR register and workflow endpoints. Rules live in services/ncr.py."""
+from app.core.like import like_escape
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -142,9 +143,9 @@ async def list_ncrs(
     if severity:
         query = query.filter(QualityNcr.severity == severity)
     if search:
-        like = f"%{search}%"
-        query = query.filter(QualityNcr.item_name.ilike(like) | QualityNcr.ncr_number.ilike(like)
-                             | QualityNcr.description.ilike(like) | QualityNcr.vendor_name.ilike(like))
+        like = f"%{like_escape(search)}%"
+        query = query.filter(QualityNcr.item_name.ilike(like, escape="\\") | QualityNcr.ncr_number.ilike(like, escape="\\")
+                             | QualityNcr.description.ilike(like, escape="\\") | QualityNcr.vendor_name.ilike(like, escape="\\"))
     ncrs = query.order_by(QualityNcr.created_at.desc()).all()
     if awaiting_my_approval:
         from app.modules.organization.services.approval_engine import can_act_on_entity

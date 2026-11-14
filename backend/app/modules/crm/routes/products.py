@@ -1,3 +1,4 @@
+from app.core.like import like_escape
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import IntegrityError
@@ -25,9 +26,9 @@ async def list_products(
 ):
     query = db.query(Product).filter(Product.is_deleted == False)  # noqa: E712
     if search:
-        like = f"%{search}%"
+        like = f"%{like_escape(search)}%"
         query = query.filter(
-            (Product.name.ilike(like)) | (Product.model_number.ilike(like)) | (Product.category.ilike(like))
+            (Product.name.ilike(like, escape="\\")) | (Product.model_number.ilike(like, escape="\\")) | (Product.category.ilike(like, escape="\\"))
         )
     return query.order_by(Product.id.desc()).all()
 

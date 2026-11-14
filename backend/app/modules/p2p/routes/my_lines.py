@@ -8,6 +8,8 @@ Another buyer's lines, all lines, or the unassigned ones (buyer_id=0) need the P
 from requisitions that are with procurement. No prices. Sorted by requisition number then line, ascending."""
 from __future__ import annotations
 
+from app.core.like import like_escape
+
 import re
 from collections import defaultdict
 from datetime import date, datetime
@@ -137,11 +139,11 @@ def my_lines(
         q = q.filter(exists().where(P2PRequestItem.p2p_request_id == P2PRequest.id, *line_cond).correlate(P2PRequest))
     term = (search or "").strip()
     if term:
-        like = f"%{term}%"
+        like = f"%{like_escape(term)}%"
         q = q.filter(or_(
-            P2PRequest.p2p_number.ilike(like), P2PRequest.project_label.ilike(like),
-            P2PRequest.items.any(or_(P2PRequestItem.item_name.ilike(like), P2PRequestItem.part_code.ilike(like),
-                                     P2PRequestItem.store_item.has(StoreItem.item_code.ilike(like))))))
+            P2PRequest.p2p_number.ilike(like, escape="\\"), P2PRequest.project_label.ilike(like, escape="\\"),
+            P2PRequest.items.any(or_(P2PRequestItem.item_name.ilike(like, escape="\\"), P2PRequestItem.part_code.ilike(like, escape="\\"),
+                                     P2PRequestItem.store_item.has(StoreItem.item_code.ilike(like, escape="\\"))))))
     prs = (q.options(selectinload(P2PRequest.items).selectinload(P2PRequestItem.store_item))
            .order_by(P2PRequest.p2p_number, P2PRequest.id).all())
 

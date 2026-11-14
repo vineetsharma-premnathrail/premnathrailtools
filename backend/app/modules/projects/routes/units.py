@@ -72,10 +72,6 @@ async def lookup_units(
         base = base.filter(PmProject.status.in_(op_core.PICKABLE_PROJECT_STATUSES))
     cap = 500 if any_status else 30
 
-    def _status(p: PmProject) -> str:
-        # A project that is no longer live says so in the picker (any_status only).
-        return "" if p.status in op_core.PICKABLE_PROJECT_STATUSES else \
-            f" · {op_core.PROJECT_STATUS_LABEL.get(p.status, p.status)}"
     if project_id:
         base = base.filter(PmProject.id == project_id)
     like = f"%{q.strip()}%" if q and q.strip() else None
@@ -93,12 +89,8 @@ async def lookup_units(
     unit_less = {p.id for p, _ in prows if not op_core.project_has_units(db, p.id)}
     for p, so_number in prows:
         m = machines.get(p.id)
-        if p.id in unit_less:
-            bits = [p.project_code, p.client_name or None, f"machine {m[1]}" if m else None]
-            display, level = " · ".join(b for b in bits if b), True
-        else:
-            display, level = f"{p.project_code} · whole project · {p.client_name or ''}".rstrip(" ·"), False
-        display += _status(p)
+        # Pickers show the project number only (owner, 2026-11-07) - no customer, machine or status.
+        display, level = p.project_code, p.id in unit_less
         out.append(ProjectUnitLookupItem(
             project_id=p.id, project_code=p.project_code, client_name=p.client_name, so_number=so_number,
             project_level=level, machine_id=m[0] if m else None, machine_serial=m[1] if m else None, display=display))
@@ -116,7 +108,7 @@ async def lookup_units(
     machines.update(_machines(db, [p.id for p, _, _ in rows if p.id not in machines]))
     for p, so_number, el in rows:
         m = machines.get(p.id)
-        disp = op_core.element_display(p, el) + (f" · {p.client_name}" if p.client_name else "") + _status(p)
+        disp = f"{p.project_code} / {el.element_no.rsplit('/', 1)[-1]}"  # project number + unit no. only (owner, 2026-11-07)
         out.append(ProjectUnitLookupItem(
             project_id=p.id, project_code=p.project_code, element_id=el.id, element_no=el.element_no, label=el.label,
             kind=el.kind, client_name=p.client_name, so_number=so_number,

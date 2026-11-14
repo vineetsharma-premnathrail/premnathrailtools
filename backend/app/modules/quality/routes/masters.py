@@ -1,6 +1,7 @@
 """Quality masters: inspection characteristics, defect codes, disposition
 codes, simple master lists, and the (read-only) ISO 2859-1 sampling tables.
 Masters are retired (is_active=false), never deleted."""
+from app.core.like import like_escape
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -86,8 +87,8 @@ async def list_characteristics(include_inactive: bool = False, search: str | Non
     if not include_inactive:
         q = q.filter(QualityCharacteristic.is_active.is_(True))
     if search:
-        like = f"%{search}%"
-        q = q.filter(QualityCharacteristic.code.ilike(like) | QualityCharacteristic.name.ilike(like))
+        like = f"%{like_escape(search)}%"
+        q = q.filter(QualityCharacteristic.code.ilike(like, escape="\\") | QualityCharacteristic.name.ilike(like, escape="\\"))
     return q.order_by(QualityCharacteristic.code).all()
 
 
@@ -299,8 +300,8 @@ async def lookup_items(search: str | None = None, limit: int = 50, db: Session =
     from app.modules.store.models.item import StoreItem
     q = db.query(StoreItem).filter(StoreItem.status == "active")
     if search:
-        like = f"%{search}%"
-        q = q.filter(StoreItem.item_code.ilike(like) | StoreItem.item_name.ilike(like))
+        like = f"%{like_escape(search)}%"
+        q = q.filter(StoreItem.item_code.ilike(like, escape="\\") | StoreItem.item_name.ilike(like, escape="\\"))
     return [{"id": i.id, "item_code": i.item_code, "item_name": i.item_name, "uom": i.uom,
              "inspection_on_receipt": i.inspection_on_receipt, "test_certificate_required": i.test_certificate_required}
             for i in q.order_by(StoreItem.item_name).limit(min(limit, 200)).all()]

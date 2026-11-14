@@ -27,7 +27,7 @@ from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.store.models.category import StoreItemCategory
 from app.modules.store.models.item import StoreItem, StoreUom
-from app.modules.store.routes.items import check_hsn_sac, check_lead_time, check_legacy_code
+from app.modules.store.routes.items import check_hsn_sac, check_lead_time, check_legacy_code, store_units
 from app.modules.accounts.models.settings import GSTRate
 from app.modules.accounts.models.vendor import Vendor
 from app.modules.store.routes.item_types import item_types
@@ -38,9 +38,15 @@ from app.modules.store.service import generate_item_code
 # Registered before the items router so /export isn't read as /{item_id}.
 router = APIRouter(prefix="/store/items", tags=["Store"])
 
-COLUMNS = ["item_type", "category", "subcategory", "item_name", "uom", "technical_specification",
-           "lead_time_days", "legacy_code", "part_code", "hsn_sac_code", "gst_rate", "preferred_vendor",
-           "standard_cost", "min_order_qty", "reorder_level"]
+# Template and export share one column order (owner, 2026-11-07): the
+# "Name at <unit>" columns sit right after item_name.
+COLUMNS_BEFORE_UNITS = ["item_type", "category", "subcategory", "item_name"]
+COLUMNS_AFTER_UNITS = ["uom", "technical_specification", "lead_time_days", "legacy_code", "part_code", "hsn_sac_code",
+                       "gst_rate", "preferred_vendor", "standard_cost", "min_order_qty", "reorder_level"]
+
+
+def file_columns(units) -> list[str]:
+    return COLUMNS_BEFORE_UNITS + [_unit_col(u.name) for u in units] + COLUMNS_AFTER_UNITS
 
 
 def _number(raw: str, label: str) -> float | None:
@@ -71,6 +77,20 @@ def _spec(r: dict) -> str:
 MAX_ROWS = 5000
 
 
+def _key(header) -> str:
+    """Header → snake key, so the Excel export's titles ("Item Name",
+    "Lead Time (days)", "HSN / SAC", "Name at Unit 1") read the same as the
+    template's names (item_name, lead_time_days …)."""
+    import re
+    k = re.sub(r"[^a-z0-9]+", "_", str(header or "").strip().lower()).strip("_")
+    return {"hsn_sac": "hsn_sac_code", "gst": "gst_rate"}.get(k, k)
+
+
+def _unit_col(unit_name: str) -> str:
+    """Column title of a unit-wise name in the export / template."""
+    return f"Name at {unit_name}"
+
+
 def _read_rows(filename: str, raw: bytes) -> list[dict]:
     name = (filename or "").lower()
     if name.endswith((".xlsx", ".xlsm")):
@@ -82,7 +102,7 @@ def _read_rows(filename: str, raw: bytes) -> list[dict]:
         rows = list(ws.iter_rows(values_only=True))
         if not rows:
             return []
-        headers = [str(h or "").strip().lower() for h in rows[0]]
+        headers = [_key(h) for h in rows[0]]
         return [{headers[i]: ("" if v is None else str(v).strip()) for i, v in enumerate(r) if i < len(headers)} for r in rows[1:]]
     if not name.endswith(".csv"):
         raise HTTPException(status_code=422, detail="Upload a .csv or .xlsx file — download the template to start from the right columns.")
@@ -91,7 +111,7 @@ def _read_rows(filename: str, raw: bytes) -> list[dict]:
     except UnicodeDecodeError:
         raise HTTPException(status_code=422, detail="Could not read the file as UTF-8 text — save it as CSV (UTF-8) from Excel and try again.")
     reader = csv.DictReader(io.StringIO(text))
-    return [{(k or "").strip().lower(): (v or "").strip() for k, v in r.items()} for r in reader]
+    return [{_key(k): (v or "").strip() for k, v in r.items()} for r in reader]
 
 
 def _type_value(raw: str, labels: dict[str, str]) -> str | None:
@@ -106,13 +126,16 @@ def _type_value(raw: str, labels: dict[str, str]) -> str | None:
 
 
 @router.get("/import/template")
-async def import_template(_user: User = Depends(require_tab_action("store", "items", "import"))):
+async def import_template(db: Session = Depends(get_db),
+                          _user: User = Depends(require_tab_action("store", "items", "import"))):
+    units = store_units(db)
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(COLUMNS)
-    w.writerow(["Material", "Hardware & Fasteners", "", "Hex Bolt M12x50", "NOS", "Zinc plated", "21", "HWF-BLT-0012",
-                "", "7318", "18", "", "12.50", "100", "200"])
-    w.writerow(["Consumable", "PPE", "", "Safety Gloves", "PAIR", "", "", "", "", "", "", "", "", "", ""])
+    w.writerow(file_columns(units))
+    w.writerow(["Material", "Hardware & Fasteners", "", "Hex Bolt M12x50"] + [""] * len(units)
+               + ["NOS", "Zinc plated", "21", "HWF-BLT-0012", "", "7318", "18", "", "12.50", "100", "200"])
+    w.writerow(["Consumable", "PPE", "", "Safety Gloves"] + [""] * len(units)
+               + ["PAIR", "", "", "", "", "", "", "", "", "", ""])
     return StreamingResponse(iter([buf.getvalue()]), media_type="text/csv",
                              headers={"Content-Disposition": 'attachment; filename="item_master_import_template.csv"'})
 
@@ -146,6 +169,18 @@ async def import_items(
     top_cats = db.query(StoreItemCategory).filter(StoreItemCategory.parent_id.is_(None)).all()
     gst_rates = [float(r) for (r,) in db.query(GSTRate.rate).filter(GSTRate.is_active.is_(True)).all()]
     vendors = db.query(Vendor.id, Vendor.code, Vendor.name).filter(Vendor.status == "active").all()
+    # Unit-wise names: one "Name at <unit>" column per unit that runs a store.
+    unit_cols = {_key(_unit_col(u.name)): u for u in store_units(db)}
+
+    def unit_names_of(r: dict) -> list[dict]:
+        out = []
+        for col, unit in unit_cols.items():
+            n = (r.get(col) or "").strip()
+            if n:
+                if len(n) > 200:
+                    raise ValueError(f"The name at {unit.name} is longer than 200 characters — shorten it.")
+                out.append({"branch_id": unit.id, "name": n})
+        return out
 
     created, existing, errors = [], [], []
     new_units: list[str] = []
@@ -165,8 +200,24 @@ async def import_items(
         key = (name.lower(), _spec(r).lower())
         match = by_name.get(key)
         if match:
+            # Export → fill the unit-wise names → import again: the names are saved on the existing item.
+            reason = "Same name and technical specification already exist"
+            try:
+                names = unit_names_of(r)
+            except ValueError as exc:
+                errors.append({"row": idx, "item_name": name, "reason": str(exc)})
+                continue
+            if names:
+                item = db.query(StoreItem).filter(StoreItem.item_code == match[0]).first()
+                if item:
+                    merged = {u["branch_id"]: u["name"] for u in (item.unit_names or [])}
+                    merged.update({u["branch_id"]: u["name"] for u in names})
+                    new = [{"branch_id": b, "name": n} for b, n in merged.items()]
+                    if new != (item.unit_names or []):
+                        item.unit_names = new
+                        reason = "Already exists — unit-wise names updated"
             existing.append({"row": idx, "item_name": name, "existing_code": match[0], "existing_name": match[1],
-                             "reason": "Same name and technical specification already exist"})
+                             "reason": reason})
             continue
         if key in seen_names:
             existing.append({"row": idx, "item_name": name, "existing_code": None, "existing_name": name,
@@ -240,6 +291,7 @@ async def import_items(
             std_cost = _number(_cell(r, "standard_cost", "standard cost"), "Standard cost")
             moq = _number(_cell(r, "min_order_qty", "min order qty"), "Minimum order quantity")
             reorder = _number(_cell(r, "reorder_level", "reorder level"), "Reorder level")
+            names = unit_names_of(r)
         except ValueError as exc:
             errors.append({"row": idx, "item_name": name, "reason": str(exc)})
             continue
@@ -254,6 +306,7 @@ async def import_items(
             description=_spec(r) or None, uom=uom, lead_time_days=lead_time, legacy_code=legacy,
             part_number=_cell(r, "part_code", "part code").strip() or None, hsn_sac_code=hsn, gst_rate=gst,
             preferred_vendor_id=vendor_id, standard_cost=std_cost, min_order_qty=moq, reorder_level=reorder,
+            unit_names=names or None,
         )
         db.add(item)
         db.flush()
@@ -301,25 +354,26 @@ async def export_items(
     wb = Workbook()
     ws = wb.active
     ws.title = "Item Master"
-    headers = ["Item Code", "Item Type", "Category", "Subcategory", "Item Name", "UOM", "Technical Specification", "Status",
-               "Lead Time (days)", "Legacy Code", "Part Code", "HSN / SAC", "GST %", "Preferred Vendor",
-               "Standard Cost", "Min Order Qty", "Reorder Level"]
+    units = store_units(db)
+    headers = file_columns(units)  # same columns as the import template, so the file imports back as is
     vendor_names = {v.id: v.code for v in db.query(Vendor.id, Vendor.code).all()}
     ws.append(headers)
     for cell in ws[1]:
         cell.font = Font(bold=True)
         cell.fill = PatternFill("solid", fgColor="FDF1E6")
     for i in items:
-        ws.append([i.item_code, labels.get(i.item_type or "", i.item_type or ""), i.category or "", i.subcategory or "",
-                   i.item_name, i.uom, i.description or "", (i.status or "").title(),
+        ws.append([labels.get(i.item_type or "", i.item_type or ""), i.category or "", i.subcategory or "", i.item_name]
+                  + [next((u["name"] for u in (i.unit_names or []) if u.get("branch_id") == unit.id), "") for unit in units]
+                  + [i.uom, i.description or "",
                    i.lead_time_days if i.lead_time_days is not None else "", i.legacy_code or "",
                    i.part_number or "", i.hsn_sac_code or "", i.gst_rate if i.gst_rate is not None else "",
                    vendor_names.get(i.preferred_vendor_id, ""),
                    i.standard_cost if i.standard_cost is not None and show_cost else "",
                    i.min_order_qty if i.min_order_qty is not None else "",
                    i.reorder_level if i.reorder_level is not None else ""])
-    for col, width in zip("ABCDEFGHIJKLMNOPQ", [16, 18, 24, 20, 34, 8, 36, 12, 16, 18, 16, 12, 8, 18, 14, 14, 14]):
-        ws.column_dimensions[col].width = width
+    from openpyxl.utils import get_column_letter
+    for n, width in enumerate([18, 24, 20, 34] + [28] * len(units) + [8, 36, 16, 18, 16, 14, 10, 18, 14, 14, 14], start=1):
+        ws.column_dimensions[get_column_letter(n)].width = width
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = ws.dimensions
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../modules.dart';
+import '../../record_router.dart';
 import '../../ui/app_frame.dart';
 import '../../ui/perms.dart';
 import '../../ui/widgets.dart';
@@ -26,11 +27,16 @@ import 'quality_supplier.dart';
 /// Quality - native copy of frontend/src/app/dashboard/quality/ (tabs and
 /// order from components/quality/QualityNav.tsx; Settings is the gear).
 class QualityModuleHome extends StatelessWidget {
-  const QualityModuleHome({super.key, required this.module});
+  const QualityModuleHome({super.key, required this.module, this.initialTabLabel});
   final ErpModule module;
 
+  /// Tab to open first (links from alerts / approvals); null = the first tab.
+  final String? initialTabLabel;
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => startOnTab(_scaffold(context), initialTabLabel);
+
+  ModuleScaffold _scaffold(BuildContext context) {
     final v = qualityTabVisible;
     return ModuleScaffold(
       module: module,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../api/api.dart';
+import '../../record_router.dart';
 import '../../theme.dart';
 import '../../ui/app_frame.dart';
 import '../../ui/files.dart';
@@ -378,10 +379,13 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
             title: txt(row['reference'] ?? row['type_label']),
             actions: [
               if (url.isNotEmpty)
-                IconButton(
-                  tooltip: 'Open document in portal',
-                  icon: const Icon(Icons.open_in_new_rounded),
-                  onPressed: () => runAction(context, () => Files.openInPortal(url)),
+                TextButton(
+                  onPressed: () => runAction(context, () async {
+                    // The document's own screen in the app; the web portal only
+                    // for the few pages the app does not have.
+                    if (!await openPortalLink(context, url)) await Files.openInPortal(url);
+                  }),
+                  child: const Text('Open document'),
                 ),
             ],
             body: body,

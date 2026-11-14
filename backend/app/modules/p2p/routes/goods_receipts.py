@@ -334,6 +334,8 @@ def _sync_po_and_pr_status(db: Session, po: P2PPurchaseOrder, user_id: int) -> N
     # on the second GRN of a PO. Both represent UTC; strip tzinfo to compare.
     def _grn_ts(g: P2PGoodsReceipt) -> datetime:
         ts = g.inspected_at or g.created_at
+        if ts is None:  # saved just now, not inspected: created_at is still the DB default — it is the newest
+            return datetime.max
         return ts.replace(tzinfo=None) if ts.tzinfo else ts
 
     latest_grn = max(completed_grns, key=_grn_ts, default=None)

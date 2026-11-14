@@ -1,3 +1,4 @@
+from app.core.like import like_escape
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -131,10 +132,10 @@ async def list_systems(
     if order_project_id:
         query = query.filter(HydSystem.order_project_id == order_project_id)
     if search:
-        like = f"%{search}%"
+        like = f"%{like_escape(search)}%"
         query = query.filter(
-            HydSystem.system_number.ilike(like) | HydSystem.name.ilike(like)
-            | HydSystem.application.ilike(like) | HydSystem.equipment_ref.ilike(like)
+            HydSystem.system_number.ilike(like, escape="\\") | HydSystem.name.ilike(like, escape="\\")
+            | HydSystem.application.ilike(like, escape="\\") | HydSystem.equipment_ref.ilike(like, escape="\\")
         )
     return _to_responses(db, query.order_by(HydSystem.id.desc()).all())
 

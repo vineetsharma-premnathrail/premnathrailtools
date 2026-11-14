@@ -96,7 +96,7 @@ export const INDIA_STATES = [
 ]
 
 export const LEAD_SOURCES = [
-  'Website', 'WhatsApp', 'Referral', 'Phone Call', 'Email', 'Walk-in', 'LinkedIn', 'Exhibition/Event', 'Other',
+  'Website', 'WhatsApp', 'Referral', 'Phone Call', 'Email', 'Visiting', 'LinkedIn', 'Exhibition/Event', 'Other',
 ]
 
 // Older records may still carry a retired source (e.g. 'Google Ads', 'Justdial') —

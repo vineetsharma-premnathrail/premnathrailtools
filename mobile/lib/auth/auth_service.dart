@@ -1,9 +1,13 @@
+import 'dart:convert';
+
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:msal_auth/msal_auth.dart';
 
 import '../api/api_client.dart';
 import '../config.dart';
+import 'app_lock.dart';
 
 /// Microsoft sign-in (MSAL) → portal session.
 ///
@@ -18,6 +22,9 @@ class AuthService extends ChangeNotifier {
 
   static const _storage = FlutterSecureStorage();
   static const _sessionKey = 'session_token';
+  // Last /auth/me (name, role, apps, permissions) so a start without network
+  // keeps the person logged in instead of sending them back to Login.
+  static const _userKey = 'me_cache';
 
   SingleAccountPca? _pca;
   String? _sessionToken;
@@ -39,15 +46,43 @@ class AuthService extends ChangeNotifier {
   }
 
   /// App start: reuse the account already signed in on this phone, no prompt.
+  /// No network / server unreachable keeps the person logged in (last saved
+  /// profile; screens show "Could not reach the server" with Retry). Only a
+  /// real end of the login (Microsoft asks to log in again, or the server
+  /// rejects it) logs out.
   Future<void> restore() async {
     if (AppConfig.missingSettings.isNotEmpty) return;
     _sessionToken = await _storage.read(key: _sessionKey);
     try {
       final result = await (await _client()).acquireTokenSilent(scopes: [AppConfig.apiScope]);
       await _startSession(result.accessToken);
-    } catch (_) {
-      await _clearLocal();
+    } catch (e) {
+      if (_loginEnded(e) || !await _useSavedUser()) await _clearLocal();
     }
+  }
+
+  /// True when the error means the login itself is over (not just no network).
+  static bool _loginEnded(Object e) {
+    if (e is MsalUiRequiredException || e is MsalNoCurrentAccountException) return true;
+    if (e is DioException) {
+      final code = e.response?.statusCode;
+      return code == 400 || code == 401 || code == 403;
+    }
+    return false;
+  }
+
+  /// Offline start: keep the saved session + profile. False when nothing saved.
+  Future<bool> _useSavedUser() async {
+    if (_sessionToken == null) return false;
+    final raw = await _storage.read(key: _userKey);
+    if (raw == null) return false;
+    try {
+      _user = Map<String, dynamic>.from(jsonDecode(raw) as Map);
+    } catch (_) {
+      return false;
+    }
+    notifyListeners();
+    return true;
   }
 
   /// Login button. Reuses the Microsoft account already on this phone when it
@@ -80,8 +115,10 @@ class AuthService extends ChangeNotifier {
         final result = await (await _client()).acquireTokenSilent(scopes: [AppConfig.apiScope]);
         await _startSession(result.accessToken);
         return true;
-      } catch (_) {
-        await _clearLocal();
+      } catch (e) {
+        // No network: keep the login; the failed call shows "could not reach
+        // the server". Only a real end of the login logs out.
+        if (_loginEnded(e)) await _clearLocal();
         return false;
       } finally {
         _renewing = null;
@@ -98,6 +135,8 @@ class AuthService extends ChangeNotifier {
     try {
       await (await _client()).signOut();
     } on MsalException catch (_) {}
+    // Logout forgets the fingerprint-unlock password too (next user may differ).
+    await AppLock.instance.reset();
     await _clearLocal();
   }
 
@@ -111,6 +150,9 @@ class AuthService extends ChangeNotifier {
     await _storage.write(key: _sessionKey, value: _sessionToken);
     final me = await ApiClient.dio.get('/auth/me');
     _user = Map<String, dynamic>.from(me.data as Map);
+    await _storage.write(key: _userKey, value: jsonEncode(_user));
+    // A new login starts locked when the portal's app password is on.
+    await AppLock.instance.refresh();
     notifyListeners();
   }
 
@@ -118,6 +160,7 @@ class AuthService extends ChangeNotifier {
     _sessionToken = null;
     _user = null;
     await _storage.delete(key: _sessionKey);
+    await _storage.delete(key: _userKey);
     notifyListeners();
   }
 }

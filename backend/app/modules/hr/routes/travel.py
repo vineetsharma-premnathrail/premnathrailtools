@@ -4,6 +4,7 @@ Owner: Agent D. Employees raise their own requests; approval runs through the
 central approval engine (hr.travel — default: the requester's reporting
 manager plus HR approvers; see services/approvals.py). `approver_id` still
 records the manager at submission. Nobody decides their own request."""
+from app.core.like import like_escape
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
@@ -236,12 +237,12 @@ async def list_travel_requests(
     if date_to:
         q = q.filter(HrTravelRequest.depart_date <= date_to)
     if search and search.strip():
-        term = f"%{search.strip()}%"
-        uids = [u.id for u in db.query(User.id).filter(or_(User.name.ilike(term), User.email.ilike(term))).all()]
+        term = f"%{like_escape(search.strip())}%"
+        uids = [u.id for u in db.query(User.id).filter(or_(User.name.ilike(term, escape="\\"), User.email.ilike(term, escape="\\"))).all()]
         conds = [
-            HrTravelRequest.request_no.ilike(term), HrTravelRequest.from_city.ilike(term),
-            HrTravelRequest.to_city.ilike(term), HrTravelRequest.purpose.ilike(term),
-            HrTravelRequest.project_reference.ilike(term),
+            HrTravelRequest.request_no.ilike(term, escape="\\"), HrTravelRequest.from_city.ilike(term, escape="\\"),
+            HrTravelRequest.to_city.ilike(term, escape="\\"), HrTravelRequest.purpose.ilike(term, escape="\\"),
+            HrTravelRequest.project_reference.ilike(term, escape="\\"),
         ]
         if uids:
             conds.append(HrTravelRequest.user_id.in_(uids))

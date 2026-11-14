@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../modules.dart';
+import '../../record_router.dart';
 import '../../ui/app_frame.dart';
 import '../../ui/widgets.dart';
 import 'mt_assets.dart';
@@ -19,11 +20,16 @@ import 'mt_work_orders.dart';
 /// Tabs follow MaintenanceNav: production supervisors without the
 /// maintenance app only get their own Requests; Settings is the gear.
 class MaintenanceModuleHome extends StatelessWidget {
-  const MaintenanceModuleHome({super.key, required this.module});
+  const MaintenanceModuleHome({super.key, required this.module, this.initialTabLabel});
   final ErpModule module;
 
+  /// Tab to open first (links from alerts / approvals); null = the first tab.
+  final String? initialTabLabel;
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => startOnTab(_scaffold(context), initialTabLabel);
+
+  ModuleScaffold _scaffold(BuildContext context) {
     final mt = Mt.isMaintenanceUser;
     bool show(String key) => (mt || key == 'requests') && Mt.tab(key);
     return ModuleScaffold(

@@ -3,6 +3,7 @@ pick ERP machines, plants, people and Store items, but usually don't hold
 the ERP / Organization / Store app themselves — so these read-only lists are
 served under the electrical permission instead of those modules' own
 routes (same approach as production/routes/lookups.py)."""
+from app.core.like import like_escape
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -83,8 +84,8 @@ async def get_meta(user: User = Depends(require_app_access(ELECTRICAL_APP))):
 async def lookup_projects(search: str | None = None, db: Session = Depends(get_db)):
     query = db.query(Project).filter(Project.is_deleted == False)  # noqa: E712
     if search:
-        like = f"%{search}%"
-        query = query.filter((Project.serial_number.ilike(like)) | (Project.model_name.ilike(like)) | (Project.client_company.ilike(like)))
+        like = f"%{like_escape(search)}%"
+        query = query.filter((Project.serial_number.ilike(like, escape="\\")) | (Project.model_name.ilike(like, escape="\\")) | (Project.client_company.ilike(like, escape="\\")))
     return [
         ElectricalLookupOption(id=p.id, code=p.serial_number, label=project_label(p) or p.serial_number, extra=p.client_company)
         for p in query.order_by(Project.created_at.desc()).limit(200).all()
@@ -110,8 +111,8 @@ async def lookup_items(
 ):
     query = db.query(StoreItem).filter(StoreItem.status == "active")
     if search:
-        like = f"%{search}%"
-        query = query.filter((StoreItem.item_code.ilike(like)) | (StoreItem.item_name.ilike(like)) | (StoreItem.part_number.ilike(like)))
+        like = f"%{like_escape(search)}%"
+        query = query.filter((StoreItem.item_code.ilike(like, escape="\\")) | (StoreItem.item_name.ilike(like, escape="\\")) | (StoreItem.part_number.ilike(like, escape="\\")))
     return [
         ElectricalLookupOption(id=i.id, code=i.item_code, label=f"{i.item_code} — {i.item_name}", extra=i.uom)
         for i in query.order_by(StoreItem.item_code).limit(limit).all()
@@ -123,7 +124,7 @@ async def lookup_purchase_requisitions(search: str | None = None, db: Session = 
     """Live PRs to link BOM lines to, newest first — Electrical category first."""
     query = db.query(P2PRequest).filter(P2PRequest.status.notin_(("rejected", "cancelled", "draft")))
     if search:
-        query = query.filter(P2PRequest.p2p_number.ilike(f"%{search}%") | P2PRequest.project_label.ilike(f"%{search}%"))
+        query = query.filter(P2PRequest.p2p_number.ilike(f"%{like_escape(search)}%", escape="\\") | P2PRequest.project_label.ilike(f"%{like_escape(search)}%", escape="\\"))
     rows = query.order_by(P2PRequest.id.desc()).limit(100).all()
     rows.sort(key=lambda p: p.category_code != "ELE")
     return [

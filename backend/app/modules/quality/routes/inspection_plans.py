@@ -1,6 +1,7 @@
 """Inspection plans: item × inspection type × revision, draft → approved →
 obsolete. Only drafts are edited; an approved plan changes via a new
 revision."""
+from app.core.like import like_escape
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, selectinload
 
@@ -131,8 +132,8 @@ async def list_inspection_plans(
     if item_id:
         q = q.filter(QualityInspectionPlan.item_id == item_id)
     if search:
-        like = f"%{search}%"
-        q = q.filter(QualityInspectionPlan.plan_number.ilike(like) | QualityInspectionPlan.item_name.ilike(like) | QualityInspectionPlan.item_code.ilike(like))
+        like = f"%{like_escape(search)}%"
+        q = q.filter(QualityInspectionPlan.plan_number.ilike(like, escape="\\") | QualityInspectionPlan.item_name.ilike(like, escape="\\") | QualityInspectionPlan.item_code.ilike(like, escape="\\"))
     return [_to_response(db, p, detail=False) for p in q.order_by(QualityInspectionPlan.created_at.desc()).all()]
 
 

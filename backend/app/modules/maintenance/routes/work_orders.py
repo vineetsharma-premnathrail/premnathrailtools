@@ -1,3 +1,4 @@
+from app.core.like import like_escape
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, selectinload
 
@@ -237,10 +238,10 @@ async def list_work_orders(
         if branch_id:
             query = query.filter(MaintenanceAsset.branch_id == branch_id)
         if search:
-            like = f"%{search}%"
+            like = f"%{like_escape(search)}%"
             query = query.filter(
-                (MaintenanceWorkOrder.wo_number.ilike(like)) | (MaintenanceWorkOrder.title.ilike(like))
-                | (MaintenanceAsset.asset_code.ilike(like)) | (MaintenanceAsset.name.ilike(like))
+                (MaintenanceWorkOrder.wo_number.ilike(like, escape="\\")) | (MaintenanceWorkOrder.title.ilike(like, escape="\\"))
+                | (MaintenanceAsset.asset_code.ilike(like, escape="\\")) | (MaintenanceAsset.name.ilike(like, escape="\\"))
             )
     query = apply_scope(query, user, MaintenanceWorkOrder)
     wos = query.order_by(MaintenanceWorkOrder.created_at.desc()).all()

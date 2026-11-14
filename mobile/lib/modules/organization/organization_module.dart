@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../modules.dart';
+import '../../record_router.dart';
 import '../../ui/app_frame.dart';
 import '../../ui/perms.dart';
 import 'access_reviews_tab.dart';
@@ -22,11 +23,16 @@ import 'workflows_tab.dart';
 /// (OrganizationNav tabs, same order and labels). My Approvals is its own
 /// menu entry in the portal (/dashboard/approvals), not a tab here.
 class OrganizationModuleHome extends StatelessWidget {
-  const OrganizationModuleHome({super.key, required this.module});
+  const OrganizationModuleHome({super.key, required this.module, this.initialTabLabel});
   final ErpModule module;
 
+  /// Tab to open first (links from alerts / approvals); null = the first tab.
+  final String? initialTabLabel;
+
   @override
-  Widget build(BuildContext context) => ModuleScaffold(module: module, tabs: [
+  Widget build(BuildContext context) => startOnTab(_scaffold(), initialTabLabel);
+
+  ModuleScaffold _scaffold() => ModuleScaffold(module: module, tabs: [
         ModuleTab(
             label: 'Info',
             icon: Icons.business_outlined,

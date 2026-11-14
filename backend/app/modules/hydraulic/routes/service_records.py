@@ -1,3 +1,4 @@
+from app.core.like import like_escape
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -130,10 +131,10 @@ async def list_service_records(
     if date_to:
         query = query.filter(HydServiceRecord.service_date <= date_to)
     if search:
-        like = f"%{search}%"
+        like = f"%{like_escape(search)}%"
         query = query.filter(
-            HydServiceRecord.record_number.ilike(like) | HydServiceRecord.reported_problem.ilike(like)
-            | HydServiceRecord.work_done.ilike(like) | HydServiceRecord.external_agency.ilike(like)
+            HydServiceRecord.record_number.ilike(like, escape="\\") | HydServiceRecord.reported_problem.ilike(like, escape="\\")
+            | HydServiceRecord.work_done.ilike(like, escape="\\") | HydServiceRecord.external_agency.ilike(like, escape="\\")
         )
     return _shown(_to_responses(db, query.order_by(HydServiceRecord.service_date.desc(), HydServiceRecord.id.desc()).all()), _tab)
 

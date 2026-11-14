@@ -1,3 +1,4 @@
+from app.core.like import like_escape
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, selectinload
 
@@ -52,7 +53,7 @@ async def list_purchase_orders(
     if status:
         query = query.filter(P2PPurchaseOrder.status == status)
     if search:
-        query = query.filter(P2PPurchaseOrder.po_number.ilike(f"%{search}%"))
+        query = query.filter(P2PPurchaseOrder.po_number.ilike(f"%{like_escape(search)}%", escape="\\"))
     if p2p_request_id:
         query = query.filter(P2PPurchaseOrder.p2p_request_id == p2p_request_id)
     # Order Project filter: POs with at least one line for the project / element.

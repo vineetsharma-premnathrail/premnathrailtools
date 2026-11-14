@@ -2,6 +2,7 @@
 and the review checklists. Everyone with the Design app reads it; the
 Design head maintains standards, templates and checklists, designers add
 standard parts and approved makes."""
+from app.core.like import like_escape
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
@@ -67,8 +68,8 @@ async def list_standards(current_only: bool = False, search: str | None = None, 
     if current_only:
         q = q.filter(DesignStandard.is_current == True)  # noqa: E712
     if search:
-        like = f"%{search.strip()}%"
-        q = q.filter(DesignStandard.code.ilike(like) | DesignStandard.title.ilike(like))
+        like = f"%{like_escape(search.strip())}%"
+        q = q.filter(DesignStandard.code.ilike(like, escape="\\") | DesignStandard.title.ilike(like, escape="\\"))
     return _standard_rows(db, q.order_by(DesignStandard.body, DesignStandard.code, DesignStandard.version).all())
 
 
@@ -165,9 +166,9 @@ async def list_makes(store_item_id: int | None = None, search: str | None = None
     if store_item_id:
         q = q.filter(DesignItemApprovedMake.store_item_id == store_item_id)
     if search:
-        like = f"%{search.strip()}%"
-        ids = [i for (i,) in db.query(StoreItem.id).filter(StoreItem.item_code.ilike(like) | StoreItem.item_name.ilike(like)).limit(500).all()]
-        q = q.filter(DesignItemApprovedMake.make.ilike(like) | DesignItemApprovedMake.store_item_id.in_(ids))
+        like = f"%{like_escape(search.strip())}%"
+        ids = [i for (i,) in db.query(StoreItem.id).filter(StoreItem.item_code.ilike(like, escape="\\") | StoreItem.item_name.ilike(like, escape="\\")).limit(500).all()]
+        q = q.filter(DesignItemApprovedMake.make.ilike(like, escape="\\") | DesignItemApprovedMake.store_item_id.in_(ids))
     return _make_rows(db, q.order_by(DesignItemApprovedMake.store_item_id, DesignItemApprovedMake.id).limit(2000).all())
 
 
@@ -261,9 +262,9 @@ async def list_parts(discipline: str | None = None, search: str | None = None, d
     if discipline:
         q = q.filter(DesignStandardPart.discipline == discipline)
     if search:
-        like = f"%{search.strip()}%"
-        ids = [i for (i,) in db.query(StoreItem.id).filter(StoreItem.item_code.ilike(like) | StoreItem.item_name.ilike(like)).limit(500).all()]
-        q = q.filter(DesignStandardPart.store_item_id.in_(ids) | DesignStandardPart.notes.ilike(like))
+        like = f"%{like_escape(search.strip())}%"
+        ids = [i for (i,) in db.query(StoreItem.id).filter(StoreItem.item_code.ilike(like, escape="\\") | StoreItem.item_name.ilike(like, escape="\\")).limit(500).all()]
+        q = q.filter(DesignStandardPart.store_item_id.in_(ids) | DesignStandardPart.notes.ilike(like, escape="\\"))
     return _part_rows(db, q.order_by(DesignStandardPart.id.desc()).limit(2000).all())
 
 

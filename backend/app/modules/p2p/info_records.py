@@ -6,6 +6,7 @@ store_item_id. Everything here is keyed by (vendor_id, store_item_id) — items
 are never matched by name or part code (2026-10-11 rule)."""
 from __future__ import annotations
 
+from app.core.like import like_escape
 from datetime import date
 
 from fastapi import HTTPException
@@ -166,8 +167,8 @@ def search_info_records(db: Session, *, store_item_id: int | None = None, vendor
     if unlinked:
         q = q.filter(VendorCatalogItem.store_item_id.is_(None))
     if search and search.strip():
-        like = f"%{search.strip()}%"
-        q = q.filter(or_(VendorCatalogItem.item_name.ilike(like), VendorCatalogItem.part_code.ilike(like), Vendor.name.ilike(like)))
+        like = f"%{like_escape(search.strip())}%"
+        q = q.filter(or_(VendorCatalogItem.item_name.ilike(like, escape="\\"), VendorCatalogItem.part_code.ilike(like, escape="\\"), Vendor.name.ilike(like, escape="\\")))
     return q.order_by(Vendor.name, VendorCatalogItem.item_name).limit(limit).all()
 
 

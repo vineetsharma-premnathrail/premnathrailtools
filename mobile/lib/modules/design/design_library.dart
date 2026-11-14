@@ -23,7 +23,7 @@ const _tabs = <(String, String, String)>[
 const _makeStatusLabels = {'approved': 'Approved', 'provisional': 'Provisional', 'withdrawn': 'Withdrawn'};
 const _makeStatusColors = {'approved': Color(0xFF16A34A), 'provisional': Color(0xFFD97706), 'withdrawn': Color(0xFFDC2626)};
 const _itemStatusColors = {'active': Color(0xFF16A34A), 'inactive': Color(0xFFA8A29E), 'blocked': Color(0xFFDC2626), 'pending': Color(0xFFD97706)};
-const _checklistTypeLabels = {...docTypeLabels, 'bom': 'BOM'};
+const _checklistTypeLabels = docTypeLabels;
 
 /// permissions.ts canDelete(): delete action + (admin, no owner, or own record).
 bool _canDelete(Object? ownerId) {

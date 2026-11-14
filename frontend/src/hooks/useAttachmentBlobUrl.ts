@@ -43,13 +43,24 @@ export function useAttachmentBlobUrl(fetchBlob: (() => Promise<Blob>) | null): s
  * the response was already consumed into a Blob before this point. Passing
  * `filename` routes the download through a hidden `<a download>` instead,
  * which lets the browser use the real name. */
+// Types a browser tab can show without ever running script. Anything else
+// (html, xml, svg, scripts, office files...) is saved as a download instead.
+const SAFE_TAB_TYPES = ['application/pdf', 'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp', 'video/mp4', 'video/webm', 'video/quicktime', 'text/plain', 'text/csv']
+
+/** True when a blob of this type is safe to open in a new tab on the portal's address. */
+export function isSafeToOpenInTab(type: string): boolean {
+  return SAFE_TAB_TYPES.includes(type.split(';')[0].trim().toLowerCase())
+}
+
 export async function openAttachmentBlob(fetchBlob: () => Promise<Blob>, filename?: string): Promise<void> {
-  const blob = await fetchBlob()
+  let blob = await fetchBlob()
+  // Plain text always as text/plain, so a .txt only ever shows its text.
+  if (blob.type.startsWith('text/') && !isSafeToOpenInTab(blob.type)) blob = new Blob([blob], { type: 'text/plain' })
   const objectUrl = URL.createObjectURL(blob)
-  if (filename) {
+  if (filename || !isSafeToOpenInTab(blob.type)) {
     const a = document.createElement('a')
     a.href = objectUrl
-    a.download = filename
+    a.download = filename || 'file'
     document.body.appendChild(a)
     a.click()
     a.remove()

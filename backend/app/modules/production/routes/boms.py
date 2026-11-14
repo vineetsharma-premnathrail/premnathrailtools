@@ -1,3 +1,4 @@
+from app.core.like import like_escape
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
@@ -344,9 +345,9 @@ async def list_boms(
     if product_item_id:
         query = query.filter(ProductionBom.product_item_id == product_item_id)
     if search:
-        like = f"%{search}%"
+        like = f"%{like_escape(search)}%"
         query = query.join(StoreItem, StoreItem.id == ProductionBom.product_item_id).filter(
-            (ProductionBom.bom_number.ilike(like)) | (StoreItem.item_name.ilike(like)) | (StoreItem.item_code.ilike(like))
+            (ProductionBom.bom_number.ilike(like, escape="\\")) | (StoreItem.item_name.ilike(like, escape="\\")) | (StoreItem.item_code.ilike(like, escape="\\"))
         )
     return _to_responses(db, query.order_by(ProductionBom.created_at.desc()).all(), _tab)
 

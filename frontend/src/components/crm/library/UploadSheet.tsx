@@ -1,6 +1,6 @@
 'use client'
 
-// Upload to the Sales Library: new document(s), or a new version of one document.
+// Upload to the Knowledge Hub: new document(s), or a new version of one document.
 // Files go straight from the browser to SharePoint in chunks (any size, e.g. a 200 MB video);
 // the portal then records them. Progress shows in the global upload tray.
 
@@ -101,7 +101,7 @@ export default function UploadSheet({ folders, folderId, document: doc, initialF
 
   return (
     <FormSheet width={960} icon="upload" busy={busy} onClose={onClose} onSubmit={submit}
-      title={versionMode ? 'Upload new version' : 'Upload to Sales Library'}
+      title={versionMode ? 'Upload new version' : 'Upload to Knowledge Hub'}
       subtitle={versionMode ? `${doc!.title} is now on version ${doc!.current_version_no}. The new file becomes version ${doc!.current_version_no + 1}; older versions stay downloadable.` : 'Any file type. Big files such as videos are sent in parts, so a 200 MB video is fine.'}
       footer={<>
         {busy && progress && <span role="status" style={{ marginRight: 'auto', alignSelf: 'center', fontSize: 12.5, color: SHEET.MUTED, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{progress} Keep this page open until it finishes.</span>}

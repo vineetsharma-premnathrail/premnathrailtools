@@ -1,4 +1,4 @@
-"""CRM › Sales Library: nested folders, documents with versions (files live in SharePoint), links to
+"""CRM › Knowledge Hub: nested folders, documents with versions (files live in SharePoint), links to
 products / projects / customers, favourites, share and product resources.
 
 Permission tab `crm:sales_library` (view / create / edit / delete); folders flagged Confidential (and
@@ -37,7 +37,7 @@ from app.utils.sharepoint import (
     delete_drive_item, validate_upload_metadata, verify_direct_upload,
 )
 
-router = APIRouter(prefix="/crm/library", tags=["CRM - Sales Library"])
+router = APIRouter(prefix="/crm/library", tags=["CRM - Knowledge Hub"])
 
 MODULE, TAB = lib.MODULE, lib.TAB
 _VIEW = require_tab_access(MODULE, TAB)
@@ -52,7 +52,7 @@ SHARE_ENTITY = "crm_library_document"
 def _need_site() -> None:
     if not settings.SHAREPOINT_SITE_ID:
         raise HTTPException(status_code=503, detail=(
-            "SharePoint is not configured on this server, so Sales Library files can't be stored or opened. "
+            "SharePoint is not configured on this server, so Knowledge Hub files can't be stored or opened. "
             "Ask IT to set the SharePoint site for the portal."))
 
 
@@ -98,7 +98,7 @@ def _ensure_not_builtin(folder: LibraryFolder, user: User, what: str) -> None:
     """Folders with no creator (the seeded top folders) can only be renamed, moved or deleted by an admin."""
     if folder.created_by_id is None and not is_admin_user(user):
         raise HTTPException(status_code=403, detail=(
-            f"'{folder.name}' is a built-in Sales Library folder — only an admin can {what} it. "
+            f"'{folder.name}' is a built-in Knowledge Hub folder — only an admin can {what} it. "
             "Ask an admin, or create your own folder instead."))
 
 
@@ -370,7 +370,7 @@ async def complete_upload(payload: LibraryCompleteUploadPayload, db: Session = D
     """Records a file the browser finished uploading: a new document (version 1) or a new version of one."""
     claims = verify_upload_token(payload.upload_token)
     if not claims or claims.get("kind") != UPLOAD_KIND:
-        raise HTTPException(status_code=400, detail="This upload link has expired or is not a Sales Library upload. Start the upload again.")
+        raise HTTPException(status_code=400, detail="This upload link has expired or is not a Knowledge Hub upload. Start the upload again.")
     if claims.get("user_id") != user.id:
         raise HTTPException(status_code=403, detail="This upload was started by a different user. Start the upload again from your own screen.")
 
@@ -413,7 +413,7 @@ async def complete_upload(payload: LibraryCompleteUploadPayload, db: Session = D
             f"The file in SharePoint ('{result.get('name')}') is not the one this upload was opened for "
             f"('{claims['file_name']}'), so it was not recorded. Start the upload again."))
     if db.query(LibraryDocumentVersion.id).filter(LibraryDocumentVersion.sharepoint_path == result["path"]).first():
-        raise HTTPException(status_code=409, detail="This upload was already recorded in the Sales Library. Reload the list to see it.")
+        raise HTTPException(status_code=409, detail="This upload was already recorded in the Knowledge Hub. Reload the list to see it.")
 
     original_name = claims.get("original_name") or result["name"]
     mime = lib.server_mime(original_name)  # from the extension, never the browser's claim
@@ -598,13 +598,13 @@ async def share_document(document_id: int, payload: LibrarySharePayload, db: Ses
         message = f"{sender} shared '{doc.title}' with you."
         if note:
             message += f" Note: {note}"
-        notify_user(db, target.id, "Sales Library file shared with you", message, SHARE_NOTIFICATION,
+        notify_user(db, target.id, "Knowledge Hub file shared with you", message, SHARE_NOTIFICATION,
                     entity_type=SHARE_ENTITY, entity_id=doc.id)
         sent.append(uid)
     if not sent:
         raise HTTPException(status_code=422, detail=(
             "Nobody was notified — the people you picked can't receive this file (they need an active account with "
-            "CRM › Sales Library access, and the 'Confidential folders' permission for a Confidential file). "
+            "CRM › Knowledge Hub access, and the 'Confidential folders' permission for a Confidential file). "
             "Pick other colleagues or ask an admin to grant the access."))
     db.commit()
     return {"sent": len(sent), "user_ids": sent,

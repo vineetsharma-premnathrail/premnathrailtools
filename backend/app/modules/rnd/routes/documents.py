@@ -1,3 +1,4 @@
+from app.core.like import like_escape
 import mimetypes
 from datetime import datetime, timezone
 from urllib.parse import quote
@@ -126,8 +127,8 @@ async def list_documents(
     if doc_type:
         query = query.filter(RndDocument.doc_type == doc_type)
     if search:
-        like = f"%{search}%"
-        query = query.filter((RndDocument.title.ilike(like)) | (RndDocument.file_name.ilike(like)))
+        like = f"%{like_escape(search)}%"
+        query = query.filter((RndDocument.title.ilike(like, escape="\\")) | (RndDocument.file_name.ilike(like, escape="\\")))
     return [_to_response(db, d) for d in query.order_by(RndDocument.id.desc()).all()]
 
 

@@ -3,6 +3,7 @@
 Owner: Agent D. Reception (the hr app) runs the board: check-in, check-out,
 cancel, see everyone. Any logged-in employee may pre-register a visitor
 with themself as host and see the visitors they host or registered."""
+from app.core.like import like_escape
 from datetime import date, datetime, time, timedelta, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
@@ -246,10 +247,10 @@ async def list_visitors(
         require_choice(status_filter, VISITOR_STATUSES, "visitor status")
         q = q.filter(HrVisitor.status == status_filter)
     if search and search.strip():
-        term = f"%{search.strip()}%"
+        term = f"%{like_escape(search.strip())}%"
         q = q.filter(or_(
-            HrVisitor.visit_no.ilike(term), HrVisitor.visitor_name.ilike(term), HrVisitor.visitor_company.ilike(term),
-            HrVisitor.visitor_phone.ilike(term), HrVisitor.badge_no.ilike(term), HrVisitor.vehicle_no.ilike(term),
+            HrVisitor.visit_no.ilike(term, escape="\\"), HrVisitor.visitor_name.ilike(term, escape="\\"), HrVisitor.visitor_company.ilike(term, escape="\\"),
+            HrVisitor.visitor_phone.ilike(term, escape="\\"), HrVisitor.badge_no.ilike(term, escape="\\"), HrVisitor.vehicle_no.ilike(term, escape="\\"),
         ))
     rows = q.order_by(when.desc()).limit(limit).all()
     return _to_responses(db, rows)

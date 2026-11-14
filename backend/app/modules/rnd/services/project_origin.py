@@ -18,6 +18,7 @@ requests through the user's data scope in that module.
 """
 from __future__ import annotations
 
+from app.core.like import like_escape
 from datetime import datetime, timezone
 
 from fastapi import HTTPException
@@ -251,21 +252,21 @@ def source_options(db: Session, user: User, kind: str, q: str | None) -> list[di
     """Up to 20 pickable records of `kind` matching `q` that the user may see (machines: all of them).
     kind="product" lists finished products (no Product Management access needed)."""
     q = (q or "").strip()
-    like = f"%{q}%"
+    like = f"%{like_escape(q)}%"
     if kind == "machine":
         # Existing projects / machines (PEW serials) — what an improvement project improves.
         # Full list, not capped: users scroll the whole PEW series to find the machine.
         from app.modules.erp.models.project import Project as Machine
         query = db.query(Machine).filter(Machine.is_deleted == False)  # noqa: E712
         if q:
-            query = query.filter(or_(Machine.serial_number.ilike(like), Machine.model_name.ilike(like), Machine.client_company.ilike(like)))
+            query = query.filter(or_(Machine.serial_number.ilike(like, escape="\\"), Machine.model_name.ilike(like, escape="\\"), Machine.client_company.ilike(like, escape="\\")))
         return [{"id": m.id, "label": machine_label(m), "sub": m.site_name or None}
                 for m in query.order_by(Machine.serial_number.asc()).all()]
     if kind == "product":
         from app.modules.products.models.product import PRODUCT_STATUS_LABELS, FinishedProduct
         query = db.query(FinishedProduct).filter(FinishedProduct.status != "discontinued")
         if q:
-            query = query.filter(or_(FinishedProduct.name.ilike(like), FinishedProduct.code.ilike(like), FinishedProduct.model_number.ilike(like)))
+            query = query.filter(or_(FinishedProduct.name.ilike(like, escape="\\"), FinishedProduct.code.ilike(like, escape="\\"), FinishedProduct.model_number.ilike(like, escape="\\")))
         return [{"id": p.id, "label": f"{p.name} ({p.code})", "sub": PRODUCT_STATUS_LABELS.get(p.status, p.status)}
                 for p in query.order_by(FinishedProduct.name.asc()).limit(OPTION_LIMIT).all()]
     if kind not in RND_SOURCE_KINDS:
@@ -283,9 +284,9 @@ def source_options(db: Session, user: User, kind: str, q: str | None) -> list[di
             query = query.filter(model.id.in_(ids))
         if q:
             what = model.product if kind == "inquiry" else model.tender_name
-            org_ids = db.query(Organization.id).filter(Organization.name.ilike(like))
-            query = query.filter(or_(model.universal_id.ilike(like), model.technical_offer_number.ilike(like),
-                                     what.ilike(like), model.org_id.in_(org_ids)))
+            org_ids = db.query(Organization.id).filter(Organization.name.ilike(like, escape="\\"))
+            query = query.filter(or_(model.universal_id.ilike(like, escape="\\"), model.technical_offer_number.ilike(like, escape="\\"),
+                                     what.ilike(like, escape="\\"), model.org_id.in_(org_ids)))
         rows = query.order_by(model.universal_id.asc()).limit(OPTION_LIMIT).all()
         orgs = _org_names(db, [r.org_id for r in rows])
         rd = _rd_numbers(db, kind, [r.id for r in rows])
@@ -293,15 +294,15 @@ def source_options(db: Session, user: User, kind: str, q: str | None) -> list[di
     query = apply_scope(query, user, model, db)
     if kind == "quality_complaint":
         if q:
-            query = query.filter(or_(model.complaint_number.ilike(like), model.customer_name.ilike(like),
-                                     model.item_name.ilike(like), model.description.ilike(like)))
+            query = query.filter(or_(model.complaint_number.ilike(like, escape="\\"), model.customer_name.ilike(like, escape="\\"),
+                                     model.item_name.ilike(like, escape="\\"), model.description.ilike(like, escape="\\")))
         rows = query.order_by(model.complaint_date.desc(), model.id.desc()).limit(OPTION_LIMIT).all()
     elif kind == "ncr":
         if q:
-            query = query.filter(or_(model.ncr_number.ilike(like), model.item_name.ilike(like), model.description.ilike(like)))
+            query = query.filter(or_(model.ncr_number.ilike(like, escape="\\"), model.item_name.ilike(like, escape="\\"), model.description.ilike(like, escape="\\")))
         rows = query.order_by(model.ncr_date.desc(), model.id.desc()).limit(OPTION_LIMIT).all()
     else:
         if q:
-            query = query.filter(or_(model.request_number.ilike(like), model.issue_title.ilike(like)))
+            query = query.filter(or_(model.request_number.ilike(like, escape="\\"), model.issue_title.ilike(like, escape="\\")))
         rows = query.order_by(model.id.desc()).limit(OPTION_LIMIT).all()
     return [_option(kind, r, {}) for r in rows]

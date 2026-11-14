@@ -6,6 +6,7 @@ released revision under the ECN; it then asks each department to
 acknowledge, and the ECN closes when all have. Legacy ECNs without an ECR
 still go draft → submitted → approved themselves. Notifications only —
 never an automatic stock or purchase change."""
+from app.core.like import like_escape
 from datetime import datetime, timezone
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, selectinload
@@ -338,8 +339,8 @@ async def list_change_notices(
     if document_id:
         query = query.filter(DesignChangeNotice.documents.any(DesignChangeNoticeDocument.document_id == document_id))
     if search:
-        like = f"%{search.strip()}%"
-        query = query.filter(DesignChangeNotice.ecn_number.ilike(like) | DesignChangeNotice.title.ilike(like) | DesignChangeNotice.description.ilike(like))
+        like = f"%{like_escape(search.strip())}%"
+        query = query.filter(DesignChangeNotice.ecn_number.ilike(like, escape="\\") | DesignChangeNotice.title.ilike(like, escape="\\") | DesignChangeNotice.description.ilike(like, escape="\\"))
     return _responses(db, query.order_by(DesignChangeNotice.created_at.desc(), DesignChangeNotice.id.desc()).limit(1000).all())
 
 

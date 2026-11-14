@@ -111,7 +111,7 @@ export default function ProductDetailPage() {
           {/* Pricing loads the product's prices — not drawn for the preview's sample product. */}
           {!vis.preview && <ProductSalesPanels productId={p.id} />}
 
-          {/* Sales Library documents linked to this product (needs CRM › Sales Library › View). */}
+          {/* Knowledge Hub documents linked to this product (needs CRM › Knowledge Hub › View). */}
           {!vis.preview && <ProductSalesResources product={p} />}
         </>
       )}

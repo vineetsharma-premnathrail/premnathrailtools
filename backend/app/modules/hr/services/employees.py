@@ -6,6 +6,7 @@ joining; department / designation / plant live on the HR profile and are
 mirrored back onto User by employee_sync.apply_org_fields."""
 from __future__ import annotations
 
+from app.core.like import like_escape
 from fastapi import HTTPException
 from sqlalchemy import and_, func, or_, true
 from sqlalchemy.orm import Session, aliased
@@ -95,8 +96,8 @@ def list_employees(
         q = q.filter(or_(User.is_active.is_(False), and_(no_login, P.employment_status == "exited")))
 
     if search and search.strip():
-        like = f"%{search.strip()}%"
-        q = q.filter(or_(name_expr.ilike(like), User.email.ilike(like), P.employee_code.ilike(like), P.contractor_name.ilike(like)))
+        like = f"%{like_escape(search.strip())}%"
+        q = q.filter(or_(name_expr.ilike(like, escape="\\"), User.email.ilike(like, escape="\\"), P.employee_code.ilike(like, escape="\\"), P.contractor_name.ilike(like, escape="\\")))
     if department_id:
         dept = db.get(Department, department_id)
         cond = P.department_id == department_id
@@ -703,8 +704,8 @@ def directory_entries(db: Session, search: str | None = None, department: str | 
         .filter(User.is_active.is_(True), people_filter(), or_(P.id.is_(None), P.employment_status != "exited"))
     )
     if search and search.strip():
-        like = f"%{search.strip()}%"
-        rows = rows.filter(or_(User.name.ilike(like), HrDesignation.name.ilike(like), User.designation.ilike(like), Department.name.ilike(like), User.department.ilike(like)))
+        like = f"%{like_escape(search.strip())}%"
+        rows = rows.filter(or_(User.name.ilike(like, escape="\\"), HrDesignation.name.ilike(like, escape="\\"), User.designation.ilike(like, escape="\\"), Department.name.ilike(like, escape="\\"), User.department.ilike(like, escape="\\")))
     if department and department.strip():
         rows = rows.filter(func.lower(func.coalesce(Department.name, User.department)) == department.strip().lower())
     return [

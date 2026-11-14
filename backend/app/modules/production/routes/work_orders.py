@@ -1,3 +1,4 @@
+from app.core.like import like_escape
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
@@ -280,9 +281,9 @@ async def list_work_orders(
             ProductionWorkOrder.status.in_(("draft", *_EXECUTING_STATUSES)),
         )
     if search:
-        like = f"%{search}%"
+        like = f"%{like_escape(search)}%"
         query = query.join(StoreItem, StoreItem.id == ProductionWorkOrder.product_item_id).filter(
-            (ProductionWorkOrder.wo_number.ilike(like)) | (StoreItem.item_name.ilike(like)) | (StoreItem.item_code.ilike(like))
+            (ProductionWorkOrder.wo_number.ilike(like, escape="\\")) | (StoreItem.item_name.ilike(like, escape="\\")) | (StoreItem.item_code.ilike(like, escape="\\"))
         )
     return _to_responses(db, query.order_by(ProductionWorkOrder.created_at.desc()).all(), user=_tab)
 

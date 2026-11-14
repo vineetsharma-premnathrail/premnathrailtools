@@ -1,3 +1,4 @@
+from app.core.like import like_escape
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
@@ -216,10 +217,10 @@ async def list_jobs(
         assigned = db.query(ElectricalJobStage.job_id).filter(ElectricalJobStage.assignee_id == user.id)
         query = query.filter((ElectricalJob.lead_engineer_id == user.id) | (ElectricalJob.id.in_(assigned)))
     if search:
-        like = f"%{search}%"
+        like = f"%{like_escape(search)}%"
         query = query.filter(
-            ElectricalJob.job_number.ilike(like) | ElectricalJob.title.ilike(like) | ElectricalJob.vehicle_number.ilike(like)
-            | ElectricalJob.rrv_model.ilike(like) | ElectricalJob.customer_name.ilike(like)
+            ElectricalJob.job_number.ilike(like, escape="\\") | ElectricalJob.title.ilike(like, escape="\\") | ElectricalJob.vehicle_number.ilike(like, escape="\\")
+            | ElectricalJob.rrv_model.ilike(like, escape="\\") | ElectricalJob.customer_name.ilike(like, escape="\\")
         )
     responses = _to_responses(db, query.order_by(ElectricalJob.created_at.desc()).all())
     if phase:

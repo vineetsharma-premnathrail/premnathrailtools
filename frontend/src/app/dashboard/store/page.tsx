@@ -87,22 +87,28 @@ export default function StoreItemsPage() {
     }
   }
 
+  // Only the latest request may update the list (an older, slower reply must not overwrite it).
+  const loadSeq = useRef(0)
   const load = async () => {
     // Role editor preview: made-up rows (initial state), nothing is loaded.
     if (vis.preview) return
+    const seq = ++loadSeq.current
     setLoading(true)
     try {
       const data = await storeApi.listItems(filterParams())
-      setItems(data)
+      if (seq === loadSeq.current) setItems(data)
     } catch (err) {
-      setError(extractErrorMessages(err, 'Failed to load items.').join(' '))
+      if (seq === loadSeq.current) setError(extractErrorMessages(err, 'Failed to load items.').join(' '))
     } finally {
-      setLoading(false)
+      if (seq === loadSeq.current) setLoading(false)
     }
   }
 
+  // Search waits until typing pauses (was one full Item Master request per keystroke).
   useEffect(() => {
-    if (isAuthorized) load()
+    if (!isAuthorized) return
+    const t = setTimeout(load, search ? 300 : 0)
+    return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthorized, search, typeFilter, categoryFilter, subcategoryFilter])
 

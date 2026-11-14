@@ -15,6 +15,7 @@ Who may do what (HR Permission Matrix tab "safety", deny by default):
 - Form 18 Word document: view = see the incident, generate / edit = hr:safety:edit;
   PDF = hr:safety:print. Register CSV: hr:safety:export.
 """
+from app.core.like import like_escape
 import csv
 import io
 from datetime import date, datetime, time, timezone
@@ -334,9 +335,9 @@ def _apply_filters(q, status, incident_type, severity, branch_id, search, date_f
         q = q.filter(HrSafetyIncident.occurred_at <= datetime.combine(date_to, time.max).replace(tzinfo=IST))
     term = (search or "").strip()
     if term:
-        like = f"%{term}%"
-        q = q.filter(or_(HrSafetyIncident.incident_no.ilike(like), HrSafetyIncident.title.ilike(like),
-                         HrSafetyIncident.location_text.ilike(like)))
+        like = f"%{like_escape(term)}%"
+        q = q.filter(or_(HrSafetyIncident.incident_no.ilike(like, escape="\\"), HrSafetyIncident.title.ilike(like, escape="\\"),
+                         HrSafetyIncident.location_text.ilike(like, escape="\\")))
     return q
 
 

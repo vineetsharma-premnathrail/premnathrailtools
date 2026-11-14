@@ -9,6 +9,7 @@ Permissions (Finance & Accounting › Controlling › Product Costing):
   edit     mark / unmark
   approve  release to the standard price (CK24)
   delete   cancel a draft / marked estimate"""
+from app.core.like import like_escape
 from datetime import date
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
@@ -148,9 +149,9 @@ async def list_estimates(
     if status:
         q = q.filter(ProductionCostEstimate.status == status)
     if search and search.strip():
-        like = f"%{search.strip()}%"
+        like = f"%{like_escape(search.strip())}%"
         q = q.join(StoreItem, StoreItem.id == ProductionCostEstimate.item_id).filter(
-            (StoreItem.item_code.ilike(like)) | (StoreItem.item_name.ilike(like)) | (ProductionCostEstimate.estimate_number.ilike(like)))
+            (StoreItem.item_code.ilike(like, escape="\\")) | (StoreItem.item_name.ilike(like, escape="\\")) | (ProductionCostEstimate.estimate_number.ilike(like, escape="\\")))
     return _serialize(db, q.order_by(ProductionCostEstimate.id.desc()).limit(500).all())
 
 

@@ -2,6 +2,7 @@
 automatically from GRN / job work receipt / production output; manual ones
 here. Approve / reject after the first-article lot is decided. Rules live in
 services/first_article.py."""
+from app.core.like import like_escape
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -68,10 +69,10 @@ async def list_fais(status_filter: str | None = Query(None, alias="status"), sea
     if status_filter:
         q = q.filter(QualityFirstArticle.status == status_filter)
     if search:
-        like = f"%{search}%"
-        q = q.filter(QualityFirstArticle.fai_number.ilike(like) | QualityFirstArticle.item_name.ilike(like)
-                     | QualityFirstArticle.item_code.ilike(like) | QualityFirstArticle.vendor_name.ilike(like)
-                     | QualityFirstArticle.source_reference.ilike(like))
+        like = f"%{like_escape(search)}%"
+        q = q.filter(QualityFirstArticle.fai_number.ilike(like, escape="\\") | QualityFirstArticle.item_name.ilike(like, escape="\\")
+                     | QualityFirstArticle.item_code.ilike(like, escape="\\") | QualityFirstArticle.vendor_name.ilike(like, escape="\\")
+                     | QualityFirstArticle.source_reference.ilike(like, escape="\\"))
     return _responses(db, q.order_by(QualityFirstArticle.id.desc()).limit(500).all())
 
 

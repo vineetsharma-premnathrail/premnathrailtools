@@ -447,6 +447,13 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
                     </button>
                   ))}
                 </div>
+                {/* Private Android app: download page for every signed-in user (mobile app self-updates after this). */}
+                <button
+                  onClick={() => { setMenuOpen(false); router.push('/dashboard/app') }}
+                  style={{ ...secondaryBtnStyle, width: '100%', marginBottom: 8, border: `1px solid ${GLASS.border}`, background: 'rgba(255,255,255,0.6)' }}
+                >
+                  Get the Android app
+                </button>
                 <button
                   onClick={handleLogout}
                   style={{ ...dangerBtnStyle, width: '100%' }}

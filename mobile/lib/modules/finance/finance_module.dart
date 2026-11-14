@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../modules.dart';
+import '../../record_router.dart';
 import '../../ui/app_frame.dart';
 import '../../ui/widgets.dart';
 import 'fin_assets.dart';
@@ -25,13 +26,18 @@ import 'fin_settings.dart';
 /// Permission Matrix tabs (filterTabsByAccess). Settings is the gear next to
 /// the bell, never a tab.
 class FinanceModuleHome extends StatelessWidget {
-  const FinanceModuleHome({super.key, required this.module});
+  const FinanceModuleHome({super.key, required this.module, this.initialTabLabel});
   final ErpModule module;
+
+  /// Tab to open first (links from alerts / approvals); null = the first tab.
+  final String? initialTabLabel;
 
   static bool _any(List<String> keys) => keys.any((k) => finCan(k, 'view'));
 
   @override
-  Widget build(BuildContext context) => ModuleScaffold(
+  Widget build(BuildContext context) => startOnTab(_scaffold(context), initialTabLabel);
+
+  ModuleScaffold _scaffold(BuildContext context) => ModuleScaffold(
         module: module,
         topActions: [
           if (_any(const ['settings']))

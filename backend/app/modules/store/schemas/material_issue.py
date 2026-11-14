@@ -1,5 +1,5 @@
 from datetime import date
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class StoreMaterialIssueItemPayload(BaseModel):
@@ -7,6 +7,8 @@ class StoreMaterialIssueItemPayload(BaseModel):
     quantity: float
     batch_number: str | None = None
     remarks: str | None = None
+    # Name on the delivery challan: the item's name on the vendor's bill (owner, 2026-11-13).
+    dc_name: str | None = Field(default=None, max_length=255)
     # Dispatch: the Sales Order delivery row (vehicle / lot) this line ships (sales/delivery.py).
     sales_schedule_id: int | None = None
     # WM: the bin it is picked from; serialised item: one serial per unit.
@@ -28,6 +30,7 @@ class StoreMaterialIssueItemResponse(BaseModel):
     quantity: float
     batch_number: str | None = None
     remarks: str | None = None
+    dc_name: str | None = None
     bin_id: int | None = None
     bin_code: str | None = None
     serial_numbers: list[str] | None = None

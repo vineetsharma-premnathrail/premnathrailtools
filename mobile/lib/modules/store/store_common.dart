@@ -829,3 +829,67 @@ List<Option<int>> idLabelOptions(Object? rows) => [
       for (final r in jsonList(rows))
         if (toInt(r['id']) != null) Option(toInt(r['id'])!, txt(r['label'])),
     ];
+
+// ── Filters (portal FilterMenu: one funnel button, never a row of dropdowns) ─
+
+/// Funnel button that opens the list's filters in a sheet. [active] = how many
+/// filters are set (shown as a badge); [builder] gives the filter fields.
+class FilterButton extends StatelessWidget {
+  const FilterButton({super.key, required this.active, required this.builder, required this.onClear});
+  final int active;
+  final List<Widget> Function(BuildContext context, StateSetter setState) builder;
+  final VoidCallback onClear;
+
+  Future<void> _open(BuildContext context) => showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        backgroundColor: Colors.white,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, setS) => Padding(
+            padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
+                child: Row(children: [
+                  const Expanded(
+                      child: Text('Filters', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: Brand.heading))),
+                  TextButton(
+                      onPressed: () {
+                        onClear();
+                        setS(() {});
+                      },
+                      child: const Text('Clear filters')),
+                  IconButton(icon: const Icon(Icons.close_rounded), onPressed: () => Navigator.pop(ctx)),
+                ]),
+              ),
+              Flexible(
+                child: ListView(shrinkWrap: true, padding: const EdgeInsets.fromLTRB(16, 4, 16, 8), children: [
+                  for (final w in builder(ctx, setS)) Padding(padding: const EdgeInsets.only(bottom: 12), child: w),
+                ]),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('Done')),
+              ),
+            ]),
+          ),
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) => Badge(
+        isLabelVisible: active > 0,
+        label: Text('$active'),
+        backgroundColor: Brand.primary,
+        child: IconButton.outlined(
+          tooltip: 'Filters',
+          icon: const Icon(Icons.filter_alt_outlined),
+          onPressed: () => _open(context),
+        ),
+      );
+}
+
+int countSet(List<Object?> values) =>
+    values.where((v) => v != null && v != false && !(v is String && v.isEmpty)).length;

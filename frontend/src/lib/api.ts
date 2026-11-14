@@ -1163,6 +1163,11 @@ export const erpApi = {
     return data
   },
 
+  getAttachmentThumbnailBlob: async (srId: number, attachmentId: number): Promise<Blob> => {
+    const { data } = await apiClient.get(`/erp/service-requests/${srId}/attachments/${attachmentId}/thumbnail`, { responseType: 'blob', background: true })
+    return data
+  },
+
 }
 
 // Standalone Purchase Requisition module — PRs raised directly by any
@@ -2097,7 +2102,8 @@ export const storeApi = {
   },
 
   listItems: async (params: Record<string, unknown> = {}) => {
-    const { data } = await apiClient.get('/store/items', { params })
+    // The full Item Master (thousands of rows) can outlast the global 10s timeout on slow links.
+    const { data } = await apiClient.get('/store/items', { params, timeout: 60000 })
     return data
   },
   getItem: async (id: number) => {
@@ -2267,6 +2273,9 @@ export const storeApi = {
     const { data } = await apiClient.get(`/store/material-issues/${id}`)
     return data
   },
+  /** Names on vendor bills per item (latest first), for "Name on DC" on an issue line. */
+  itemBillNames: async (itemIds: number[]): Promise<Record<string, string[]>> =>
+    (await apiClient.get('/store/material-issues/bill-names', { params: { item_ids: itemIds.join(',') } })).data,
   createMaterialIssue: async (payload: Record<string, unknown>) => {
     const { data } = await apiClient.post('/store/material-issues', payload)
     return data

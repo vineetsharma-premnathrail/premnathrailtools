@@ -3,6 +3,7 @@ customer handover. Ties together the vehicle's work orders (main + sub-
 assemblies), a 12-stage checklist with evidence gates, vehicle tests,
 rework orders and the handover that registers the vehicle in the ERP
 machine registry. See docs/02-modules/production/rrv-build.md."""
+from app.core.like import like_escape
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -427,11 +428,11 @@ async def list_builds(
     if status_filter:
         query = query.filter(ProductionRrvBuild.status.in_(status_filter.split(",")))
     if search:
-        like = f"%{search.strip()}%"
+        like = f"%{like_escape(search.strip())}%"
         query = query.filter(
-            ProductionRrvBuild.build_number.ilike(like) | ProductionRrvBuild.rrv_model.ilike(like)
-            | ProductionRrvBuild.customer_name.ilike(like) | ProductionRrvBuild.vehicle_serial_number.ilike(like)
-            | ProductionRrvBuild.chassis_number.ilike(like) | ProductionRrvBuild.customer_po_number.ilike(like)
+            ProductionRrvBuild.build_number.ilike(like, escape="\\") | ProductionRrvBuild.rrv_model.ilike(like, escape="\\")
+            | ProductionRrvBuild.customer_name.ilike(like, escape="\\") | ProductionRrvBuild.vehicle_serial_number.ilike(like, escape="\\")
+            | ProductionRrvBuild.chassis_number.ilike(like, escape="\\") | ProductionRrvBuild.customer_po_number.ilike(like, escape="\\")
         )
     rows = _responses(db, query.order_by(ProductionRrvBuild.created_at.desc(), ProductionRrvBuild.id.desc()).limit(1000).all())
     return [r for r in rows if r.is_overdue] if overdue else rows

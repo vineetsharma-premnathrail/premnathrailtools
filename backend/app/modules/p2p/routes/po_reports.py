@@ -17,6 +17,7 @@ Per PO line:
   overdue    days past the PO's expected delivery while something is still open
 
 Own prefix (/p2p/po-reports) so it can never be shadowed by /p2p/purchase-orders/{id}."""
+from app.core.like import like_escape
 import io
 from datetime import date
 
@@ -138,11 +139,11 @@ def open_items(db: Session, *, vendor_id: int | None = None, vendor_name: str | 
     if vendor_id is not None:
         q = q.filter(P2PPurchaseOrder.vendor_id == vendor_id)
     if vendor_name and vendor_name.strip():
-        q = q.filter(P2PPurchaseOrder.vendor_name.ilike(f"%{vendor_name.strip()}%"))
+        q = q.filter(P2PPurchaseOrder.vendor_name.ilike(f"%{like_escape(vendor_name.strip())}%", escape="\\"))
     if store_item_id is not None:
         q = q.filter(P2PPurchaseOrderItem.store_item_id == store_item_id)
     if po_number and po_number.strip():
-        q = q.filter(P2PPurchaseOrder.po_number.ilike(f"%{po_number.strip()}%"))
+        q = q.filter(P2PPurchaseOrder.po_number.ilike(f"%{like_escape(po_number.strip())}%", escape="\\"))
     if date_from:
         q = q.filter(P2PPurchaseOrder.po_date >= date_from)
     if date_to:

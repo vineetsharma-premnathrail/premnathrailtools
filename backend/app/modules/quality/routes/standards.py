@@ -1,3 +1,4 @@
+from app.core.like import like_escape
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -58,9 +59,9 @@ async def list_quality_standards(
     if category:
         query = query.filter(QualityStandard.category == category)
     if search:
-        like = f"%{search}%"
+        like = f"%{like_escape(search)}%"
         query = query.filter(
-            (QualityStandard.title.ilike(like)) | (QualityStandard.standard_code.ilike(like))
+            (QualityStandard.title.ilike(like, escape="\\")) | (QualityStandard.standard_code.ilike(like, escape="\\"))
         )
     standards = query.order_by(QualityStandard.created_at.desc()).all()
     return [_to_response(db, s) for s in standards]

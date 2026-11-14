@@ -378,7 +378,8 @@ def test_import_export_round_trip_lead_time_and_legacy_code(client, h):
     rows = list(ws.iter_rows(values_only=True))
     header = list(rows[0])
     row = dict(zip(header, rows[1]))
-    assert row["Lead Time (days)"] == 21 and row["Legacy Code"] == "V3-0012"
+    # The export uses the import template's column names (owner, 2026-11-07), so it imports back as is.
+    assert row["lead_time_days"] == 21 and row["legacy_code"] == "V3-0012"
 
     # The exported titles are accepted back by the import (as a CSV with the same headers).
     csv2 = ",".join(["item_name", "uom", "Lead Time (days)", "Legacy Code"]) + "\nSpring washer,NOS,14,V3-0099\n"

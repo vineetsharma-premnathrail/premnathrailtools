@@ -60,7 +60,7 @@ export default function StoreBeforePoPage() {
   }
 
   const q = search.trim().toLowerCase()
-  const shown = rows.filter((r) => (!statusFilter || r.status === statusFilter) && (!q || [r.receipt_number, r.vendor_name, r.po_number, r.p2p_number, r.delivery_challan_number, r.vendor_invoice_number, ...r.items.map((i) => i.item_name)].some((x) => (x || '').toLowerCase().includes(q))))
+  const shown = rows.filter((r) => (!statusFilter || r.status === statusFilter) && (!q || [r.receipt_number, r.vendor_name, r.po_number, r.manual_po_number, r.p2p_number, r.delivery_challan_number, r.vendor_invoice_number, ...r.items.map((i) => i.item_name)].some((x) => (x || '').toLowerCase().includes(q))))
   const count = (s: string) => rows.filter((r) => r.status === s).length
   const open = rows.find((r) => r.id === openId) || null
 
@@ -119,7 +119,7 @@ export default function StoreBeforePoPage() {
                   {r.vendor_invoice_number && <div>Invoice {r.vendor_invoice_number}</div>}
                   {!r.delivery_challan_number && !r.vendor_invoice_number && '—'}
                 </td>
-                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{r.po_number || '—'}</td>
+                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }} title={r.manual_po_number && !r.po_number ? 'PO typed by the store (not in the portal PO list)' : undefined}>{r.po_number || r.manual_po_number || '—'}</td>
                 <td style={tdStyle}>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                     <Pill label={PRE_PO_STATUS_LABEL[r.status] || r.status} hex={PRE_PO_STATUS_HEX[r.status] || '#64748b'} />

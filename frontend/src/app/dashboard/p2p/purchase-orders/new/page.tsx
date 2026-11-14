@@ -468,7 +468,7 @@ export default function CreatePurchaseOrderPage() {
               <SheetSection icon="box" title="Received before PO">
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 12 }}>
                   {([['Receipt', receipt.receipt_number], ['Received on', formatDate(receipt.received_date)], ['Store', receipt.store_location_name],
-                    ['Delivery challan no.', receipt.delivery_challan_number], ['Vendor invoice no.', receipt.vendor_invoice_number]] as const).map(([k, v]) => (
+                    ['Delivery challan no.', receipt.delivery_challan_number], ['Vendor invoice no.', receipt.vendor_invoice_number], ['PO no. (typed by store)', receipt.manual_po_number]] as const).map(([k, v]) => (
                     <div key={k} style={{ flex: '1 1 170px' }}>
                       <span style={label}>{k}</span>
                       <div style={{ fontSize: 14, color: SHEET.INK, padding: '2px 0' }}>{v || '—'}</div>

@@ -553,7 +553,7 @@ export default function InquiryForm({
                   title={canAddProduct ? 'Add another product' : 'Fill in the product first.'} aria-label={canAddProduct ? 'Add another product' : 'Fill in the product first.'}
                   style={squareBtn(SHEET.BLUE, !canAddProduct)}><SheetIcon name="plus" size={15} /></button>
               }>
-                <input style={inputStyle} value={form.product} onChange={(e) => set('product', e.target.value)} placeholder="e.g. RRV for OHE maintenance, 1676 mm BG" />
+                <input style={inputStyle} value={form.product} onChange={(e) => set('product', e.target.value)} placeholder="e.g. RRV for OHE maintenance" />
               </ValueRow>
               {isDuplicateProductRow(form.product_category, form.product) && (
                 <p style={{ fontSize: 11, color: '#b45309', fontWeight: 600, margin: '4px 0 0' }}>⚠ This product is already added below.</p>

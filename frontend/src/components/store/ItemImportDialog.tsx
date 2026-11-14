@@ -96,8 +96,8 @@ export default function ItemImportDialog({ open, onClose, onImported }: { open: 
           <>
             <SheetSection icon="doc" title="File Format">
               <p style={{ fontSize: 13, color: SHEET.BODY, margin: '0 0 12px', lineHeight: 1.6 }}>
-                Columns: item_type, category, subcategory, <b>item_name</b>, <b>uom</b>, technical_specification.
-                Item codes are generated automatically. A unit, category or subcategory that is not in Settings yet is <b>created from the file</b> (you can rename it later in Store settings). Items whose name and technical specification both already exist are <b>not saved</b> — you&apos;ll see them listed after the import.
+                Columns: item_type, category, subcategory, <b>item_name</b>, one &quot;Name at …&quot; column per unit (that unit&apos;s own name of the item), <b>uom</b>, technical_specification, then the optional purchase / tax columns.
+                The template or a file from Export both work. Item codes are generated automatically. A unit, category or subcategory that is not in Settings yet is <b>created from the file</b> (you can rename it later in Store settings). Items whose name and technical specification both already exist are <b>not added again</b> — only their unit-wise names are filled in from the file; you&apos;ll see them listed after the import.
               </p>
               <button type="button" onClick={downloadTemplate} style={sheetBtn('secondary')}><SheetIcon name="doc" size={15} />Download template</button>
             </SheetSection>
@@ -115,7 +115,7 @@ export default function ItemImportDialog({ open, onClose, onImported }: { open: 
         ) : (
           <SheetSection icon="list" title="Import Result">
             <p style={{ fontSize: 13, color: SHEET.MUTED, margin: '0 0 16px' }}>
-              {result.created.length} new item{result.created.length === 1 ? '' : 's'} saved · {result.existing.length} already existed (not saved)
+              {result.created.length} new item{result.created.length === 1 ? '' : 's'} saved · {result.existing.length} already existed (not added again)
               {result.errors.length ? ` · ${result.errors.length} with problems (not saved)` : ''}
             </p>
             {((result.new_units?.length ?? 0) > 0 || (result.new_categories?.length ?? 0) > 0) && (
@@ -135,7 +135,7 @@ export default function ItemImportDialog({ open, onClose, onImported }: { open: 
               ))}</tbody>
             </Block>
 
-            <Block title="Already exist — not saved" color="#b45309" count={result.existing.length}>
+            <Block title="Already exist — not added again" color="#b45309" count={result.existing.length}>
               <thead><tr><th style={th}>Row <RowCount count={result.existing.length} /></th><th style={th}>Name in file</th><th style={th}>Existing Item</th><th style={th}>Why</th></tr></thead>
               <tbody>{result.existing.map((r) => (
                 <tr key={r.row}><td style={td}>{r.row}</td><td style={td}>{r.item_name}</td>

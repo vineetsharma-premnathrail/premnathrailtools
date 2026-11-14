@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../modules.dart';
+import '../../record_router.dart';
 import '../../ui/app_frame.dart';
 import '../../ui/widgets.dart';
 import 'rnd_common.dart';
@@ -12,12 +13,19 @@ import 'rnd_tools.dart';
 
 /// R&D - native copy of frontend/src/app/dashboard/rnd/ (tabs as RndNav.tsx).
 class RndModuleHome extends StatelessWidget {
-  const RndModuleHome({super.key, required this.module});
+  const RndModuleHome({super.key, required this.module, this.initialTabLabel});
   final ErpModule module;
+
+  /// Tab to open first (links from alerts); null = the Dashboard.
+  final String? initialTabLabel;
 
   @override
   Widget build(BuildContext context) {
     final settings = RndPerm.view('requirements') && RndPerm.feature('requirements', 'settings', 'view');
+    return startOnTab(_scaffold(context, settings), initialTabLabel);
+  }
+
+  ModuleScaffold _scaffold(BuildContext context, bool settings) {
     return ModuleScaffold(
       module: module,
       topActions: [

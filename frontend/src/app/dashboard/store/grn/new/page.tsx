@@ -24,6 +24,7 @@ import { useVisibility } from '@/lib/visibility'
 import { VisColumns } from '@/components/quality/VisColumns'
 import { VisSection, VisTd, VisTh } from '@/lib/visibilityComponents'
 import { sampleReceivablePos } from '@/lib/storePreviewSamples'
+import BeforePOReceiptForm from '@/components/store/BeforePOReceiptForm'
 
 const inputStyle: React.CSSProperties = sheetInput
 // PO-line columns a role may hide (Store › GRN & Inspection › Visibility); Variance follows Invoice Qty.
@@ -110,6 +111,10 @@ export default function NewStoreGrnPage() {
   const [bins, setBins] = useState<{ id: number; code: string; name?: string | null; is_active?: boolean }[]>([])
   const [heats, setHeats] = useState<Record<number, HeatRow[]>>({})
   const [tcNote, setTcNote] = useState('')
+  // PO from the portal's PO list, or a PO made outside the portal (Tally / vendor) typed by hand (owner, 2026-11-13).
+  const [poNotInList, setPoNotInList] = useState(false)
+  const [savedNote, setSavedNote] = useState('')
+  const { canFeature } = useCan()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | string[]>('')
   // Kept per purchase order; waits until a PO is chosen (or opened from the list).
@@ -241,6 +246,23 @@ export default function NewStoreGrnPage() {
       </>}>
       <DraftBanner draft={draft} />
       <MessageDialog open={!!error} variant="error" title="Cannot Save Goods Receipt" message={error} onClose={() => setError('')} />
+      {!vis.preview && canFeature('store', 'grn', 'before_po', 'create') && (
+        <div data-tour="store-grn-form-po-source" style={{ padding: '16px 24px 0' }}>
+          <label style={labelStyle}>Purchase order</label>
+          <div role="radiogroup" aria-label="Purchase order" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {([[false, 'From PO list'], [true, 'PO not in list']] as [boolean, string][]).map(([v, l]) => (
+              <button key={l} type="button" role="radio" aria-checked={poNotInList === v} onClick={() => setPoNotInList(v)}
+                style={{ ...segmentBtnStyle(poNotInList === v), minWidth: 140 }}>{l}</button>
+            ))}
+          </div>
+          <p style={sheetHint}>PO not in list: the PO was made in Tally or sent by the vendor — type its PO number and date, and attach it.</p>
+        </div>
+      )}
+      {poNotInList && (
+        <BeforePOReceiptForm poNotInList onClose={() => setPoNotInList(false)}
+          onSaved={(r, note) => { setPoNotInList(false); if (note) setSavedNote(note); else router.push('/dashboard/store/before-po') }} />
+      )}
+      <MessageDialog open={!!savedNote} variant="error" title="File Not Attached" message={savedNote} onClose={() => { setSavedNote(''); router.push('/dashboard/store/before-po') }} />
       <MessageDialog open={!!tcNote} variant="error" title="Mill TC Not Uploaded" message={tcNote} onClose={() => { setTcNote(''); router.push('/dashboard/store/grn') }} />
 
       <VisColumns vis={vis} rightKeys={['remarks', 'blind_receipt']}

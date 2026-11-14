@@ -46,7 +46,7 @@ const config: TourConfig = {
         { value: 'Referral', meaning: 'Came through a referral/existing contact.' },
         { value: 'Phone Call', meaning: 'Inbound or outbound phone call.' },
         { value: 'Email', meaning: 'Customer emailed directly.' },
-        { value: 'Walk-in', meaning: 'Customer walked in without prior contact.' },
+        { value: 'Visiting', meaning: 'Customer visited us in person without prior contact.' },
         { value: 'LinkedIn', meaning: 'Came through LinkedIn outreach or a post.' },
         { value: 'Exhibition/Event', meaning: 'Met at a trade show, exhibition, or industry event.' },
         { value: 'Other', meaning: 'Any source not covered by the options above.' },
@@ -89,7 +89,7 @@ const config: TourConfig = {
       target: 'inq-product',
       title: 'Product',
       required: true,
-      purpose: 'What the customer asked for, in their words (free text) — e.g. "RRV for OHE maintenance, 1676 mm BG".',
+      purpose: 'What the customer asked for, in their words (free text) — e.g. "RRV for OHE maintenance".',
       why: 'An inquiry records the requirement as the customer states it. The exact product and price are picked from the Product master (CRM › Products) on the quotation line. The same text cannot be entered twice in one inquiry.',
     },
     {

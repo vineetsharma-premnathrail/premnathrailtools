@@ -24,6 +24,7 @@ and the approval land in one transaction.
 """
 from __future__ import annotations
 
+from app.core.like import like_escape
 import json
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta, timezone
@@ -1219,7 +1220,7 @@ def inbox(db: Session, user: User) -> list[dict]:
     # Same three doors as _via(): approver, a delegator's slot, or listed in the
     # step's also-allowed / escalation list. That list is JSON, so match the id
     # in its text — a superset (id 1 also matches 12) that _via() then settles exactly.
-    listed = cast(ApprovalRequestStep.escalated_to_ids, String).like(f"%{user.id}%")
+    listed = cast(ApprovalRequestStep.escalated_to_ids, String).like(f"%{like_escape(user.id)}%", escape="\\")
     # De-duplicate on the id only: Postgres can't DISTINCT whole rows that
     # hold JSON columns (context, escalation_config).
     candidate_ids = (

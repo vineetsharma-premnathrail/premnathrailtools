@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Downloaded app updates live in the app's cache folder, sub-folder
+     "updates" (lib/update/app_updater.dart). Only that folder is shared,
+     and only with the phone's installer screen. -->
+<paths>
+    <cache-path name="updates" path="updates/" />
+</paths>

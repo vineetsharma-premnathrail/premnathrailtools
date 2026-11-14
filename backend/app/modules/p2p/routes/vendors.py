@@ -9,6 +9,7 @@ commercial / contact fields; bank, credit and GL fields stay with Finance
 Access: reads (list/detail/catalog/meta) — Procurement › Vendors view, the
 Purchase desk or Accounts (cross-module lookup); every write needs the
 matching Procurement › Vendors action (admins always)."""
+from app.core.like import like_escape
 from datetime import date
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
@@ -230,9 +231,9 @@ def list_vendors(
     if status:
         q = q.filter(Vendor.status == status)
     if search and search.strip():
-        like = f"%{search.strip()}%"
-        q = q.filter(or_(Vendor.name.ilike(like), Vendor.code.ilike(like), Vendor.gstin.ilike(like), Vendor.city.ilike(like),
-                         Vendor.contact_name.ilike(like)))
+        like = f"%{like_escape(search.strip())}%"
+        q = q.filter(or_(Vendor.name.ilike(like, escape="\\"), Vendor.code.ilike(like, escape="\\"), Vendor.gstin.ilike(like, escape="\\"), Vendor.city.ilike(like, escape="\\"),
+                         Vendor.contact_name.ilike(like, escape="\\")))
     vendors = q.order_by(Vendor.code.asc(), Vendor.id.asc()).all()
     docs, items = _counts(db, [v.id for v in vendors])
     people = vendor_people(db, vendors)
@@ -293,9 +294,9 @@ def export_vendors(
     else:
         q = db.query(Vendor)
         if search and search.strip():
-            like = f"%{search.strip()}%"
-            q = q.filter(or_(Vendor.name.ilike(like), Vendor.code.ilike(like), Vendor.gstin.ilike(like), Vendor.city.ilike(like),
-                             Vendor.contact_name.ilike(like)))
+            like = f"%{like_escape(search.strip())}%"
+            q = q.filter(or_(Vendor.name.ilike(like, escape="\\"), Vendor.code.ilike(like, escape="\\"), Vendor.gstin.ilike(like, escape="\\"), Vendor.city.ilike(like, escape="\\"),
+                             Vendor.contact_name.ilike(like, escape="\\")))
         vendors = [v for v in q.order_by(Vendor.name).all() if in_range(ist_date(v.created_at), date_from, date_to)]
     docs, items = _counts(db, [v.id for v in vendors])
     people = vendor_people(db, vendors)

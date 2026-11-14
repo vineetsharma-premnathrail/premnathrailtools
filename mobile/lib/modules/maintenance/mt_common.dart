@@ -872,7 +872,7 @@ class _AttachmentsSectionState extends State<AttachmentsSection> {
         files = await Files.pickFiles();
       }
     } catch (e) {
-      if (mounted) setState(() => _error = 'Could not read the file: $e');
+      if (mounted) setState(() => _error = 'Could not load the attachments. ${ApiClient.describe(e)}');
       return;
     }
     if (files.isEmpty || !mounted) return;

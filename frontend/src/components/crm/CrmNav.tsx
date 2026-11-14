@@ -17,8 +17,8 @@ const TABS = [
   { href: '/dashboard/crm/inquiries', label: 'Inquiries & Tenders', icon: 'file', subtabKey: 'inquiries_tenders' },
   // Products (with Pricing inside) is a CRM tab since 2026-10-30; the pages keep the /dashboard/products URL.
   { href: '/dashboard/products', label: 'Products', icon: 'box', subtabKey: 'products' },
-  // Sales Library (2026-11-12): catalogues, videos, price lists, presentations and references in nested folders.
-  { href: '/dashboard/crm/library', label: 'Sales Library', icon: 'folder', subtabKey: 'sales_library' },
+  // Knowledge Hub (2026-11-12): catalogues, videos, price lists, presentations and references in nested folders.
+  { href: '/dashboard/crm/library', label: 'Knowledge Hub', icon: 'folder', subtabKey: 'sales_library' },
   { href: '/dashboard/crm/reports', label: 'Reports', icon: 'chart', subtabKey: 'reports' },
   // Categories, payment terms and notification rules live here
   // (the old Masters and Bulk Import tabs were folded into Settings / the lists' Import button).

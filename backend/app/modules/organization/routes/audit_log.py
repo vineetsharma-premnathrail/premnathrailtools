@@ -1,3 +1,4 @@
+from app.core.like import like_escape
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import and_, func, or_
@@ -88,8 +89,8 @@ async def list_audit_logs(
     if date_to:
         query = query.filter(AuditLog.performed_at <= date_to)
     if q:
-        like = f"%{q}%"
-        query = query.filter(AuditLog.summary.ilike(like))
+        like = f"%{like_escape(q)}%"
+        query = query.filter(AuditLog.summary.ilike(like, escape="\\"))
 
     logs = query.order_by(AuditLog.performed_at.desc(), AuditLog.id.desc()).offset(offset).limit(limit).all()
 

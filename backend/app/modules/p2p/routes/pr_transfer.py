@@ -8,6 +8,7 @@ narrowed to a From–To range on the request date. One row per item line.
 Import: rows grouped by `pr_ref` become one requisition each, created through
 the same path as the New PR form (approved through the "Purchase requisition"
 approval workflow, Organization › Approval Workflows)."""
+from app.core.like import like_escape
 from datetime import date
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
@@ -75,8 +76,8 @@ def export_requisitions(
         if category_code:
             q = q.filter(P2PRequest.category_code == category_code)
         if search and search.strip():
-            like = f"%{search.strip()}%"
-            q = q.filter(or_(P2PRequest.p2p_number.ilike(like), P2PRequest.project_label.ilike(like), P2PRequest.department.ilike(like)))
+            like = f"%{like_escape(search.strip())}%"
+            q = q.filter(or_(P2PRequest.p2p_number.ilike(like, escape="\\"), P2PRequest.project_label.ilike(like, escape="\\"), P2PRequest.department.ilike(like, escape="\\")))
         prs = [p for p in q.all() if in_range(p.request_date, date_from, date_to)]
     prs.sort(key=lambda p: p.p2p_number, reverse=True)
     users = {u.id: u.name or u.email for u in db.query(User).filter(User.id.in_({p.requested_by_id for p in prs if p.requested_by_id})).all()} if prs else {}

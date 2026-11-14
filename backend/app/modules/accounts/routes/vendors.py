@@ -1,3 +1,4 @@
+from app.core.like import like_escape
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -101,8 +102,8 @@ async def list_vendors(
     if status is not None:
         query = query.filter(Vendor.status == status)
     if search:
-        like = f"%{search}%"
-        query = query.filter((Vendor.code.ilike(like)) | (Vendor.name.ilike(like)))
+        like = f"%{like_escape(search)}%"
+        query = query.filter((Vendor.code.ilike(like, escape="\\")) | (Vendor.name.ilike(like, escape="\\")))
     vendors = query.order_by(Vendor.code.asc(), Vendor.id.asc()).all()
     people = vendor_people(db, vendors)
     return [_to_response(v, db, user, people[v.id]) for v in vendors]

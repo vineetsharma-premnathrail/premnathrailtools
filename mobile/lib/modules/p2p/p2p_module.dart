@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../modules.dart';
+import '../../record_router.dart';
 import '../../ui/app_frame.dart';
 import '../../ui/widgets.dart';
 import 'item_rates.dart';
@@ -16,8 +17,11 @@ import 'vendors.dart';
 /// Procurement - native copy of frontend/src/app/dashboard/p2p/ (P2PNav tabs,
 /// Settings as the gear next to the bell).
 class ProcurementModuleHome extends StatelessWidget {
-  const ProcurementModuleHome({super.key, required this.module});
+  const ProcurementModuleHome({super.key, required this.module, this.initialTabLabel});
   final ErpModule module;
+
+  /// Tab to open first (links from alerts / approvals); null = the first tab.
+  final String? initialTabLabel;
 
   @override
   Widget build(BuildContext context) => FutureBuilder<({bool pr, bool po})>(
@@ -29,7 +33,7 @@ class ProcurementModuleHome extends StatelessWidget {
           final accounts = P2pAccess.apps.contains('accounts');
           final settingsAllowed = P2pAccess.tab('settings') &&
               (admin || P2pAccess.apps.contains('p2p') || purchase);
-          return ModuleScaffold(
+          return startOnTab(ModuleScaffold(
             key: ValueKey('p2p-${s.connectionState == ConnectionState.done}'),
             module: module,
             topActions: [
@@ -86,7 +90,7 @@ class ProcurementModuleHome extends StatelessWidget {
                 builder: (_) => const MisTab(),
               ),
             ],
-          );
+          ), initialTabLabel);
         },
       );
 }

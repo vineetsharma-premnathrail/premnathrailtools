@@ -830,7 +830,7 @@ class _InspectionCallDetailScreenState extends State<InspectionCallDetailScreen>
           ? await Files.takePhoto()
           : await Files.pickFile(extensions: ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'heic']);
     } catch (e) {
-      if (mounted) showSnack(context, 'Could not get the file: $e', error: true);
+      if (mounted) showSnack(context, 'Could not get the file. ${ApiClient.describe(e)}', error: true);
       return;
     }
     if (f == null || !mounted) return;

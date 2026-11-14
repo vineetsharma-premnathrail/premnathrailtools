@@ -46,6 +46,7 @@ from app.modules.organization.models.cost_center import CostCenter
 from app.modules.organization.models.profit_center import ProfitCenter
 from app.modules.production.models.cost_estimate import ProductionCostEstimate, ProductionCostEstimateLine, StoreItemStandardPrice
 from app.modules.organization.models.department import Department
+from app.modules.organization.models.mobile_app_release import MobileAppRelease
 from app.modules.erp.models.project import Project
 from app.modules.erp.models.project_attachment import ProjectAttachment
 from app.modules.erp.models.project_letter import ProjectLetter
@@ -497,6 +498,7 @@ from app.modules.organization.routes import approval_mail as organization_approv
 from app.modules.organization.routes import delegations as organization_delegations_routes
 from app.modules.organization.routes import desktop_app as organization_desktop_app_routes
 from app.modules.organization.routes import security as organization_security_routes
+from app.modules.organization.routes import mobile_app as organization_mobile_app_routes
 from app.modules.organization.services.approval_engine import run_escalations
 from app.modules.hr.routes import employees as hr_employees_routes
 from app.modules.hr.routes import masters as hr_masters_routes
@@ -590,6 +592,12 @@ app.add_middleware(AuditContextMiddleware)
 # OWASP Top 10 protections: injection detection, rate limiting + IP bans, SSRF
 # blocking, security response headers, body-size/method/content-type checks.
 app.add_middleware(OWASPMiddleware)
+
+# Gzip large JSON replies (added last = outermost, so every middleware above
+# still sees the plain body). The Item Master list is ~3 MB raw / ~0.3 MB
+# gzipped — raw, it hit the 10 s browser timeout on slower links.
+from starlette.middleware.gzip import GZipMiddleware  # noqa: E402
+app.add_middleware(GZipMiddleware, minimum_size=2048)
 
 # Error handlers
 setup_error_handlers(app)
@@ -847,6 +855,7 @@ app.include_router(organization_approval_mail_routes.router, prefix="/api/v1")
 app.include_router(organization_delegations_routes.router, prefix="/api/v1")
 app.include_router(organization_desktop_app_routes.router, prefix="/api/v1")
 app.include_router(organization_security_routes.router, prefix="/api/v1")
+app.include_router(organization_mobile_app_routes.router, prefix="/api/v1")
 app.include_router(hr_employees_routes.router, prefix="/api/v1", dependencies=[_Depends(require_hr_module)])
 app.include_router(hr_masters_routes.router, prefix="/api/v1", dependencies=[_Depends(require_hr_module)])
 app.include_router(hr_lifecycle_routes.router, prefix="/api/v1", dependencies=[_Depends(require_hr_module)])

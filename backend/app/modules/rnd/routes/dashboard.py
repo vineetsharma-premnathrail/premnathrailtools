@@ -1,3 +1,4 @@
+from app.core.like import like_escape
 from fastapi import APIRouter, Depends
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -111,7 +112,7 @@ async def lookup_store_items(search: str | None = None, db: Session = Depends(ge
     usually don't hold the 'store' app, so they can't call /store/items."""
     query = db.query(StoreItem)
     if search:
-        like = f"%{search}%"
-        query = query.filter((StoreItem.item_name.ilike(like)) | (StoreItem.item_code.ilike(like)))
+        like = f"%{like_escape(search)}%"
+        query = query.filter((StoreItem.item_name.ilike(like, escape="\\")) | (StoreItem.item_code.ilike(like, escape="\\")))
     items = query.order_by(StoreItem.item_name).limit(50).all()
     return [{"id": i.id, "item_code": i.item_code, "item_name": i.item_name, "uom": i.uom} for i in items]

@@ -1,5 +1,6 @@
 """Customer complaint register, workflow, traceability and containment.
 Rules live in services/complaints.py."""
+from app.core.like import like_escape
 import os
 from datetime import date
 
@@ -186,10 +187,10 @@ async def list_complaints(
     if severity:
         q = q.filter(QualityCustomerComplaint.severity == severity)
     if search:
-        like = f"%{search}%"
-        q = q.filter(QualityCustomerComplaint.customer_name.ilike(like) | QualityCustomerComplaint.complaint_number.ilike(like)
-                     | QualityCustomerComplaint.description.ilike(like) | QualityCustomerComplaint.item_name.ilike(like)
-                     | QualityCustomerComplaint.serial_number.ilike(like) | QualityCustomerComplaint.batch_number.ilike(like))
+        like = f"%{like_escape(search)}%"
+        q = q.filter(QualityCustomerComplaint.customer_name.ilike(like, escape="\\") | QualityCustomerComplaint.complaint_number.ilike(like, escape="\\")
+                     | QualityCustomerComplaint.description.ilike(like, escape="\\") | QualityCustomerComplaint.item_name.ilike(like, escape="\\")
+                     | QualityCustomerComplaint.serial_number.ilike(like, escape="\\") | QualityCustomerComplaint.batch_number.ilike(like, escape="\\"))
     return _responses(db, q.order_by(QualityCustomerComplaint.created_at.desc()).all(), user=user)
 
 

@@ -346,9 +346,17 @@ async def next_item_code(
 
 @router.get("/units")
 async def item_units(db: Session = Depends(get_db), _user: User = Depends(require_store_lookup())):
-    """Units / plants an item can carry its own name at (Add / Edit Item form)."""
-    return [{"id": b.id, "name": b.name, "code": b.code}
-            for b in db.query(Branch).filter(Branch.status == "active").order_by(Branch.name).all()]
+    """Units / plants an item can carry its own name at (Add / Edit Item form).
+    Only units that run a store — a unit without one (e.g. RDC) never receives
+    or issues items, so it needs no name of its own."""
+    return [{"id": b.id, "name": b.name, "code": b.code} for b in store_units(db)]
+
+
+def store_units(db: Session) -> list[Branch]:
+    """Active units that run an active store — the units an item can carry its
+    own name at (form, Excel import / export)."""
+    with_store = db.query(StoreLocation.branch_id).filter(StoreLocation.branch_id.isnot(None), StoreLocation.status == "active")
+    return db.query(Branch).filter(Branch.status == "active", Branch.id.in_(with_store)).order_by(Branch.name).all()
 
 
 @router.get("/{item_id}", response_model=StoreItemResponse)

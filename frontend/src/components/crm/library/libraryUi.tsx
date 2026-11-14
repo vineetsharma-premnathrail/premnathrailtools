@@ -1,6 +1,6 @@
 'use client'
 
-// Small shared pieces of the Sales Library screens: file-type badge, expiry badge,
+// Small shared pieces of the Knowledge Hub screens: file-type badge, expiry badge,
 // link chips, multi-pick field, tag field, link-option loader, row menu, error text.
 
 import { useCallback, useEffect, useRef, useState } from 'react'

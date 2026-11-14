@@ -8,6 +8,7 @@ whose engine or chassis number already belongs to another machine is a
 conflict (one physical machine can't carry two serials), so it comes back in
 `errors` naming that machine. Everything else is validated with the same
 ProjectCreate schema the New Machine form uses."""
+from app.core.like import like_escape
 from datetime import date
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
@@ -258,8 +259,8 @@ async def export_projects(
     if customer_id:
         query = query.filter(Project.customer_id == customer_id)
     if search:
-        like = f"%{search}%"
-        query = query.filter(Project.serial_number.ilike(like) | Project.model_name.ilike(like) | Project.client_company.ilike(like))
+        like = f"%{like_escape(search)}%"
+        query = query.filter(Project.serial_number.ilike(like, escape="\\") | Project.model_name.ilike(like, escape="\\") | Project.client_company.ilike(like, escape="\\"))
     projects = sorted(query.all(), key=lambda p: _natural_sort_key(p.serial_number))
     if date_from or date_to:
         pick = {

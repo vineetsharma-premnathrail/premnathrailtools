@@ -323,7 +323,12 @@ class Demo:
         current = [r.id for r in self._fresh(user).roles]
         ids = sorted(set(current) | set(wanted))
         if set(ids) != set(current):
-            self.call("PUT", f"/users/{user.id}/roles", json={"role_ids": ids})
+            # A demo person may hold a role the SoD rules would normally block;
+            # the API wants a mitigation reason for that (demo users can't log in).
+            self.call("PUT", f"/users/{user.id}/roles", json={
+                "role_ids": ids,
+                "sod_mitigation_reason": f"{LABEL} demo person (cannot log in, local database only) — demo data checked by the demo script owner.",
+            })
         return self._fresh(user)
 
     def grant(self, user, *grants):

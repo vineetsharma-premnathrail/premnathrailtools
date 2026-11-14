@@ -6,6 +6,7 @@ import AnchoredPopover from '@/components/shared/AnchoredPopover'
 import { menuItemStyle } from '@/lib/reports/styles'
 import { useOutside } from '@/lib/reports/useOutside'
 import type { VisualSpec } from '@/lib/reports/dashboard'
+import InfoTip from './InfoTip'
 
 /** The card around one chart or table: one-line title, a "..." menu (Show data, Export this to Excel) and the body. */
 export default function VisualCard({ spec, height = 240, canExport, loading, empty, onShowData, onExport, children }: {
@@ -26,7 +27,9 @@ export default function VisualCard({ spec, height = 240, canExport, loading, emp
   return (
     <div style={{ padding: '12px 14px 14px', borderRadius: 14, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 2px 8px rgba(15,23,42,0.04)', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-        <p title={spec.hint} style={{ flex: 1, minWidth: 0, margin: 0, fontSize: 13, fontWeight: 700, color: '#1f1108', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{spec.title}</p>
+        <p style={{ minWidth: 0, margin: 0, fontSize: 13, fontWeight: 700, color: '#1f1108', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{spec.title}</p>
+        <InfoTip title={spec.title} lines={[spec.hint || '', spec.dimension ? 'Click a bar, slice or row to filter the whole page by it; click it again to clear.' : '']} />
+        <span style={{ flex: 1 }} />
         {(onShowData || (canExport && onExport)) && (
           <>
             <button ref={anchor} type="button" aria-label={`More for ${spec.title}`} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}

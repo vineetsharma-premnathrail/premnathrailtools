@@ -1,6 +1,6 @@
 from __future__ import annotations
 from datetime import date, datetime
-from sqlalchemy import Boolean, String, Integer, Float, Date, DateTime, Text, ForeignKey, CheckConstraint
+from sqlalchemy import Boolean, String, Integer, Float, Date, DateTime, Text, ForeignKey, CheckConstraint, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 from app.db.mixins import TimestampMixin
@@ -30,6 +30,9 @@ class StorePrePoReceipt(Base, TimestampMixin):
     store_location_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("store_locations.id"), nullable=True)
     delivery_challan_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
     delivery_challan_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # PO not in the portal's PO list (made in Tally / by the vendor): typed by the store (owner, 2026-11-13).
+    manual_po_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    manual_po_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     vendor_invoice_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
     vendor_invoice_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -84,7 +87,7 @@ class StorePrePoReceiptItem(Base, TimestampMixin):
 
 
 # Vendor paperwork received with the goods.
-STORE_PRE_PO_ATTACHMENT_TYPES = ("invoice", "challan", "other")
+STORE_PRE_PO_ATTACHMENT_TYPES = ("invoice", "challan", "po", "other")
 
 
 class StorePrePoReceiptAttachment(Base, TimestampMixin):
@@ -105,3 +108,26 @@ class StorePrePoReceiptAttachment(Base, TimestampMixin):
     uploaded_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
 
     receipt: Mapped["StorePrePoReceipt"] = relationship("StorePrePoReceipt", back_populates="attachments")
+
+
+class StoreItemVendorName(Base, TimestampMixin):
+    """The name a vendor's bill gives an Item Master item (owner, 2026-11-13). Learnt from the
+    "Name on invoice" of every receipt line, so the next bill from the same vendor with the same
+    name fills the item by itself. One vendor + name points to one item (the latest pick wins)."""
+
+    __tablename__ = "store_item_vendor_names"
+    __table_args__ = (UniqueConstraint("vendor_id", "name_key", name="uq_store_item_vendor_names_vendor_key"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    vendor_id: Mapped[int] = mapped_column(Integer, ForeignKey("vendors.id", ondelete="CASCADE"), nullable=False)
+    store_item_id: Mapped[int] = mapped_column(Integer, ForeignKey("store_items.id", ondelete="CASCADE"), nullable=False, index=True)
+    invoice_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # invoice_name lower-cased with single spaces: "SKF  6205-2RS" and "skf 6205-2rs" are the same bill name.
+    name_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    times_used: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    last_used_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    created_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+
+def bill_name_key(name: str | None) -> str:
+    return " ".join((name or "").split()).lower()

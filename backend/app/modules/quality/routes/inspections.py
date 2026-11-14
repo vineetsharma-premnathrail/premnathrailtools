@@ -1,3 +1,4 @@
+from app.core.like import like_escape
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -69,9 +70,9 @@ async def list_inspections(
     if status_filter:
         query = query.filter(QualityInspection.status == status_filter)
     if search:
-        like = f"%{search}%"
+        like = f"%{like_escape(search)}%"
         query = query.filter(
-            (QualityInspection.item_name.ilike(like)) | (QualityInspection.inspection_number.ilike(like))
+            (QualityInspection.item_name.ilike(like, escape="\\")) | (QualityInspection.inspection_number.ilike(like, escape="\\"))
         )
     inspections = query.order_by(QualityInspection.created_at.desc()).all()
     return [_to_response(db, i) for i in inspections]

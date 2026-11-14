@@ -1,4 +1,5 @@
 
+from app.core.like import like_escape
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
@@ -126,15 +127,15 @@ def _mb51_query(db: Session, user: User, *, item_id=None, location_id=None, tran
     if reference_type:
         query = query.filter(StoreStockTransaction.reference_type == reference_type)
     if reference_number and reference_number.strip():
-        query = query.filter(StoreStockTransaction.reference_number.ilike(f"%{reference_number.strip()}%"))
+        query = query.filter(StoreStockTransaction.reference_number.ilike(f"%{like_escape(reference_number.strip())}%", escape="\\"))
     if created_by_id is not None:
         query = query.filter(StoreStockTransaction.created_by_id == created_by_id)
     if vendor_name and vendor_name.strip():
-        query = query.filter(StoreStockTransaction.vendor_name.ilike(f"%{vendor_name.strip()}%"))
+        query = query.filter(StoreStockTransaction.vendor_name.ilike(f"%{like_escape(vendor_name.strip())}%", escape="\\"))
     if bin_id is not None:
         query = query.filter(StoreStockTransaction.bin_id == bin_id)
     if batch_number and batch_number.strip():
-        query = query.filter(StoreStockTransaction.batch_number.ilike(f"%{batch_number.strip()}%"))
+        query = query.filter(StoreStockTransaction.batch_number.ilike(f"%{like_escape(batch_number.strip())}%", escape="\\"))
     return query.order_by(StoreStockTransaction.transaction_date.desc(), StoreStockTransaction.id.desc())
 
 

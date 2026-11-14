@@ -19,6 +19,7 @@ The internal order also flows onto the PO when the PO is drafted without one
 (its commitment then shows in Finance › Controlling)."""
 from __future__ import annotations
 
+from app.core.like import like_escape
 from sqlalchemy.orm import Session
 
 P2P_ACCOUNT_ASSIGNMENTS = {
@@ -147,20 +148,20 @@ def options(db: Session, kind: str, search: str | None = None, limit: int = 50) 
     """Open records a requisition can be charged to, for the PR form picker."""
     if kind not in P2P_ACCOUNT_ASSIGNMENTS:
         raise ValueError(f"Account assignment must be one of: {', '.join(P2P_ACCOUNT_ASSIGNMENTS)}.")
-    like = f"%{(search or '').strip()}%"
+    like = f"%{like_escape((search or '').strip())}%"
     if kind == "sales_order":
         from app.modules.sales.models.order import SalesOrder
         q = db.query(SalesOrder).filter(SalesOrder.status.notin_(_CLOSED[kind]), SalesOrder.so_number.isnot(None))
         if hasattr(SalesOrder, "deleted_at"):
             q = q.filter(SalesOrder.deleted_at.is_(None))
         if search:
-            q = q.filter(SalesOrder.so_number.ilike(like))
+            q = q.filter(SalesOrder.so_number.ilike(like, escape="\\"))
         return [{"id": o.id, "label": o.so_number} for o in q.order_by(SalesOrder.id.desc()).limit(limit).all()]
     if kind == "cost_center":
         from app.modules.organization.models.cost_center import CostCenter
         q = db.query(CostCenter).filter(CostCenter.status.notin_(_CLOSED[kind]))
         if search:
-            q = q.filter(CostCenter.code.ilike(like) | CostCenter.name.ilike(like))
+            q = q.filter(CostCenter.code.ilike(like, escape="\\") | CostCenter.name.ilike(like, escape="\\"))
         return [{"id": o.id, "label": f"{o.code} — {o.name}"} for o in q.order_by(CostCenter.code).limit(limit).all()]
     if kind == "work_order":
         from app.modules.production.models.work_order import ProductionWorkOrder
@@ -168,13 +169,13 @@ def options(db: Session, kind: str, search: str | None = None, limit: int = 50) 
         if hasattr(ProductionWorkOrder, "deleted_at"):
             q = q.filter(ProductionWorkOrder.deleted_at.is_(None))
         if search:
-            q = q.filter(ProductionWorkOrder.wo_number.ilike(like))
+            q = q.filter(ProductionWorkOrder.wo_number.ilike(like, escape="\\"))
         return [{"id": o.id, "label": o.wo_number} for o in q.order_by(ProductionWorkOrder.id.desc()).limit(limit).all()]
     if kind == "order_project":
         from app.modules.projects.models.project import PmProject
         q = db.query(PmProject).filter(PmProject.status.notin_(_CLOSED[kind]))
         if search:
-            q = q.filter(PmProject.project_code.ilike(like) | PmProject.name.ilike(like) | PmProject.client_name.ilike(like))
+            q = q.filter(PmProject.project_code.ilike(like, escape="\\") | PmProject.name.ilike(like, escape="\\") | PmProject.client_name.ilike(like, escape="\\"))
         return [{"id": o.id, "label": f"{o.project_code} — {o.name}"[:255]} for o in q.order_by(PmProject.id.desc()).limit(limit).all()]
     if kind == "rnd_project":
         from app.modules.rnd.models.project import RndProject
@@ -182,10 +183,10 @@ def options(db: Session, kind: str, search: str | None = None, limit: int = 50) 
                                         RndProject.status.notin_(("cancelled",)), RndProject.stage.notin_(("handover", "closed")),
                                         RndProject.handed_over_at.is_(None))
         if search:
-            q = q.filter(RndProject.project_number.ilike(like) | RndProject.title.ilike(like))
+            q = q.filter(RndProject.project_number.ilike(like, escape="\\") | RndProject.title.ilike(like, escape="\\"))
         return [{"id": o.id, "label": f"{o.project_number} — {o.title}"[:255]} for o in q.order_by(RndProject.project_number).limit(limit).all()]
     from app.modules.accounts.models.internal_order import InternalOrder
     q = db.query(InternalOrder).filter(InternalOrder.status.notin_(_CLOSED[kind]))
     if search:
-        q = q.filter(InternalOrder.code.ilike(like) | InternalOrder.name.ilike(like))
+        q = q.filter(InternalOrder.code.ilike(like, escape="\\") | InternalOrder.name.ilike(like, escape="\\"))
     return [{"id": o.id, "label": f"{o.code} — {o.name}"} for o in q.order_by(InternalOrder.code).limit(limit).all()]

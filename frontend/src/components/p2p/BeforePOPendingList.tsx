@@ -39,7 +39,7 @@ export default function BeforePOPendingList() {
   }, [])
 
   const q = search.trim().toLowerCase()
-  const shown = rows.filter((r) => !q || [r.receipt_number, r.vendor_name, r.delivery_challan_number, r.vendor_invoice_number, ...r.items.map((i) => i.item_name)].some((x) => (x || '').toLowerCase().includes(q)))
+  const shown = rows.filter((r) => !q || [r.receipt_number, r.vendor_name, r.manual_po_number, r.delivery_challan_number, r.vendor_invoice_number, ...r.items.map((i) => i.item_name)].some((x) => (x || '').toLowerCase().includes(q)))
 
   const createRequisition = async () => {
     const r = confirmFor
@@ -88,6 +88,7 @@ export default function BeforePOPendingList() {
                 <td style={{ ...PO_TD, fontSize: 12 }}>
                   {r.delivery_challan_number && <div>Challan {r.delivery_challan_number}</div>}
                   {r.vendor_invoice_number && <div>Invoice {r.vendor_invoice_number}</div>}
+                  {r.manual_po_number && <div title="PO typed by the store — made outside the portal (Tally / vendor)">PO {r.manual_po_number}</div>}
                   {!r.delivery_challan_number && !r.vendor_invoice_number && !(r.attachments || []).length && '—'}
                   {(r.attachments || []).length > 0 && <div title={(r.attachments || []).map((a) => a.filename).join(', ')} style={{ color: '#2563eb' }}>📎 {(r.attachments || []).length} file{(r.attachments || []).length === 1 ? '' : 's'}</div>}
                 </td>

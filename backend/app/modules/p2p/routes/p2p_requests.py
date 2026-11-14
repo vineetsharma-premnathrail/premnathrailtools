@@ -1,3 +1,4 @@
+from app.core.like import like_escape
 from datetime import date, datetime, timezone
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import Response
@@ -589,9 +590,9 @@ async def list_projects_for_picker(
     if not include_delivered:
         query = query.filter(Project.lifecycle_stage.notin_(SERVICEABLE_STAGES))
     if search:
-        like = f"%{search}%"
+        like = f"%{like_escape(search)}%"
         query = query.filter(
-            (Project.serial_number.ilike(like)) | (Project.model_name.ilike(like)) | (Project.client_company.ilike(like))
+            (Project.serial_number.ilike(like, escape="\\")) | (Project.model_name.ilike(like, escape="\\")) | (Project.client_company.ilike(like, escape="\\"))
         )
     projects = query.order_by(Project.serial_number).limit(1000).all()
     return [
@@ -1095,13 +1096,13 @@ async def list_p2p_requests(
     if department:
         query = query.filter(P2PRequest.department == department)
     if project_label:
-        query = query.filter(P2PRequest.project_label.ilike(f"%{project_label}%"))
+        query = query.filter(P2PRequest.project_label.ilike(f"%{like_escape(project_label)}%", escape="\\"))
     if priority:
         query = query.filter(P2PRequest.priority == priority)
     if required_date:
         query = query.filter(P2PRequest.required_date == required_date)
     if search:
-        query = query.filter(P2PRequest.p2p_number.ilike(f"%{search}%"))
+        query = query.filter(P2PRequest.p2p_number.ilike(f"%{like_escape(search)}%", escape="\\"))
     if order_project_element_id:
         query = query.filter(P2PRequest.items.any(P2PRequestItem.order_project_element_id == order_project_element_id))
     elif order_project_id:

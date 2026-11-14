@@ -1,3 +1,4 @@
+from app.core.like import like_escape
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -141,8 +142,8 @@ async def list_workstations(
     if branch_id:
         query = query.filter(ProductionWorkstation.branch_id == branch_id)
     if search:
-        like = f"%{search}%"
-        query = query.filter((ProductionWorkstation.code.ilike(like)) | (ProductionWorkstation.name.ilike(like)))
+        like = f"%{like_escape(search)}%"
+        query = query.filter((ProductionWorkstation.code.ilike(like, escape="\\")) | (ProductionWorkstation.name.ilike(like, escape="\\")))
     return _to_responses(db, query.order_by(ProductionWorkstation.code).all())
 
 

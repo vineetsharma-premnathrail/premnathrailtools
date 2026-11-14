@@ -41,6 +41,7 @@ from app.modules.organization.models.cost_center import CostCenter
 from app.modules.organization.models.profit_center import ProfitCenter
 from app.modules.production.models.cost_estimate import ProductionCostEstimate, ProductionCostEstimateLine, StoreItemStandardPrice
 from app.modules.organization.models.department import Department
+from app.modules.organization.models.mobile_app_release import MobileAppRelease
 from app.modules.erp.models.project import Project
 from app.modules.erp.models.project_attachment import ProjectAttachment
 from app.modules.erp.models.project_letter import ProjectLetter
