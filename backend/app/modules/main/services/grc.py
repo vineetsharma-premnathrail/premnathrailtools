@@ -3,6 +3,7 @@ and Segregation of Duties analysis (GRC ARA). Routes: main/routes/grc.py."""
 import json
 import logging
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -18,8 +19,13 @@ from app.core.permission_words import words
 logger = logging.getLogger(__name__)
 
 
+_IST = ZoneInfo("Asia/Kolkata")
+
+
 def today() -> date:
-    return datetime.now(timezone.utc).astimezone().date()
+    """Today in India (the company's day), whatever timezone the server runs in —
+    a validity window ending "today" stays open until midnight IST."""
+    return datetime.now(_IST).date()
 
 
 # ---------------------------------------------------------------- validity
@@ -29,18 +35,23 @@ _TABLE_READY: bool | None = None
 
 def _table_ready(session) -> bool:
     """access_validities exists (False only before the migration ran) —
-    checked once per process so a missing table never aborts a request."""
+    only a True answer is cached, so a table created by a migration after the
+    process started is picked up without a restart, and a missing table never
+    aborts a request."""
     global _TABLE_READY
-    if _TABLE_READY is None:
-        import sqlalchemy as sa
-        try:
-            # On the session's own connection: inspecting the engine checks out a
-            # second connection whose reset on return rolls back a shared one
-            # (single-connection pools), losing the caller's unsaved changes.
-            _TABLE_READY = sa.inspect(session.connection()).has_table("access_validities")
-        except Exception:  # noqa: BLE001
-            return False
-    return _TABLE_READY
+    if _TABLE_READY:
+        return True
+    import sqlalchemy as sa
+    try:
+        # On the session's own connection: inspecting the engine checks out a
+        # second connection whose reset on return rolls back a shared one
+        # (single-connection pools), losing the caller's unsaved changes.
+        ready = bool(sa.inspect(session.connection()).has_table("access_validities"))
+    except Exception:  # noqa: BLE001
+        return False
+    if ready:
+        _TABLE_READY = True
+    return ready
 
 
 def inactive_access(user) -> tuple[set[int], set[str]]:
@@ -65,6 +76,83 @@ def inactive_access(user) -> tuple[set[int], set[str]]:
                     result[1].add(v.permission)
     user.__dict__["_inactive_access_cache"] = (d, result)
     return result
+
+
+def active_role_names(db: Session, user) -> list[str]:
+    """Names of the roles that really give `user` something today: their own
+    active roles inside the validity window, then every active "applies to
+    everyone" role marked " (everyone)" — what /auth/me shows as their roles."""
+    off = inactive_access(user)[0]
+    held = sorted({r.name for r in user.roles or [] if r.is_active and r.id not in off})
+    held_names = set(held)
+    everyone = sorted(f"{r.name} (everyone)" for r in db.query(Role).filter(Role.is_default.is_(True), Role.is_active.is_(True)).all()
+                      if r.name not in held_names)
+    return held + everyone
+
+
+def access_sources(db: Session, user) -> dict:
+    """Every place `user`'s access comes from, with whether it gives anything
+    today — for the effective-access screens. Mirrors User.role_grant_lists()
+    (validity windows, inactive roles, "applies to everyone" roles) so the
+    admin sees exactly what the user gets.
+
+    Returns {"grants": {grant: [source]}, "inactive_grants": {grant: [source]},
+    "sources": [{kind, role_id, name, active, reason, valid_from, valid_to}]}:
+    "grants" holds only what is in force today; "inactive_grants" what a role
+    or extra grant would give but doesn't today (and nothing in force gives)."""
+    off_roles, off_grants = inactive_access(user)
+    windows: dict[tuple[str, object], AccessValidity] = {}
+    if getattr(user, "id", None) is not None and _table_ready(db):
+        for v in db.query(AccessValidity).filter(AccessValidity.user_id == user.id).all():
+            windows[(v.kind, v.role_id if v.kind == "role" else v.permission)] = v
+    d = today()
+
+    def _window_reason(v: AccessValidity | None) -> str:
+        if v is None:
+            return "not active today"
+        if v.valid_from and v.valid_from > d:
+            return f"not active today — starts {v.valid_from.strftime('%d %b %Y')}"
+        if v.valid_to and v.valid_to < d:
+            return f"not active today — ended {v.valid_to.strftime('%d %b %Y')}"
+        return "not active today"
+
+    grants: dict[str, list[str]] = {}
+    inactive: dict[str, list[str]] = {}
+    sources: list[dict] = []
+    seen: set[int] = set()
+    for role in sorted(user.roles or [], key=lambda r: r.name.lower()):
+        v = windows.get(("role", role.id))
+        active = role.is_active and role.id not in off_roles
+        if active:
+            seen.add(role.id)  # an "everyone" role held off-window still applies as everyone's
+        reason = None if active else ("role is inactive — an inactive role gives nothing" if not role.is_active else _window_reason(v))
+        sources.append({"kind": "role", "role_id": role.id, "name": role.name, "active": active, "reason": reason,
+                        "valid_from": v.valid_from if v else None, "valid_to": v.valid_to if v else None})
+        for g in expand_grants(role.permissions):
+            (grants if active else inactive).setdefault(g, []).append(role.name if active else f"{role.name} ({reason})")
+    for role in db.query(Role).filter(Role.is_default.is_(True), Role.is_active.is_(True)).order_by(Role.name).all():
+        if role.id in seen:
+            continue
+        sources.append({"kind": "everyone", "role_id": role.id, "name": f"{role.name} (everyone)", "active": True,
+                        "reason": None, "valid_from": None, "valid_to": None})
+        for g in expand_grants(role.permissions):
+            grants.setdefault(g, []).append(f"{role.name} (everyone)")
+    extras = list(user.granular_permissions or [])
+    on_extras = [g for g in extras if g not in off_grants]
+    for g in expand_grants(on_extras):
+        grants.setdefault(g, []).append("Extra")
+    for g in extras:
+        if g not in off_grants:
+            continue
+        v = windows.get(("grant", g))
+        reason = _window_reason(v)
+        sources.append({"kind": "extra", "role_id": None, "name": f"Extra: {words(g)}", "active": False, "reason": reason,
+                        "valid_from": v.valid_from if v else None, "valid_to": v.valid_to if v else None})
+        for x in expand_grants([g]):
+            inactive.setdefault(x, []).append(f"Extra ({reason})")
+    # A grant something in force still gives is not "missing today".
+    inactive = {g: src for g, src in inactive.items() if g not in grants}
+    return {"grants": grants, "inactive_grants": inactive, "sources": sources}
 
 
 def validity_rows(db: Session, user_id: int) -> list[dict]:

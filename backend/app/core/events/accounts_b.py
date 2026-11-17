@@ -24,7 +24,7 @@ register_event(
 )
 register_event(
     "accounts", "depreciation_requested", "Depreciation run waiting for approval",
-    "someone who is not a Finance Manager requests the monthly depreciation run", ("depreciation", "approve"),
+    "someone requests the monthly depreciation run and it waits for approval", ("depreciation", "approve"),
     default_channels=("bell",), kind="approval",
 )
 register_event(

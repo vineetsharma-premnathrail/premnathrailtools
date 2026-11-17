@@ -124,6 +124,9 @@ def test_no_edit_once_rfq_raised(client, db):
 def test_other_requester_cannot_edit(client, db):
     requester = _requester(db, "edit5@premnathrail.com")
     other = _requester(db, "edit5b@premnathrail.com")
+    # 2026-11-14: the role-matrix tick decides; the suite's org-wide default data scope is narrowed to the production default here.
+    other.data_access_scopes = {"p2p": "assigned"}
+    db.commit()
     pr = _create_pr(client, requester)
     r = client.put(f"{BASE}/{pr['id']}", json=_edit_payload(db, pr), headers=auth_header(other))
     assert r.status_code == 403

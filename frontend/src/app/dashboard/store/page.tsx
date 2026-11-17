@@ -6,7 +6,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { storeApi } from '@/lib/api'
 import { StoreItem, StoreItemCategory } from '@/types'
 import { TEXT, BRAND, GLASS, SHADOWS, SUCCESS } from '@/lib/theme'
-import { primaryBtnStyle, secondaryBtnStyle, inputStyle, RowCount, Pill } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle, inputStyle, RowCount, Pill, StatChip } from '@/components/shared/ui'
 import ItemImportDialog from '@/components/store/ItemImportDialog'
 import StoreNav from '@/components/store/StoreNav'
 import FilterMenu from '@/components/shared/FilterMenu'
@@ -68,6 +68,10 @@ export default function StoreItemsPage() {
   const pickedCategory = categoryOptions.find((c) => c.name === categoryFilter)
   const subcategoryOptions = pickedCategory ? categories.filter((c) => c.parent_id === pickedCategory.id) : []
   const hasFilters = !!(search.trim() || typeFilter || categoryFilter || subcategoryFilter)
+  // Items added from a Before PO receipt whose details still need the Item Master owner (2026-11-14).
+  const [reviewOnly, setReviewOnly] = useState(false)
+  const reviewCount = items.filter((i) => i.needs_review).length
+  const rows = reviewOnly ? items.filter((i) => i.needs_review) : items
 
   // Exports exactly what the list shows (same search + filters).
   const exportExcel = async () => {
@@ -129,6 +133,11 @@ export default function StoreItemsPage() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 8px' }}>Item Master</h1>
+          {(reviewCount > 0 || reviewOnly) && (
+            <div data-tour="items-needs-review" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <StatChip label="Needs review (added at inward)" value={reviewCount} color="#d97706" onClick={() => setReviewOnly((v) => !v)} active={reviewOnly} />
+            </div>
+          )}
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           {can('store', 'items', 'export') && <button data-tour="items-export-btn" onClick={exportExcel} disabled={exporting} style={{ ...secondaryBtnStyle, opacity: exporting ? 0.7 : 1 }}>{exporting ? 'Exporting…' : 'Export'}</button>}
@@ -187,7 +196,7 @@ export default function StoreItemsPage() {
             <tr>
               {headers.map((h, hi) => {
                 const th: React.CSSProperties = { position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', whiteSpace: 'nowrap', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted }
-                const head = <>{h}{hi === 0 && <RowCount count={items.length} />}</>
+                const head = <>{h}{hi === 0 && <RowCount count={rows.length} />}</>
                 return HIDEABLE[h]
                   ? <VisTh key={h} vis={vis} table="items" k={HIDEABLE[h]} data-fit-min={60} data-fit-cut={h === 'Technical Specification' ? '' : undefined} style={th}>{head}</VisTh>
                   : <th key={h} data-fit-min={60} style={th}>{head}</th>
@@ -196,10 +205,10 @@ export default function StoreItemsPage() {
           </thead>
           <tbody>
             {loading && <tr><td colSpan={headers.length} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
-            {!loading && items.length === 0 && (
-              <tr><td colSpan={headers.length} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>{hasFilters ? 'No items match these filters.' : 'No items yet — use + Add Item to create the first one.'}</td></tr>
+            {!loading && rows.length === 0 && (
+              <tr><td colSpan={headers.length} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>{reviewOnly ? 'No item waits for review — click the Needs review count to see every item.' : hasFilters ? 'No items match these filters.' : 'No items yet — use + Add Item to create the first one.'}</td></tr>
             )}
-            {items.map((item) => (
+            {rows.map((item) => (
               <tr key={item.id} onClick={() => router.push(recordPath('/dashboard/store', item))} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
                 <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body, whiteSpace: 'nowrap' }}>{item.item_code}</td>
                 <VisTd vis={vis} table="items" k="type" style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{(item.item_type && ITEM_TYPE_LABELS[item.item_type]) || item.item_type || '—'}</VisTd>
@@ -207,6 +216,7 @@ export default function StoreItemsPage() {
                 <VisTd vis={vis} table="items" k="subcategory" style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{item.subcategory || '—'}</VisTd>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>
                   {item.item_name}
+                  {item.needs_review && <span style={{ marginLeft: 8 }}><Pill label="Needs review" hex="#d97706" title="Added from a Before PO receipt — open it to complete its details, then Mark reviewed" /></span>}
                   {/* Unit-wise internal names under the invoice name. */}
                   {!!item.unit_names?.length && (
                     <span style={{ display: 'block', marginTop: 2, fontSize: 11.5, color: TEXT.muted }}>

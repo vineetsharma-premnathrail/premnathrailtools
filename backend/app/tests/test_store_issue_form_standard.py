@@ -145,12 +145,14 @@ def test_fields_not_listed_for_the_type_are_cleared(client, db, env):
     assert body["project_or_work_order"] == "WO-5"  # common field, kept
 
 
-def test_scrap_is_store_manager_only(client, db, env):
+def test_scrap_follows_the_issue_tick_not_the_store_manager_flag(client, db, env):
+    # 2026-11-14: the Role matrix tick decides — Store › Issues › Create (plus the role's Issue Type
+    # list) lets a plain store user post a Scrap / Disposal issue; the 'Store Manager' flag is no gate.
     plain = _post(client, env, issue_type="scrap", remarks="Rusted")
-    assert plain.status_code == 403 and "Store Manager" in plain.json()["detail"]
+    assert plain.status_code == 200, plain.text
     assert _post(client, env, env["manager"], issue_type="scrap", remarks="Rusted").status_code == 200
-    flagged = _user(db, "ifs.flagged@premnathrail.com", is_store_manager=True)
-    assert _post(client, env, flagged, issue_type="scrap", remarks="Rusted").status_code == 200
+    # Remarks stay required for a write-off.
+    assert _post(client, env, issue_type="scrap").status_code == 422
 
 
 def test_customer_sample_return_date_only_when_returnable(client, db, env):

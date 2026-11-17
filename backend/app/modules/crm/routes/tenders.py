@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.core import visibility
 from app.core.permissions import ensure_can_delete, ensure_feature_action, require_feature_action, require_tab_access, require_tab_action
-from app.core.data_scope import apply_scope, ensure_in_scope
+from app.core.data_scope import apply_scope, can_change, ensure_can_change, ensure_in_scope
 from app.modules.crm.access import TENDER_MONEY_FIELDS, blank, can_open_record, drop_money_updates, ensure_parent_in_scope, mask_revision_changes, sees_prices
 from app.core.sequential_id import next_sequential_id
 from app.modules.main.models.user import User
@@ -75,10 +75,6 @@ def _write_spec_revision(db: Session, tender_id: int, user: User, old_vals: dict
         summary=f"{user.name or user.email} updated tender details: {', '.join(new_vals.keys())}.",
         performed_by_id=user.id,
     ))
-
-
-def _can_modify(record, user: User) -> bool:
-    return user.role == "admin" or record.created_by_id == user.id
 
 
 def _check_doc_date(value: date | None) -> None:
@@ -253,7 +249,9 @@ async def get_tender(
     if not tender:
         raise HTTPException(status_code=404, detail="Tender not found")
     ensure_in_scope(db, _user, tender)
-    return _out(tender, _user)
+    resp = _out(tender, _user)
+    resp.can_change = can_change(db, _user, tender)
+    return resp
 
 
 @router.patch("/{tender_id}", response_model=TenderResponse)
@@ -267,8 +265,7 @@ async def update_tender(
     if not tender:
         raise HTTPException(status_code=404, detail="Tender not found")
     ensure_in_scope(db, user, tender)
-    if not _can_modify(tender, user):
-        raise HTTPException(status_code=403, detail="Only the creator or an admin can edit this tender.")
+    ensure_can_change(db, user, tender, action="edit")
 
     updates = payload.model_dump(exclude_unset=True, exclude={"stage_reason"})
     if updates.get("priority") is not None:
@@ -560,8 +557,7 @@ async def add_tender_stage(
     if not tender:
         raise HTTPException(status_code=404, detail="Tender not found")
     ensure_in_scope(db, user, tender)
-    if not _can_modify(tender, user):
-        raise HTTPException(status_code=403, detail="Only the creator or an admin can change this tender's stage.")
+    ensure_can_change(db, user, tender, action="change the stage of")
     if payload.stage not in TND_STAGES:
         raise HTTPException(status_code=422, detail=f"Invalid stage. Must be one of: {', '.join(TND_STAGES)}")
     if check_stage_move(db, stages=TND_STAGES, old=tender.current_stage, new=payload.stage, user=user,

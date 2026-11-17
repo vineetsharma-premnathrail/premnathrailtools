@@ -123,7 +123,7 @@ const config: TourConfig = {
     {
       target: 'org-user-effective',
       title: 'Effective access',
-      purpose: 'Read-only: every tab and action this person can use right now. Hover a tick to see which role gives it.',
+      purpose: 'Read-only: every tab and action this person can use today. Hover a tick to see which role gives it. Roles or extra permissions outside their validity dates, inactive roles and a deactivated user are listed above the matrix as "Not active today" — they give nothing right now.',
       after: 'Users can delete only records they created themselves; admins can delete anything.',
     },
     // ---- History tabs ----

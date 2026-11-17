@@ -101,18 +101,27 @@ def _get_role(db: Session, role_id: int) -> Role:
     return role
 
 
-def validate_grants(grants: list[str], actor: User) -> list[str]:
+def validate_grants(grants: list[str], actor: User, dropped: list[str] | None = None) -> list[str]:
     """Reject unknown ids, and stop a non-admin role manager from handing out
-    access they don't hold themselves (no privilege escalation)."""
-    # Ids of matrix rows removed since the role was saved are dropped, not refused (matrix cleanup).
-    # A department "Ongoing Projects" grant is stored as its My Tasks / Department Work ids, so saving
-    # the role keeps that access instead of losing it.
-    from app.core.permission_registry import ONGOING_PROJECTS_ROWS, is_retired_grant, legacy_grant_aliases
-    grants = list(dict.fromkeys(
-        a for g in grants
-        for a in (legacy_grant_aliases(g) if ":".join(g.split(":")[:2]).split(".", 1)[0] in ONGOING_PROJECTS_ROWS else [g])
-        if not is_retired_grant(a)
-    ))
+    access they don't hold themselves (no privilege escalation).
+
+    Every id first goes through legacy_grant_aliases, so a role still holding
+    ids of a retired module / moved tab (purchase:*, products:*, sales:*,
+    erp:projects, department "Ongoing Projects" …) saves with the CURRENT ids
+    that give the same access — exactly what expand_grants already gave its
+    holders. Ids that map to nothing any more (retired matrix rows) are dropped,
+    not refused; when `dropped` is passed they are appended to it so the editor
+    can say what was removed."""
+    from app.core.permission_registry import legacy_grant_aliases
+    out: list[str] = []
+    for g in grants or []:
+        aliases = legacy_grant_aliases(g)
+        if not aliases:
+            if dropped is not None and g not in dropped:
+                dropped.append(g)
+            continue
+        out.extend(aliases)
+    grants = list(dict.fromkeys(out))
     bad = [g for g in grants if not is_valid_grant(g)]
     if bad:
         raise HTTPException(
@@ -131,18 +140,39 @@ def validate_grants(grants: list[str], actor: User) -> list[str]:
     return sorted(set(grants))
 
 
+ACCESS_CHANGED_TITLE = "Your access changed"
+
+
+def notify_access_changed(db: Session, users, actor: User | None, why: str) -> None:
+    """Bell to each person whose access just changed (direct notification
+    organization "access_changed", core/events/organization.py) — never the
+    actor, never an inactive user. Added to the session; sent with the commit."""
+    from app.utils.notifications import notify_user
+
+    seen: set[int] = set()
+    for u in users or []:
+        if u is None or u.id in seen or (actor is not None and u.id == actor.id) or not u.is_active:
+            continue
+        seen.add(u.id)
+        notify_user(db, u.id, ACCESS_CHANGED_TITLE,
+                    f"{why} Open the page again (or reload it) to see the new access.",
+                    "access_changed")
+
+
 def validate_scopes(scopes: dict[str, str]) -> dict[str, str]:
     """Keep the scopes set for real modules. A module left blank gets
     default_scope(); "organization" is stored so a role can grant every record."""
     out: dict[str, str] = {}
-    for mk, level in (scopes or {}).items():
+    for key, level in (scopes or {}).items():
         if not level:
             continue
-        if mk not in MODULES or mk == "organization":
+        # "<module>:edit" = the role's Edit scope for that module (core/data_scope.user_edit_scope).
+        mk, _, kind = key.partition(":")
+        if mk not in MODULES or mk == "organization" or kind not in ("", "edit"):
             raise HTTPException(status_code=400, detail=f"Unknown module '{mk}' in data access — reload the page.")
         if level not in SCOPE_LABELS:
             raise HTTPException(status_code=400, detail=f"Data access must be one of: {', '.join(SCOPE_LABELS.values())}.")
-        out[mk] = level
+        out[key] = level
     return out
 
 
@@ -152,13 +182,14 @@ def validate_scope_escalation(scopes: dict[str, str], actor: User, old: dict[str
     module. Levels left as they were (`old`) are not re-checked."""
     if is_admin_user(actor):
         return
-    from app.core.data_scope import user_scope
+    from app.core.data_scope import user_edit_scope, user_scope
 
     rank = {s: i for i, s in enumerate(SCOPE_LEVELS)}
-    for mk, level in (scopes or {}).items():
-        if not level or (old is not None and (old or {}).get(mk) == level):
+    for key, level in (scopes or {}).items():
+        if not level or (old is not None and (old or {}).get(key) == level):
             continue
-        mine = user_scope(actor, mk)
+        mk, _, kind = key.partition(":")
+        mine = user_edit_scope(actor, mk) if kind == "edit" else user_scope(actor, mk)
         if rank.get(level, -1) > rank.get(mine, -1):
             label = MODULES[mk]["label"] if mk in MODULES else mk
             raise HTTPException(
@@ -316,7 +347,8 @@ async def update_role(role_id: int, payload: RolePayload, background_tasks: Back
         ensure_feature_action(actor, "organization", "roles", "notifications", "edit")
     role.name = _ensure_unique_name(db, payload.name, exclude_id=role.id)
     role.description = payload.description
-    role.permissions = validate_grants(payload.permissions, actor)
+    dropped: list[str] = []
+    role.permissions = validate_grants(payload.permissions, actor, dropped)
     role.data_scopes = validate_scopes(payload.data_scopes)
     validate_scope_escalation(role.data_scopes, actor, old["data_scopes"])
     role.is_default = payload.is_default
@@ -344,13 +376,25 @@ async def update_role(role_id: int, payload: RolePayload, background_tasks: Back
         notify_event(db, background_tasks, "organization", "role_changed", title=f"Role '{role.name}' changed",
                      message=f"{actor.name} changed role '{role.name}' ({what}). Its holders get the new access on their next page load.",
                      entity_type="role", entity_id=role.id, actor=actor)
+        # The holders themselves (everyone, for an "applies to everyone" role).
+        # An inactive role (before and after) gives nothing, so its holders lose or gain nothing.
+        if not role.is_active and not old["is_active"]:
+            affected = []
+        elif role.is_default or old["is_default"]:
+            affected = db.query(User).filter(User.is_active.is_(True)).all()
+        else:
+            affected = db.query(User).join(user_roles, user_roles.c.user_id == User.id).filter(user_roles.c.role_id == role.id).all()
+        notify_access_changed(db, affected, actor, f"{actor.name} changed the role '{role.name}' that gives you access ({what}).")
     if changed:
         _audit(db, actor, role, "updated",
                f"{actor.name} updated role '{role.name}'" + (f" (+{len(added)}/-{len(removed)} grants)" if added or removed else
                                                            f" ({', '.join(changed)})"),
                old={k: old[k] for k in changed}, new={k: new[k] for k in changed})
     db.commit()
-    return await get_role(role.id, db, actor)
+    out = await get_role(role.id, db, actor)
+    # Old ids of matrix rows that no longer exist, removed on this save (the editor lists them in its Saved notice).
+    out["dropped_permissions"] = dropped
+    return out
 
 
 @router.post("/{role_id}/copy")
@@ -450,5 +494,7 @@ async def set_role_members(role_id: int, payload: RoleMembersPayload, background
                      message=f"{actor.name} changed who holds role '{role.name}': added {', '.join(u.name or u.email for u in added) or 'nobody'}; "
                              f"removed {', '.join(u.name or u.email for u in removed) or 'nobody'}.",
                      entity_type="role", entity_id=role.id, actor=actor)
+        notify_access_changed(db, added, actor, f"{actor.name} gave you the role '{role.name}'.")
+        notify_access_changed(db, removed, actor, f"{actor.name} removed the role '{role.name}' from you.")
     db.commit()
     return await get_role(role.id, db, actor)

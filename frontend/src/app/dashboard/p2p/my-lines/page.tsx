@@ -96,9 +96,8 @@ export default function MyLinesPage() {
   const canWorkAll = isAdmin || canFeature('p2p', 'purchase_requisitions', 'all_lines', 'edit')
   // Reassigning a line is the Purchase head's action (admin or All buyers' lines > edit); a plain buyer never sees it.
   const canMove = canWorkAll && can('p2p', 'purchase_requisitions', 'edit') && canFeature('p2p', 'purchase_requisitions', 'buyer', 'edit')
-  // Short-close needs the Purchase app as well as the Close right.
-  const isPurchaseTeam = isAdmin || !!user?.apps?.includes('purchase')
-  const canShortClose = isPurchaseTeam && canFeature('p2p', 'purchase_requisitions', 'close', 'edit')
+  // Short-close: the Close / short-close feature's Edit tick (2026-11-14, not the Purchase desk).
+  const canShortClose = canFeature('p2p', 'purchase_requisitions', 'close', 'edit')
 
   const [data, setData] = useState<MyLinesResponse | null>(null)
   const [loading, setLoading] = useState(true)

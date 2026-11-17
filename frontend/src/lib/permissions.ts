@@ -57,3 +57,46 @@ export function useCan() {
     canFeature: (moduleKey: string, tabKey: string, featureKey: string, action: PermissionAction) => canFeature(user, moduleKey, tabKey, featureKey, action),
   }
 }
+
+const SCOPE_RANK = ['own', 'assigned', 'department', 'plant', 'multi_plant', 'organization']
+
+/** Plain words for a data-access level (backend core/data_scope.SCOPE_LABELS). */
+export const SCOPE_LABELS: Record<string, string> = {
+  own: 'Own records',
+  assigned: 'Own + assigned',
+  department: 'Department',
+  plant: 'Plant / branch',
+  multi_plant: 'Multiple plants',
+  organization: 'Entire organization',
+}
+
+/** The user's data access for a module ("assigned" when /auth/me sent none). */
+export function viewScope(user: User | null | undefined, moduleKey: string): string {
+  if (isAdmin(user)) return 'organization'
+  return user?.data_scopes?.[moduleKey] || 'assigned'
+}
+
+/** The user's Edit scope for a module — which records they may change (Role › Data access › Edit). */
+export function editScope(user: User | null | undefined, moduleKey: string): string {
+  if (isAdmin(user)) return 'organization'
+  return user?.data_scopes?.[`${moduleKey}:edit`] || 'assigned'
+}
+
+/**
+ * Whether `user` may change a record of `moduleKey` they can see — the client
+ * mirror of backend data_scope.can_change (the tab / feature grant is checked
+ * separately with can()). Pass the record's creator / owner ids and assignee ids.
+ * Department / plant Edit scopes can't be resolved here, so they show the
+ * button and the server decides with a clear message.
+ */
+export function canChangeRecord(
+  user: User | null | undefined,
+  moduleKey: string,
+  rec: { ownerIds?: (number | null | undefined)[]; assignedIds?: (number | null | undefined)[] },
+): boolean {
+  if (!user) return false
+  const level = editScope(user, moduleKey)
+  if (SCOPE_RANK.indexOf(level) >= SCOPE_RANK.indexOf('department')) return true
+  if ((rec.ownerIds || []).includes(user.id)) return true
+  return level === 'assigned' && (rec.assignedIds || []).includes(user.id)
+}

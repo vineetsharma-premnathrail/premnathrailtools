@@ -111,12 +111,6 @@ def can_accept(db: Session, user: User) -> bool:
     return is_head_for_decision(db, user) or can_feature(user, "rnd", "requirements", "review", "approve")
 
 
-def can_return(db: Session, user: User) -> bool:
-    """Return a requirement to BD: the R&D head, or R&D › Requirements › Review › Reject. Not an
-    admin just because they are admin (an admin who is a named head still can)."""
-    return is_head_for_decision(db, user) or can_feature(user, "rnd", "requirements", "review", "reject")
-
-
 def rnd_users(db: Session) -> list[User]:
     return [u for u in db.query(User).filter(User.is_active == True).order_by(User.name.asc()).all() if "rnd" in u.get_apps()]  # noqa: E712
 
@@ -252,6 +246,17 @@ def link_for(db: Session, user: User, source: str, record_id: int) -> tuple[str,
     return f"rnd_req_{source}", record_id
 
 
+def is_assigned_engineer(db: Session, user: User, source: str, record_id: int) -> bool:
+    """True when `user` is the engineer named on the CURRENT open CRM request for this record
+    (older requests could name one; new ones go to the whole R&D queue). A re-send supersedes
+    the earlier request, so a superseded / responded / closed one does not count."""
+    from app.modules.crm.models.rnd_request import CrmRndRequest
+    return db.query(CrmRndRequest.id).filter(
+        CrmRndRequest.source == source, CrmRndRequest.record_id == record_id,
+        CrmRndRequest.status == "open", CrmRndRequest.assigned_to_id == user.id,
+    ).first() is not None
+
+
 def access_for(db: Session, user: User, source: str, record_id: int) -> dict:
     """{view, download, upload, respond, is_head, is_rnd_side, can_review,
     create_technical_offer} for this user on this requirement."""
@@ -260,7 +265,7 @@ def access_for(db: Session, user: User, source: str, record_id: int) -> dict:
     sees_all = sees_every_requirement(db, user)
     out = {
         "view": False, "download": False, "upload": False, "respond": False,
-        "is_head": head, "is_rnd_side": rnd_side, "can_review": can_accept(db, user) or can_return(db, user),
+        "is_head": head, "is_rnd_side": rnd_side, "can_review": can_accept(db, user),
         "create_technical_offer": can_create_technical_offer(db, user),
         # False = the Tasks tab lists only the user's own tasks (held / given) and their sub-tasks.
         "sees_all": sees_all,
@@ -283,6 +288,11 @@ def access_for(db: Session, user: User, source: str, record_id: int) -> dict:
     # too; a "Can see Technical Offers" person only views and downloads.
     if out["create_technical_offer"] or can_view_technical_offer(db, user):
         out.update(view=True, download=True)
+    # An older request that named an engineer: that engineer may open the requirement and answer
+    # or close it, exactly as CRM's mark_responded already allows. The button shown (this flag)
+    # and the server check (ensure(..., "respond")) both read this one place.
+    if is_assigned_engineer(db, user, source, record_id):
+        out.update(view=True, download=True, respond=True)
     if not out["view"]:
         out.update(download=False, upload=False, respond=False)
     return out
@@ -342,9 +352,8 @@ def ensure_head_for_decision(db: Session, user: User, what: str) -> None:
 
 
 def ensure_can_review(db: Session, user: User, action: str) -> None:
-    """403 with who can accept / return a requirement (AC-14)."""
-    ok = can_accept(db, user) if action == "accept" else can_return(db, user)
-    if not ok:
+    """403 with who can accept a requirement (AC-14). Return to BD no longer exists, so `action` is "accept"."""
+    if not can_accept(db, user):
         raise HTTPException(
             status_code=403,
             detail=f"Only the R&D head ({_head_names(db)}) or someone with R&D › Requirements › Review can {action} a "

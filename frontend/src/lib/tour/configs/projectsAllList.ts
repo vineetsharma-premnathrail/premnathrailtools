@@ -31,6 +31,11 @@ const config: TourConfig = {
       after: 'The list updates as soon as you pick a value; Clear filters resets both.',
     },
     {
+      target: 'scope-note',
+      title: 'Your data access',
+      purpose: 'Says which projects the list covers. With the default "Own + assigned" you see the projects you manage, created, or work on (WBS lead / assistant / department head, a task, sub-task or co-owned milestone). Ask an admin to widen the Data access of your role (Organization › Role & Permissions) to see more. Hidden when you see the whole organization.',
+    },
+    {
       target: 'pm-all-table',
       title: 'Project rows',
       purpose: 'One row per project, smallest PEW number on top (PEW-70, PEW-70A, PEW-70B ...): project number, project name or machine model, client, site, stage and closing date (projects) or dispatch date (past machines). A machine that belongs to a project appears through its project row. The Stage column only shows the stage; to change the stage of a past machine, open it and set the stage there.',

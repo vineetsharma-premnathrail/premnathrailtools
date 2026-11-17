@@ -115,14 +115,14 @@ async def year_end_preview_route(fy_code: str = Query(...), db: Session = Depend
 @router.post("/year-end/close")
 async def year_end_close_route(background_tasks: BackgroundTasks, fy_code: str = Query(...), db: Session = Depends(get_db), user: User = Depends(require_tab_action("accounts", "year_end_close", "approve"))):
     """Closing a financial year goes through the approval engine ('Financial
-    year close', default: a Finance Manager). A Finance Manager's click closes
-    it at once, as before; anyone else's click waits for one (202)."""
+    year close', default: holders of Year-end Close › Approve). An approver's
+    click closes it at once; anyone else's click waits for one (202)."""
     with service_errors(db):
         req = access.submit_process(db, access.KEY_YEAR_END, entity_id=access.fy_entity_id(fy_code), actor=user,
                                     title=f"Close financial year {fy_code}", reference=fy_code, context={"fy_code": fy_code})
     if req.status == "pending":
-        access.role_event(db, "year_close_requested", title=f"Closing financial year {fy_code} waits for a Finance Manager",
-                          message=f"{who(user)} asked to close financial year {fy_code}. A Finance Manager must approve it "
+        access.role_event(db, "year_close_requested", title=f"Closing financial year {fy_code} waits for approval",
+                          message=f"{who(user)} asked to close financial year {fy_code}. Its approver must approve it "
                                   f"(Approvals inbox or Finance › Reports › Year-end Close).",
                           entity_type=access.ET_YEAR_END, entity_id=req.entity_id, actor=user,
                           skip={s.approver_id for s in req.steps if s.approver_id}, background_tasks=background_tasks)
@@ -136,8 +136,8 @@ async def year_end_close_route(background_tasks: BackgroundTasks, fy_code: str =
 @router.post("/year-end/reopen")
 async def year_end_reopen_route(fy_code: str = Query(...), reason: str = Query(...), db: Session = Depends(get_db),
                                 user: User = Depends(require_tab_action("accounts", "year_end_close", "approve"))):
-    if user.role != "admin":
-        raise HTTPException(status_code=403, detail="Only an admin can reopen a closed financial year.")
+    # Reopening is Year-end Close › Approve (the route's dependency) — the role
+    # matrix decides, not the portal-admin role (owner, 2026-11-14).
     with service_errors(db):
         entry = closing.reopen_financial_year(db, fy_code=fy_code, reason=reason, user_id=user.id)
     write_audit(db, "financial_year", None, "reopened", user, f"{who(user)} reopened financial year {fy_code}: {reason}")

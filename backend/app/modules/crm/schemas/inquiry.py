@@ -130,6 +130,9 @@ class InquiryResponse(BaseModel):
     # Set on the detail view when a live sales order was raised from this inquiry
     # (sent to Sales) — the inquiry is then read-only for everyone.
     sales_order_number: str | None = None
+    # Detail reads only: True when the record is inside the reader's CRM Edit scope
+    # (Role › Data access › Edit) — the screen shows Edit / stage / upload by it.
+    can_change: bool | None = None
     universal_id: str
     org_id: int
     org_contact_id: int | None = None

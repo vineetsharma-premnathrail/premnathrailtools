@@ -319,9 +319,10 @@ def test_partial_on_a_failed_lot_needs_the_deviation_controls(client, db, people
     # The recorder cannot decide it, even though he is a head.
     r = client.post(f"{L}/{lot.id}/decision", json=body, headers=hdr(people["head"]))
     assert r.status_code == 403 and "segregation of duties" in r.json()["detail"]
-    # A non-head with decision rights cannot use part of a failed lot either.
-    r = client.post(f"{L}/{lot.id}/decision", json=body, headers=hdr(people["eng"]))
-    assert r.status_code == 403 and "only a Quality head" in r.json()["detail"]
+    # Someone without the Usage decision › Approve tick can't use part of a failed lot either
+    # (2026-11-14: that live tick decides, not NCR › Approve).
+    r = client.post(f"{L}/{lot.id}/decision", json=body, headers=hdr(people["insp"]))
+    assert r.status_code == 403 and "Usage decision" in r.json()["detail"]
     db.expire_all()
     assert balance(db, item, loc).quality_qty == 20  # nothing moved by the refusals
     r = client.post(f"{L}/{lot.id}/decision", json=body, headers=hdr(people["head2"]))
@@ -409,12 +410,21 @@ def test_report_of_another_users_lot_is_out_of_scope(client, db, people, monkeyp
     from app.core.config import settings
     monkeypatch.setattr(settings, "DEFAULT_DATA_SCOPE", "assigned")  # production default: own + assigned records
     item, loc = setup_item(db)
-    lot = _incoming_lot(db, item, loc, people["eng"])  # created by eng, nobody assigned
+    lot = _incoming_lot(db, item, loc, people["eng"])  # created by eng
+    lot.assigned_to_id = people["head"].id  # assigned to someone else — not a pickup
+    db.commit()
     other = make_user(db, "qi.other@x.com", quality_role="inspector")
     r = client.get(f"{L}/{lot.id}/report.xlsx", headers=hdr(other))
     assert r.status_code == 403, r.text
     assert client.get(f"{L}/{lot.id}", headers=hdr(other)).status_code == 403
     assert client.get(f"{L}/{lot.id}/report.xlsx", headers=hdr(people["eng"])).status_code == 200  # the creator still can
+    # 2026-11-14: an open lot nobody is assigned to is a My Inspections pickup — any inspector with a
+    # lot Edit tick may open it; a view-only user still may not.
+    lot.assigned_to_id = None
+    db.commit()
+    assert client.get(f"{L}/{lot.id}", headers=hdr(other)).status_code == 200
+    viewer = make_user(db, "qi.viewonly@x.com", apps=(), granular_permissions=["quality:inspection_lots:view"])
+    assert client.get(f"{L}/{lot.id}", headers=hdr(viewer)).status_code == 403
 
 
 # --- rules behind Quality settings (first article / NCR default OFF), list views, sampling -------------

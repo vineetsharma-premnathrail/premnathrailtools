@@ -62,15 +62,13 @@ export default function RfqDetailPage() {
   const router = useRouter()
   const { id: rfqId, error: linkError } = useRecordId(params.id as string)
   const isAdmin = user?.role === 'admin'
-  // Purchase Orders and the quote comparison are Purchase-desk pages (they redirect anyone else).
-  const isPurchaseDesk = isAdmin || !!user?.apps?.includes('purchase')
   const { can, canFeature } = useCan()
   // R.F.Q features (role editor): vendor quotation files, the comparison page, and prices.
   const seeVendorQuotes = canFeature('p2p', 'rfq', 'vendor_quotes', 'view')
   const seeComparison = canFeature('p2p', 'rfq', 'comparison', 'view')
   const seePoPrices = canFeature('p2p', 'purchase_orders', 'prices', 'view') || can('p2p', 'purchase_orders', 'edit')
   // The PO built from this RFQ is Procurement › Purchase Orders work.
-  const canCreatePo = isPurchaseDesk && can('p2p', 'purchase_orders', 'create')
+  const canCreatePo = can('p2p', 'purchase_orders', 'create')
   const canViewPos = can('p2p', 'purchase_orders', 'view')
   // The Purchase head (all buyers' lines > Edit) and admins may change any buyer's RFQ lines; a buyer only their own.
   const canWorkAll = isAdmin || canFeature('p2p', 'purchase_requisitions', 'all_lines', 'edit')
@@ -358,7 +356,7 @@ export default function RfqDetailPage() {
         <InvitedVendorsSection
           invites={invites}
           canEdit={canEditRfq}
-          canOpenComparison={isPurchaseDesk && seeComparison}
+          canOpenComparison={seeComparison}
           busy={inviteBusy}
           notice={inviteNotice}
           onResend={(inv) => runInviteAction(`resend-${inv.id}`, () => rfqInvitesApi.resend(rfq.id, inv.id),
@@ -476,9 +474,9 @@ export default function RfqDetailPage() {
                   : `Next: make the PO in Tally for the chosen vendor (L1 ${poVendorName ? `${poVendorName} ` : ''}is the lowest), then upload it on the requisition with Upload PO. It goes for approval from there.`}
               </p>
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-                {isPurchaseDesk && seeComparison
+                {seeComparison
                   ? <button type="button" data-tour="rfq-detail-record-quotes-btn" onClick={() => router.push(comparisonHref)} style={primaryBtn}>Line quotes &amp; comparison →</button>
-                  : <span style={{ fontSize: 12.5, color: TEXT.muted }}>Recording quotes needs the Purchase desk and R.F.Q › Quotation comparison (view) on your role.</span>}
+                  : <span style={{ fontSize: 12.5, color: TEXT.muted }}>Recording quotes needs View on R.F.Q › Quotation comparison on your role — ask an admin to add it in Organization › Role &amp; Permissions.</span>}
                 {canCreatePo
                   ? <button data-tour="rfq-detail-po-create-btn" onClick={() => router.push(recordPath('/dashboard/p2p', rfq, 'p2p_request_id'))} style={ghostBtn}>Open requisition to upload PO →</button>
                   : <span style={{ fontSize: 12.5, color: TEXT.muted }}>Uploading the PO needs Create access on Procurement › Purchase Orders.</span>}

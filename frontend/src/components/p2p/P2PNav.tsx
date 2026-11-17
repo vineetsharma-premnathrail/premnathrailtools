@@ -5,28 +5,31 @@ import { navScrollRef } from '@/components/shared/navScroll'
 import { usePathname } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { canFeature } from '@/lib/permissions'
-import { filterTabsByAccess } from '@/lib/tabAccess'
+import { canViewTab } from '@/lib/tabAccess'
 import NotificationBell from '@/components/erp/NotificationBell'
 import TourButton from '@/components/tour/TourButton'
 import { useP2PApproverFlags } from '@/components/p2p/useP2PApproverFlags'
 import NavSettingsGear from '@/components/shared/NavSettingsGear'
 import { ChartBar, CheckCircle, ClipboardText, FileText, Gear, Kanban, ListChecks, PaperPlaneTilt, Truck, User, type Icon } from '@phosphor-icons/react'
 
+// Each tab shows on its own Role & Permissions tick (owner decision 2026-11-14); the
+// Purchase Desk grant no longer decides visibility — it only widens which requisitions
+// someone sees and works.
 const TABS = [
-  { href: '/dashboard/p2p', label: 'Purchase Requisitions', icon: 'file', purchaseOnly: false, subtabKey: 'purchase_requisitions' },
-  // The buyer's worklist (requisition lines to quote, order, chase). Shown only with Purchase Requisitions › My Lines tab › View.
-  { href: '/dashboard/p2p/my-lines', label: 'My Lines', icon: 'list', purchaseOnly: true, subtabKey: 'purchase_requisitions' },
+  { href: '/dashboard/p2p', label: 'Purchase Requisitions', icon: 'file', subtabKey: 'purchase_requisitions' },
+  // The buyer's worklist (requisition lines to quote, order, chase). Shown with Purchase Requisitions › My Lines tab › View.
+  { href: '/dashboard/p2p/my-lines', label: 'My Lines', icon: 'list', subtabKey: 'purchase_requisitions' },
   // Vendors come before the RFQ: the RFQ picks its vendors from this master.
-  { href: '/dashboard/p2p/vendors', label: 'Vendors', icon: 'users', purchaseOnly: true, subtabKey: 'vendors' },
-  { href: '/dashboard/p2p/rfq', label: 'R.F.Q', icon: 'send', purchaseOnly: true, subtabKey: 'rfq' },
+  { href: '/dashboard/p2p/vendors', label: 'Vendors', icon: 'users', subtabKey: 'vendors' },
+  { href: '/dashboard/p2p/rfq', label: 'R.F.Q', icon: 'send', subtabKey: 'rfq' },
   // Create PO + PO approval + PO tracking, as views of one tab (2026-10-08).
-  { href: '/dashboard/p2p/purchase-orders', label: 'Purchase Orders', icon: 'clipboard', purchaseOnly: false, subtabKey: 'purchase_orders' },
-  // ME11/ME01/ME1P: vendor + item prices, approved sources, price history (part of the vendor master).
-  { href: '/dashboard/p2p/info-records', label: 'Item Rates', icon: 'chart', purchaseOnly: true, subtabKey: 'vendors' },
-  { href: '/dashboard/p2p/mis', label: 'M.I.S Report', icon: 'chart', purchaseOnly: true, subtabKey: 'mis' },
+  { href: '/dashboard/p2p/purchase-orders', label: 'Purchase Orders', icon: 'clipboard', subtabKey: 'purchase_orders' },
+  // Vendor + item prices, approved sources, price history (part of the vendor master).
+  { href: '/dashboard/p2p/info-records', label: 'Item Rates', icon: 'chart', subtabKey: 'vendors' },
+  { href: '/dashboard/p2p/mis', label: 'M.I.S Report', icon: 'chart', subtabKey: 'mis' },
   // PR approval lives on the Purchase Requisitions page; the project is picked on the PR itself,
   // so there is no Project Work tab here (2026-10-07).
-  { href: '/dashboard/p2p/settings', label: 'Settings', icon: 'gear', purchaseOnly: false, subtabKey: 'settings' },
+  { href: '/dashboard/p2p/settings', label: 'Settings', icon: 'gear', subtabKey: 'settings' },
 ] as const
 
 // Tab icon key -> Phosphor icon (Regular weight). The key also feeds the
@@ -52,21 +55,18 @@ function TabIcon({ name }: { name: string }) {
 export default function P2PNav() {
   const pathname = usePathname()
   const { user } = useAuth()
-  const isPurchaseTeam = !!user?.apps?.includes('purchase')
-  const isAdmin = user?.role === 'admin'
   const approverFlags = useP2PApproverFlags()
-  const allowedTabs = filterTabsByAccess('p2p', TABS.filter((tab) => {
-    // Vendors: the purchase team or Finance (one shared vendor master).
-    if (tab.href === '/dashboard/p2p/vendors') return isPurchaseTeam || !!user?.apps?.includes('accounts') || isAdmin
-    if (tab.href === '/dashboard/p2p/my-lines') return (isPurchaseTeam || isAdmin) && canFeature(user, 'p2p', 'purchase_requisitions', 'my_lines', 'view')
-    // Item Rates rides on Vendors and its own feature (Role & Permissions › Vendors › Item Rates tab).
-    if (tab.href === '/dashboard/p2p/info-records') return isPurchaseTeam && canFeature(user, 'p2p', 'vendors', 'info_records', 'view')
-    if (tab.purchaseOnly && !isPurchaseTeam) return false
-    // P.O Approval is a pure action queue for PO approvers / Partners (admin
-    // sees it too) — old routing tables or the approval engine.
-    if (tab.href === '/dashboard/p2p/purchase-orders') return isPurchaseTeam || approverFlags.is_po_approver
-    return true
-  }), user)
+  const allowedTabs = TABS.filter((tab) => {
+    // Vendors: its own tab, or Finance (one shared vendor master).
+    if (tab.href === '/dashboard/p2p/vendors') return canViewTab('p2p', 'vendors', user) || !!user?.apps?.includes('accounts')
+    // My Lines: Purchase Requisitions › My Lines tab › View.
+    if (tab.href === '/dashboard/p2p/my-lines') return canViewTab('p2p', 'purchase_requisitions', user) && canFeature(user, 'p2p', 'purchase_requisitions', 'my_lines', 'view')
+    // Item Rates: Vendors › Item Rates tab › View.
+    if (tab.href === '/dashboard/p2p/info-records') return canFeature(user, 'p2p', 'vendors', 'info_records', 'view')
+    // Purchase Orders: its own tab, or a PO approver (their P.O Approval queue lives there).
+    if (tab.href === '/dashboard/p2p/purchase-orders') return canViewTab('p2p', 'purchase_orders', user) || approverFlags.is_po_approver
+    return canViewTab('p2p', tab.subtabKey, user)
+  })
   // Settings sits as a gear next to the bell, not in the tab row (same as R&D).
   const visibleTabs = allowedTabs.filter((t) => t.icon !== 'gear')
   const settingsTab = allowedTabs.find((t) => t.icon === 'gear')

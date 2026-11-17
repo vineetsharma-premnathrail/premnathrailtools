@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, object_session, selectinload
 from app.core import assignee_rules, visibility
 from app.core.config import settings
 from app.core.permission_registry import can_feature, can_perform, can_view_tab
+from app.core.data_scope import can_change
 from app.core.permissions import GRANT_HINT, ensure_can_delete, ensure_feature_action, ensure_tab_action, require_app_access
 from app.db.session import get_db, SessionLocal
 from app.modules.main.models.user import User
@@ -194,8 +195,28 @@ def _price_tab(user: User) -> str:
     return "purchase_requisitions" if _can_view_prs(user) else "purchase_orders"
 
 
-def _is_purchase_team(user: User) -> bool:
+def _works_every_pr(user: User) -> bool:
+    """Purchase Desk (p2p:purchase_desk:view — the internal 'purchase' app; admins too): a requisition DATA-SCOPE
+    right only — sees and works every requisition, not just own / assigned (the role's Data access still applies on
+    top). Owner decision 2026-11-14: it never gates a tab, page or button; those follow their own tab / feature grant."""
     return "purchase" in user.get_apps()
+
+
+def _sees_every_pr(user: User) -> bool:
+    """May open any requisition the data scope allows (not only own / approver / buyer ones): Purchase Desk, or
+    'View' on Purchase Requisitions › All segment. The data scope (scope_prs / ensure_pr_in_scope) still narrows it."""
+    return _works_every_pr(user) or (
+        _can_view_prs(user) and can_feature(user, "p2p", "purchase_requisitions", "all_requisitions", "view"))
+
+
+def _may_work_others_pr(user: User, pr: P2PRequest) -> bool:
+    """Acting on someone else's requisition (cancel, submit, attachments, edit, reject once approved): Purchase Desk,
+    or the requisition is inside the user's Procurement EDIT scope (Role & Permissions › Data access › Edit; a role that
+    sets none = own + assigned) — seeing it or approving it is not enough. The caller checks the action's grant first."""
+    if _works_every_pr(user):
+        return True
+    db = object_session(pr)
+    return db is not None and can_change(db, user, pr, default="assigned")
 
 
 def _is_po_approver(user: User) -> bool:
@@ -316,7 +337,7 @@ def _to_response(db: Session, pr: P2PRequest, *, include_po: bool = False, user:
         reason = _edit_block_reason(db, pr, user)
         resp.can_edit = reason is None
         # Only the people who could otherwise edit it need to be told why not.
-        if reason and (pr.requested_by_id == user.id or _is_purchase_team(user)):
+        if reason and (pr.requested_by_id == user.id or can_perform(user, "p2p", "purchase_requisitions", "edit")):
             resp.edit_block_reason = reason
     resp.pending_quantity = pr.pending_quantity
     resp.pending_approval_roles = pr.pending_approval_roles
@@ -377,8 +398,12 @@ def _can_see_po_commercials(pr: P2PRequest, user: User) -> bool:
     line totals). Only the people who buy or approve it see vendor commercial
     terms: Purchase, admins, company-wide PO approvers (Director / Partner /
     Purchase Head) and the PO approvers picked on this PR. The requester and
-    the PR-stage heads see the requisition, not the vendor's prices."""
-    if user.role == "admin" or _is_purchase_team(user) or _is_po_approver(user):
+    the PR-stage heads see the requisition, not the vendor's prices. Purchase
+    Desk here is the data right (every requisition's buying), and the
+    requisition's own buyers (header or any line) see what they bought."""
+    if user.role == "admin" or _works_every_pr(user) or _is_po_approver(user):
+        return True
+    if user.id == pr.assigned_buyer_id or any(item.buyer_id == user.id for item in pr.items):
         return True
     if any(a.approver_id == user.id for a in pr.po_approvers):
         return True
@@ -398,7 +423,7 @@ def _check_view_access(pr: P2PRequest, user: User) -> None:
         if pr.requested_by_id == user.id or user.role == "admin":
             return
         raise HTTPException(status_code=403, detail=f"{pr.p2p_number} is still a draft — only the person who raised it can open it until they submit it.")
-    if _is_purchase_team(user) or _is_po_approver(user):
+    if _sees_every_pr(user) or _is_po_approver(user):
         return
     allowed = {pr.requested_by_id, pr.approver_id, pr.project_head_id, pr.plant_head_id}
     allowed.update(a.approver_id for a in pr.approvals)
@@ -420,16 +445,16 @@ def _check_view_access(pr: P2PRequest, user: User) -> None:
 
 
 def _check_reject_approved_access(pr: P2PRequest, user: User) -> None:
-    """Who may turn down an APPROVED requisition before any PO is raised: the purchase team,
-    with the 'Reject' grant on Purchase Requisitions. Nobody else, and an admin only by holding that
-    grant like anyone else (being admin approves or rejects nothing, owner decision 2026-11-04)."""
-    if not _is_purchase_team(user):
+    """Who may turn down an APPROVED requisition before any PO is raised: whoever holds the 'Reject' grant on
+    Purchase Requisitions and has the requisition in their data scope (or Purchase Desk). An admin only by holding
+    that grant like anyone else (being admin approves or rejects nothing, owner decision 2026-11-04)."""
+    _ensure_pr_action(user, "reject")
+    if not _may_work_others_pr(user, pr):
         raise HTTPException(
             status_code=403,
-            detail=f"Only the purchase team can reject {pr.p2p_number} now that it is approved. Ask a buyer, or ask an admin to give you "
-                   "the Purchase module and the 'Reject' permission on Procurement › Purchase Requisitions.",
+            detail=f"{pr.p2p_number} is approved and outside your Edit scope, so you can't reject it. Ask its buyer, or ask an "
+                   "admin to widen the Edit scope of your role for Procurement (Organization › Role & Permissions › Data access › Edit).",
         )
-    _ensure_pr_action(user, "reject")
 
 
 # Old approval route (before Approval Workflows, 2026-10-08). The route code is gone; an item that was
@@ -838,8 +863,10 @@ def _edit_block_reason(db: Session, pr: P2PRequest, user: User) -> str | None:
     reason, worded for the person who asked. Editable by the requester (or
     Purchase with 'Edit') until an RFQ is raised against it."""
     is_requester = pr.requested_by_id == user.id
-    if not (is_requester or user.role == "admin" or (_is_purchase_team(user) and can_perform(user, "p2p", "purchase_requisitions", "edit"))):
-        return "Only the person who raised this requisition (or Purchase, with 'Edit' on Procurement › Purchase Requisitions) can edit it."
+    if not (is_requester or user.role == "admin"
+            or (can_perform(user, "p2p", "purchase_requisitions", "edit") and _may_work_others_pr(user, pr))):
+        return ("Only the person who raised this requisition, or someone with 'Edit' on Procurement › Purchase Requisitions "
+                "whose Edit scope covers it, can edit it.")
     if pr.status not in P2P_EDITABLE_STATUSES:
         return (f"This requisition is {pr.status.replace('_', ' ')}, so it can no longer be edited — a requisition can only be "
                 "changed until an RFQ is raised against it.")
@@ -1060,7 +1087,7 @@ async def list_p2p_requests(
         if not eligibility:
             return []
         query = query.filter(or_(*eligibility))
-    elif not _is_purchase_team(user):
+    elif not _sees_every_pr(user):
         if _is_po_approver(user):
             # A pure PO approver (purchase_head/director/md without "purchase"
             # app access) needs to see their PO Approval history, not just the
@@ -1236,7 +1263,7 @@ async def update_p2p_request(
     pr_id: int,
     payload: P2PRequestUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
+    user: User = Depends(_requester_or_purchase),
 ):
     _ensure_pr_action(user, "edit")
     # Status and the approver slots used to be editable here, which let any
@@ -1465,7 +1492,7 @@ def _grn_awaiting_inspection(db: Session, pr: P2PRequest) -> str | None:
     hasn't finished quality inspection (a draft GRN, or a line still pending /
     in quality). Its accepted quantity would still roll up onto the PR, so
     the PR can't be cancelled or short-closed while one exists."""
-    from app.modules.p2p.models.goods_receipt import P2PGoodsReceipt, P2PGoodsReceiptItem
+    from app.modules.p2p.models.goods_receipt import P2PGoodsReceipt
     grns = db.query(P2PGoodsReceipt).join(
         P2PPurchaseOrder, P2PPurchaseOrder.id == P2PGoodsReceipt.purchase_order_id,
     ).options(selectinload(P2PGoodsReceipt.items)).filter(
@@ -1493,8 +1520,10 @@ async def cancel_p2p_request(
 ):
     _ensure_pr_action(user, "cancel")
     pr = _get_pr_or_404(db, pr_id, user=user)
-    if not _is_purchase_team(user) and pr.requested_by_id != user.id:
-        raise HTTPException(status_code=403, detail="You may only cancel your own P2P requests")
+    if pr.requested_by_id != user.id and not _may_work_others_pr(user, pr):
+        raise HTTPException(status_code=403, detail=f"{pr.p2p_number} was raised by someone else and is outside your Edit scope, so you "
+                                                    "can only cancel your own requisitions. Ask its requester or buyer, or ask an admin to "
+                                                    "widen the Edit scope of your role for Procurement (Organization › Role & Permissions › Data access › Edit).")
     if pr.status in ("closed", "rejected", "cancelled"):
         raise HTTPException(status_code=409, detail=f"This requisition is already {pr.status} — there is nothing left to cancel.")
     in_approval = _pos_in_approval(db, pr)
@@ -1509,8 +1538,10 @@ async def cancel_p2p_request(
         # The PO is approved and with the vendor. Only Purchase (or an admin)
         # can call it off, with a reason, and only while no goods are booked
         # against it; the PO is cancelled together with the requisition.
-        if not (_is_purchase_team(user) or user.role == "admin"):
-            raise HTTPException(status_code=403, detail="The PO for this requisition is approved and with the vendor, so only Purchase (or an admin) can cancel it now. Ask the buyer to cancel the requisition and the PO.")
+        if not (user.role == "admin" or can_perform(user, "p2p", "purchase_orders", "cancel")):
+            raise HTTPException(status_code=403, detail="The PO for this requisition is approved and with the vendor, so cancelling the requisition also cancels "
+                                                        "the PO — that needs 'Cancel' on Procurement › Purchase Orders. Ask the buyer to cancel it, or ask "
+                                                        f"an admin for that permission. {GRANT_HINT}")
         if not (payload.reason or "").strip():
             raise HTTPException(status_code=400, detail="Give a reason for cancelling: the PO is already approved and with the vendor, and the reason is recorded on the PO and the requisition history.")
         open_grn = _grn_awaiting_inspection(db, pr)
@@ -1567,7 +1598,7 @@ async def assign_buyer(
     payload: P2PRequestAssignBuyerPayload,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
+    user: User = Depends(_requester_or_purchase),
 ):
     _ensure_pr_action(user, "edit")
     ensure_feature_action(user, "p2p", "purchase_requisitions", "buyer", "edit")
@@ -1767,9 +1798,7 @@ async def check_item_stock(
     for the two follow-up decisions."""
     _ensure_pr_view(user)
     ensure_feature_action(user, "p2p", "purchase_requisitions", "fulfilment", "view")
-    pr = _get_pr_or_404(db, pr_id, user=user)
-    if not (user.role == "admin" or "purchase" in user.get_apps() or _pr_store_manager_id(pr) == user.id):
-        raise HTTPException(status_code=403, detail="Only the Purchase team or this requisition's Store Manager can check its store stock.")
+    pr = _get_pr_or_404(db, pr_id, user=user)  # data scope; the Stock check feature grant above decides the rest
     if pr.status in _NOT_APPROVED_PR_STATUSES:
         raise HTTPException(status_code=409, detail=f"Stock can only be checked on an approved PR (current status: {pr.status})")
     item = _get_pr_item_or_404(pr, item_id)
@@ -1922,7 +1951,7 @@ async def send_item_to_procurement(
     item_id: int,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
+    user: User = Depends(_requester_or_purchase),
 ):
     _ensure_pr_action(user, "edit")
     ensure_feature_action(user, "p2p", "purchase_requisitions", "fulfilment", "edit")
@@ -1987,8 +2016,9 @@ async def resubmit_p2p_request(
     approval engine; any earlier one stays as history."""
     pr = _get_pr_or_404(db, pr_id, user=user)
     _ensure_pr_action(user, "create" if pr.status == "draft" else "submit")
-    if not _is_purchase_team(user) and pr.requested_by_id != user.id:
-        raise HTTPException(status_code=403, detail="Only the requester (or Purchase) can submit this requisition.")
+    if pr.requested_by_id != user.id and not _may_work_others_pr(user, pr):
+        raise HTTPException(status_code=403, detail=f"Only the requester, or someone whose Edit scope covers {pr.p2p_number}, can submit it. "
+                                                    "Ask the requester to submit it.")
     if pr.status == "draft" and pr.requested_by_id != user.id:
         raise HTTPException(status_code=403, detail="Only the person who raised this draft can submit it.")
     if pr.status not in ("draft", "returned"):
@@ -2018,7 +2048,7 @@ async def close_p2p_request(
     pr_id: int,
     payload: P2PRequestActionPayload | None = None,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
+    user: User = Depends(_requester_or_purchase),
 ):
     """Closes a fully received PR, or short-closes a partially received one
     (the vendor won't supply the balance) — a short-close needs a reason and
@@ -2104,8 +2134,9 @@ async def upload_attachments(
     if not (pr.requested_by_id == user.id and can_perform(user, "p2p", "purchase_requisitions", "create")):
         _ensure_pr_action(user, "edit")
     ensure_feature_action(user, "p2p", "purchase_requisitions", "attachments", "create")
-    if not _is_purchase_team(user) and pr.requested_by_id != user.id:
-        raise HTTPException(status_code=403, detail="You may only add attachments to your own P2P requests")
+    if pr.requested_by_id != user.id and not _may_work_others_pr(user, pr):
+        raise HTTPException(status_code=403, detail=f"{pr.p2p_number} was raised by someone else and is outside your Edit scope, so you can "
+                                                    "only add files to your own requisitions. Ask its requester to add the file.")
     if doc_type not in P2P_ATTACHMENT_DOC_TYPES:
         raise HTTPException(status_code=400, detail=f"Invalid doc_type '{doc_type}'")
     if item_id is not None and item_id not in {item.id for item in pr.items}:
@@ -2182,8 +2213,9 @@ async def delete_attachment(
     user: User = Depends(_requester_or_purchase),
 ):
     pr = _get_pr_or_404(db, pr_id, user=user)
-    if not _is_purchase_team(user) and pr.requested_by_id != user.id:
-        raise HTTPException(status_code=403, detail="You may only remove attachments from your own P2P requests")
+    if pr.requested_by_id != user.id and not _may_work_others_pr(user, pr):
+        raise HTTPException(status_code=403, detail=f"{pr.p2p_number} was raised by someone else and is outside your Edit scope, so you can "
+                                                    "only remove files from your own requisitions. Ask its requester to remove the file.")
 
     attachment = db.query(P2PRequestAttachment).filter(
         P2PRequestAttachment.id == attachment_id, P2PRequestAttachment.p2p_request_id == pr_id
@@ -2196,7 +2228,10 @@ async def delete_attachment(
     ensure_feature_action(user, "p2p", "purchase_requisitions", "attachments", "delete")
     # Supporting documents are part of what the approvers signed — once the
     # requisition leaves 'submitted' only Purchase may remove one.
-    if pr.status not in ("submitted", "returned") and not _is_purchase_team(user):
+    # The requester can't remove a file the approvers signed off; a buyer with Edit whose Edit scope covers it can.
+    if pr.status not in ("submitted", "returned") and not (_works_every_pr(user) or (
+            pr.requested_by_id != user.id and can_perform(user, "p2p", "purchase_requisitions", "edit")
+            and _may_work_others_pr(user, pr))):
         raise HTTPException(
             status_code=409,
             detail=f"Attachments are locked once the requisition is approved (current status: {pr.status}) — ask Purchase (or an admin) to remove it.",

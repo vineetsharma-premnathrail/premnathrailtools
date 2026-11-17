@@ -90,6 +90,18 @@ class OrgContactResponse(BaseModel):
     created_at: datetime | None = None
 
 
+# Old short names still sent by an older mobile app or an Excel import are saved under
+# the one name both lists use now (2026-11-17, migration b2e6c4a8d1f7 moved old records).
+ORG_TYPE_ALIASES = {"private": "Private Company", "govt department": "Government Department"}
+
+
+def normalize_org_type(v: str | None) -> str | None:
+    if v is None:
+        return None
+    s = v.strip()
+    return ORG_TYPE_ALIASES.get(s.lower(), s)
+
+
 def _check_scope_value(v: str | None) -> str | None:
     if v is None:
         return v
@@ -154,7 +166,7 @@ class OrganizationCreate(BaseModel):
     def _validate_org_type(cls, v: str) -> str:
         if not v or not v.strip():
             raise ValueError("Customer Organization Type is required.")
-        return v
+        return normalize_org_type(v)
 
     @model_validator(mode="after")
     def _scope_rules(self):
@@ -215,6 +227,7 @@ class OrganizationUpdate(BaseModel):
     _validate_additional_emails = field_validator("additional_emails")(_validate_email_list)
     _validate_additional_phones = field_validator("additional_phones")(_validate_phone_list)
     _validate_scope = field_validator("org_scope")(_check_scope_value)
+    _normalize_org_type = field_validator("org_type")(normalize_org_type)
 
 
 class OrganizationResponse(BaseModel):
@@ -256,6 +269,9 @@ class OrganizationResponse(BaseModel):
 
 class OrganizationDetailResponse(OrganizationResponse):
     contacts: list[OrgContactResponse] = []
+    # Detail reads only: True when the record is inside the reader's CRM Edit scope
+    # (Role › Data access › Edit) — the screen shows Edit / stage / upload by it.
+    can_change: bool | None = None
     inquiry_count: int = 0
     tender_count: int = 0
 

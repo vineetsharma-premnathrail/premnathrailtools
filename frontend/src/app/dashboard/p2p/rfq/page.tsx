@@ -10,6 +10,7 @@ import { p2pApi, rfqApi } from '@/lib/api'
 import { P2PRequest, RFQ } from '@/types'
 import { TEXT, GLASS, SHADOWS, BRAND, BORDER } from '@/lib/theme'
 import P2PNav from '@/components/p2p/P2PNav'
+import ScopeNote from '@/components/shared/ScopeNote'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
@@ -30,9 +31,11 @@ const RFQ_STATUS_LABELS: Record<string, string> = { draft: 'Draft', locked: 'Clo
 export default function P2PRfqPage() {
   const { isAuthorized, isLoading, user } = useRequireApp('p2p')
   const router = useRouter()
-  const { can } = useCan()
-  // Starting an RFQ: the Purchase desk AND 'Create' on Procurement › R.F.Q.
-  const isPurchaseTeam = !!user?.apps?.includes('purchase') && can('p2p', 'rfq', 'create')
+  const { can, canFeature } = useCan()
+  // Starting an RFQ: 'Create' on Procurement › R.F.Q (the tick alone decides, 2026-11-14).
+  const canStartRfq = can('p2p', 'rfq', 'create')
+  // The "waiting for an RFQ" list comes from My Lines — only loaded when that tab is held.
+  const holdsMyLines = can('p2p', 'purchase_requisitions', 'view') && canFeature('p2p', 'purchase_requisitions', 'my_lines', 'view')
 
   const [prs, setPrs] = useState<P2PRequest[]>([])
   const [rfqs, setRfqs] = useState<RFQ[]>([])
@@ -48,7 +51,7 @@ export default function P2PRfqPage() {
       // A requisition waits for an RFQ while it has lines this person buys that are on no RFQ yet
       // (several buyers each raise their own RFQ on one requisition).
       const [lineData, rfqData] = await Promise.all([
-        p2pApi.myLines({ state: 'to_quote', limit: 500 }),
+        holdsMyLines ? p2pApi.myLines({ state: 'to_quote', limit: 500 }) : Promise.resolve({ rows: [] as { p2p_request_id: number }[] }),
         rfqApi.list({ limit: 1000 }),
       ])
       const readyIds = new Set(lineData.rows.map((r) => r.p2p_request_id))
@@ -127,6 +130,7 @@ export default function P2PRfqPage() {
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column' }}>
+      {!loading && <ScopeNote module="p2p" empty={prs.length + rfqs.length === 0} />}
       <div data-tour="rfq-list-table" style={sectionStyle}>
        <div style={sectionScrollStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -144,15 +148,15 @@ export default function P2PRfqPage() {
               <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No quotation request matches the search and filters — change or clear them.</td></tr>
             )}
             {!loading && shownPending.map((pr) => (
-              <tr key={`pr-${pr.id}`} onClick={isPurchaseTeam ? () => startRfq(pr) : undefined} style={{ borderTop: `1px solid ${BORDER.light}`, cursor: isPurchaseTeam ? 'pointer' : 'default' }}
-                title={isPurchaseTeam ? undefined : 'Only the Purchase team with Create on R.F.Q can start the quotation request.'}>
+              <tr key={`pr-${pr.id}`} onClick={canStartRfq ? () => startRfq(pr) : undefined} style={{ borderTop: `1px solid ${BORDER.light}`, cursor: canStartRfq ? 'pointer' : 'default' }}
+                title={canStartRfq ? undefined : "Starting a quotation request needs 'Create' on Procurement › R.F.Q — ask an admin to add it to your role."}>
                 <td style={{ ...tdStyle, color: TEXT.muted }}>—</td>
                 <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{pr.p2p_number}</td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}><Pill label="RFQ pending" hex="#dc2626" /></td>
                 <td style={{ ...tdStyle, color: TEXT.muted }}>—</td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatDate(pr.created_at)}</td>
                 <td style={{ ...tdStyle, textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
-                  {isPurchaseTeam && <button type="button" onClick={() => startRfq(pr)} style={{ ...smallSecondaryBtnStyle, whiteSpace: 'nowrap' }}>Start RFQ</button>}
+                  {canStartRfq && <button type="button" onClick={() => startRfq(pr)} style={{ ...smallSecondaryBtnStyle, whiteSpace: 'nowrap' }}>Start RFQ</button>}
                 </td>
               </tr>
             ))}

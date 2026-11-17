@@ -1,11 +1,10 @@
 'use client'
 
-import { useRequireApp } from '@/hooks/useAuth'
-import CrmNav from '@/components/crm/CrmNav'
+import CrmNav, { useCrmTabAccess } from '@/components/crm/CrmNav'
 import ModuleDashboardPage from '@/components/reports/ModuleDashboardPage'
 
 export default function CrmReportsPage() {
-  const { isAuthorized, isLoading } = useRequireApp('crm')
+  const { isAuthorized, isLoading } = useCrmTabAccess('reports')
   if (isLoading || !isAuthorized) return null
   return (
     <ModuleDashboardPage

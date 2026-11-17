@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { projectsApi } from '@/lib/api'
 import { PmProject } from '@/types'
 import { formatDate } from '@/lib/format'
@@ -27,6 +27,13 @@ export default function OverviewTab({ project, onProjectUpdate }: { project: PmP
   const [form, setForm] = useState(projectToForm(project))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | string[]>('')
+  // Linking a Finance budget stays a management decision (Partners, Directors,
+  // All Projects › Create) even when Overview › Edit lets someone edit the project.
+  const [mayLinkBudget, setMayLinkBudget] = useState(false)
+  useEffect(() => {
+    if (!editing) return
+    projectsApi.meta().then((m) => setMayLinkBudget(!!m.can_create)).catch(() => setMayLinkBudget(false))
+  }, [editing])
 
   const closed = ['closed', 'cancelled'].includes(project.status)
 
@@ -81,7 +88,7 @@ export default function OverviewTab({ project, onProjectUpdate }: { project: PmP
             </>}>
             <div style={{ padding: '20px 24px' }}>
               <ErrorBanner error={error} />
-              <ProjectForm value={form} onChange={setForm} codeLocked={project.status !== 'planning'} isEdit projectId={project.id} />
+              <ProjectForm value={form} onChange={setForm} codeLocked={project.status !== 'planning'} isEdit projectId={project.id} showBudget={mayLinkBudget} />
             </div>
           </FormSheet>
         )}

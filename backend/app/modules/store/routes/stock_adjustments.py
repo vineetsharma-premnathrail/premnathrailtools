@@ -7,9 +7,12 @@ from app.core.data_scope import apply_scope, ensure_in_scope
 from app.core.permissions import require_tab_access, require_tab_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
+from app.modules.main.routes.auth import get_current_user
 from app.modules.organization.models.approval import ApprovalRequest
 from app.modules.organization.services import approval_engine as engine
-from app.modules.store.services.approvals import ADJUSTMENT_ENTITY, ADJUSTMENT_KEY, adjustment_default_stages
+from app.modules.store.services.approvals import (
+    ADJUSTMENT_ENTITY, ADJUSTMENT_KEY, adjustment_approver_ids, adjustment_default_stages, ensure_adjustment_approver,
+)
 from app.modules.store.services.plant_access import ensure_location_allowed
 from app.modules.store.models.item import StoreItem
 from app.modules.store.models.location import StoreLocation
@@ -186,6 +189,27 @@ async def list_stock_adjustments(
     return [_to_response(db, a) for a in adjustments]
 
 
+@router.get("/approvers")
+async def list_adjustment_approvers(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """The Approver picker of a new adjustment / a count's differences: the
+    active users holding Store › Adjustments › Approve (minus the caller —
+    nobody approves their own). The role's assign-to rule narrows it further
+    on screen and on save."""
+    from app.core.permission_registry import can_feature, can_perform
+
+    if not (can_perform(user, "store", "adjustments", "create")
+            or can_feature(user, "store", "adjustments", "cycle_count", "submit")):
+        raise HTTPException(status_code=403, detail=(
+            "You need 'Create' on Store › Adjustments (or Submit on its Physical Count tab) to pick an approver. "
+            "Ask an admin to add it to one of your roles in Organization › Role & Permissions."))
+    ids = [i for i in adjustment_approver_ids(db) if i != user.id]
+    users = db.query(User).filter(User.id.in_(ids)).order_by(User.name).all() if ids else []
+    return [{"id": u.id, "name": u.name or u.email, "email": u.email} for u in users]
+
+
 @router.get("/{adjustment_id}", response_model=StoreStockAdjustmentResponse)
 async def get_stock_adjustment(
     adjustment_id: int,
@@ -222,10 +246,9 @@ async def create_stock_adjustment(
         raise HTTPException(status_code=400, detail="The selected approver was not found or is no longer active — pick another user.")
     if "store" not in approver.get_apps():
         raise HTTPException(status_code=400, detail=f"{approver.name or approver.email} doesn't have access to the Store module, so they couldn't open this adjustment to approve it — pick a Store user, or ask an admin to grant them Store access.")
-    # C-09: an adjustment rewrites book stock, so it is signed off by a Store
-    # Manager — the Store Manager flag on the user, or this store's own manager.
-    if not (approver.is_store_manager or (location.manager_user_id and location.manager_user_id == approver.id)):
-        raise HTTPException(status_code=400, detail=f"{approver.name or approver.email} isn't a Store Manager, so they can't approve stock adjustments — pick a Store Manager (or {location.name}'s own manager), or ask an admin to tick 'Store Manager' on their user in Admin → Users.")
+    # C-09: an adjustment rewrites book stock, so it is signed off by someone
+    # holding Store › Adjustments › Approve (the matrix tick decides, not a user flag).
+    ensure_adjustment_approver(approver)
     # The role's assign-to rule (Role & Permissions › Store › Adjustments › Name the approving Store Manager).
     assignee_rules.ensure_allowed(db, user, APPROVER_RULE_KEY, approver)
 

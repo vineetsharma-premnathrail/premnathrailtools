@@ -48,3 +48,6 @@ class CurrentUserResponse(BaseModel):
     roles: list[str] = []
     # Effective UI-visibility restrictions (core/visibility.py); {} = everything shown.
     visibility: dict = {}
+    # Effective data access per module the user opens: {"store": "plant", "store:edit": "assigned"}
+    # (core/data_scope.effective_scopes) — lists say why they are narrowed; Edit hides outside the Edit scope.
+    data_scopes: dict[str, str] = {}

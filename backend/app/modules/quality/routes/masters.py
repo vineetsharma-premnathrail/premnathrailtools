@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.core.permissions import require_app_access, require_tab_action
+from app.core.permission_registry import can_view_tab
+from app.core.permissions import GRANT_HINT, PermissionDenied, _tab_label, require_app_access, require_tab_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.quality.models.characteristic import (
@@ -33,6 +34,20 @@ router = APIRouter(prefix="/quality/masters", tags=["Quality"], dependencies=[De
 
 _CAN_CREATE = require_tab_action("quality", "masters", "create")
 _CAN_EDIT = require_tab_action("quality", "masters", "edit")
+
+
+def _require_any_view(*tabs: str):
+    """GET guard for master data a few Quality screens read: 'View' on any of
+    `tabs` (deny by default — Quality settings / masters are not open to every
+    Quality user just because they can open the module)."""
+
+    def _dependency(user: User = Depends(require_app_access("quality"))) -> User:
+        if any(can_view_tab(user, "quality", t) for t in tabs):
+            return user
+        names = " or ".join(f"Quality › {_tab_label('quality', t)}" for t in tabs)
+        raise PermissionDenied(f"You don't have 'View' permission on {names}. {GRANT_HINT}", f"quality:{tabs[0]}:view")
+
+    return _dependency
 
 # Seeded on first use so a fresh database has a working starting set.
 _DEFAULT_DISPOSITION_CODES = [
@@ -82,7 +97,8 @@ async def masters_meta(db: Session = Depends(get_db), user: User = Depends(requi
 # --- characteristics --------------------------------------------------------
 
 @router.get("/characteristics", response_model=list[QualityCharacteristicResponse])
-async def list_characteristics(include_inactive: bool = False, search: str | None = None, db: Session = Depends(get_db)):
+async def list_characteristics(include_inactive: bool = False, search: str | None = None, db: Session = Depends(get_db),
+                               _user: User = Depends(_require_any_view("masters", "inspection_plans", "settings"))):
     q = db.query(QualityCharacteristic)
     if not include_inactive:
         q = q.filter(QualityCharacteristic.is_active.is_(True))
@@ -218,7 +234,8 @@ async def update_disposition_code(row_id: int, payload: QualityDispositionCodeUp
 # --- simple master lists (edited from Settings: Quality head / admin) ------
 
 @router.get("/values", response_model=list[QualityMasterValueResponse])
-async def list_master_values(list_key: str | None = Query(None), include_inactive: bool = False, db: Session = Depends(get_db)):
+async def list_master_values(list_key: str | None = Query(None), include_inactive: bool = False, db: Session = Depends(get_db),
+                             _user: User = Depends(_require_any_view("settings", "masters", "ncr"))):
     ensure_master_lists(db)
     db.commit()
     q = db.query(QualityMasterValue)

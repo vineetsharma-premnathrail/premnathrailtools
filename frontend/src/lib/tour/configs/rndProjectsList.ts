@@ -11,6 +11,11 @@ const config: TourConfig = {
       purpose: 'Every R&D project, from idea to handover.',
     },
     {
+      target: 'scope-note',
+      title: 'Your data access',
+      purpose: 'Says which projects this list covers. With the default "Own + assigned" you see the projects you created, lead or are a team member of. Ask an admin to widen the Data access of your role (Organization › Role & Permissions) to see more. Hidden when you see the whole organization.',
+    },
+    {
       target: 'rnd-proj-new-btn',
       title: '+ New R&D Project',
       purpose: 'Opens the form to start a new Prototype / Research project.',

@@ -13,6 +13,7 @@ import MessageDialog from '@/components/erp/MessageDialog'
 import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
+import ScopeNote from '@/components/shared/ScopeNote'
 
 const STATUS_HEX: Record<string, string> = {
   pending_approval: '#f59e0b', approved: '#2563EB', in_transit: '#7c3aed', received: '#16a34a', rejected: '#dc2626', cancelled: '#78716c',
@@ -75,6 +76,7 @@ export default function StoreStockTransfersPage() {
         })}
       </div>
 
+      <ScopeNote module="store" empty={!loading && transfers.length === 0} />
       <div data-tour="transfers-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
           <thead>

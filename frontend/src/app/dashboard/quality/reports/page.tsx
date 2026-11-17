@@ -12,6 +12,7 @@ import { Field, Section, inputStyle, RowCount } from '@/components/shared/ui'
 import { PageHeader, ErrorBanner, tableWrapStyle, thStyle, tdStyle, fmtMoney, INSPECTION_TYPE_LABELS } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
 import Select from '@/components/shared/Select'
+import ScopeNote from '@/components/shared/ScopeNote'
 
 interface ItemOpt { id: number; item_code: string; item_name: string }
 
@@ -60,6 +61,8 @@ export default function QualityReportsPage() {
     <div>
       <QualityNav />
       <PageHeader title="Quality Reports" />
+      {/* Pareto / rates count only the lots and NCRs within the user's Quality data access (services/pareto.py). */}
+      <ScopeNote module="quality" />
       <ErrorBanner error={error} />
       <Section title="Defect Pareto" style={{ marginBottom: 20 }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>

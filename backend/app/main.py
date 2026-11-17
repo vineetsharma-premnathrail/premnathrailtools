@@ -227,17 +227,13 @@ from app.modules.rnd.models.tool_calculations import (
     SplineCalculation, TractiveEffortCalculation, VehiclePerformanceCalculation,
 )
 from app.modules.rnd.models.project import RndProject
-from app.modules.rnd.models.experiment import RndExperiment
-from app.modules.rnd.models.prototype import RndPrototype, RndPrototypeBomItem
 from app.modules.rnd.models.feasibility import RndFeasibilityStudy
 from app.modules.rnd.models.document import RndDocument
-from app.modules.rnd.models.requirement_work import RndTeamMember, RndRequirementAccess, RndRequirementTask, RndTaskEvent, RndRequirementProjectLink, RndRequirementShare, RndRequirementDocVisibility
+from app.modules.rnd.models.requirement_work import RndTeamMember, RndRequirementAccess, RndRequirementTask, RndTaskEvent, RndRequirementProjectLink, RndRequirementDocVisibility
 from app.modules.rnd.models.requirement import RndRequirement, RndRequirementRevision
 from app.modules.rnd.models.task_approval import RndTaskApproval
 from app.modules.rnd.models.technical_offer import RndTechnicalOffer
 from app.modules.rnd.models.project_task import RndProjectTask, RndProjectTaskEvent
-from app.modules.rnd.models.project_milestone import RndProjectMilestone
-from app.modules.rnd.models.requirement_milestone import RndRequirementMilestone
 from app.modules.hr.models.masters import HrGrade, HrDesignation, HrShift
 from app.modules.hr.models.holiday import HrHoliday
 from app.modules.hr.models.employee_profile import HrEmployeeProfile
@@ -473,8 +469,6 @@ from app.modules.crm.routes import library as crm_library_routes
 from app.modules.rnd.routes import calculations as rnd_calculations_routes
 from app.modules.rnd.routes import history as rnd_history_routes
 from app.modules.rnd.routes import projects as rnd_projects_routes
-from app.modules.rnd.routes import experiments as rnd_experiments_routes
-from app.modules.rnd.routes import prototypes as rnd_prototypes_routes
 from app.modules.rnd.routes import dashboard as rnd_dashboard_routes
 from app.modules.rnd.routes import documents as rnd_documents_routes
 from app.modules.rnd.routes import requirements as rnd_requirements_routes
@@ -520,6 +514,7 @@ from app.modules.hr.routes import punches as hr_punches_routes
 from app.modules.hr.routes import attendance_periods as hr_attendance_periods_routes
 from app.modules.hr.routes import registers as hr_registers_routes
 from app.modules.hr.routes import expense_posting as hr_expense_posting_routes
+from app.modules.typing_assist.routes import router as typing_assist_router
 from app.middleware.error_handler import setup_error_handlers, LoggingMiddleware
 from app.middleware.owasp import OWASPMiddleware
 from app.core.audit_context import AuditContextMiddleware
@@ -831,8 +826,6 @@ app.include_router(accounts_bank_guarantees_routes.router, prefix="/api/v1")
 app.include_router(rnd_calculations_routes.router, prefix="/api/v1/rnd")
 app.include_router(rnd_history_routes.router, prefix="/api/v1/rnd")
 app.include_router(rnd_projects_routes.router, prefix="/api/v1/rnd")
-app.include_router(rnd_experiments_routes.router, prefix="/api/v1/rnd")
-app.include_router(rnd_prototypes_routes.router, prefix="/api/v1/rnd")
 app.include_router(rnd_dashboard_routes.router, prefix="/api/v1/rnd")
 app.include_router(rnd_documents_routes.router, prefix="/api/v1/rnd")
 app.include_router(rnd_requirements_routes.router, prefix="/api/v1/rnd")
@@ -878,6 +871,8 @@ app.include_router(hr_attendance_periods_routes.router, prefix="/api/v1", depend
 app.include_router(hr_registers_routes.router, prefix="/api/v1", dependencies=[_Depends(require_hr_module)])
 # Finance screen for HR claims (PR05): accounts permissions, no HR app needed.
 app.include_router(hr_expense_posting_routes.router, prefix="/api/v1")
+# Typing assist: word suggestions + "did you mean" / similar-record lookups (read-only).
+app.include_router(typing_assist_router, prefix="/api/v1")
 
 
 @app.get("/health")

@@ -4,6 +4,7 @@
  *  receipts, expense payments, other receipts and contra, with bill-wise
  *  allocation of party money and later allocation of advances. */
 import { Fragment, Suspense, useContext, useEffect, useMemo, useState } from 'react'
+import ScopeNote from '@/components/shared/ScopeNote'
 import { useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
@@ -871,6 +872,7 @@ function PaymentsPage() {
         </div>
       </div>
 
+      <ScopeNote module="accounts" empty={!loading && payments.length === 0} />
       <TableWrap minWidth={1350} tour="fin-pay-table">
         <thead>
           <tr>

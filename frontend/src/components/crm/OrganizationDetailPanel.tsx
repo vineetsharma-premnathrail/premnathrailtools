@@ -5,6 +5,8 @@ import { EnvelopeSimple, Phone } from '@phosphor-icons/react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
+import { canViewTab } from '@/lib/tabAccess'
+import { orgChangeable } from '@/components/crm/changeRights'
 import { useVisibility } from '@/lib/visibility'
 import { VisSection } from '@/lib/visibilityComponents'
 import { sampleOrganizationDetail } from '@/lib/crmPreviewSamples'
@@ -75,14 +77,19 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId])
 
-  // Creator-or-admin (backend rule) AND the Permission Matrix grant for the action.
-  const isOwnerOrAdmin = !!org && !!user && (user.role === 'admin' || org.created_by_id === user.id)
-  const canModify = isOwnerOrAdmin && can('crm', 'organizations', 'edit') && !vis.preview
+  // Organizations › Edit tick AND the organization inside the role's CRM Edit scope (Role › Data access › Edit;
+  // default = its creator and anyone with an inquiry / tender on it) — the backend's ensure_can_change.
+  const changeable = orgChangeable(user, org) && !vis.preview
+  const canModify = changeable && can('crm', 'organizations', 'edit')
+  // A contact: Contacts › Edit tick AND (whoever added it, or the organization inside the Edit scope).
+  const canEditContact = (c: OrgContact) => !vis.preview && canFeature('crm', 'organizations', 'contacts', 'edit')
+    && ((c.created_by_id != null && c.created_by_id === user?.id) || changeable)
   // Organization sub-tabs are features of the Organizations tab (core/features/crm.py).
   // A sub-tab needs its feature grant; role-wise visibility then hides it on screen (the preview draws every tab).
   const seeTab = (t: typeof TABS[number]) => (vis.preview || !TAB_SECTION[t] || vis.showSection(TAB_SECTION[t]!)) && (t === 'Overview'
     || (t === 'Contacts' && canFeature('crm', 'organizations', 'contacts', 'view'))
-    || ((t === 'Inquiries' || t === 'Tenders') && canFeature('crm', 'organizations', 'linked_records', 'view'))
+    // Linked inquiries / tenders also need the Inquiries & Tenders tab itself (their list answers 403 without it).
+    || ((t === 'Inquiries' || t === 'Tenders') && canFeature('crm', 'organizations', 'linked_records', 'view') && canViewTab('crm', 'inquiries_tenders', user))
     || (t === 'Audit Trail' && canFeature('crm', 'organizations', 'audit_trail', 'view')))
   const canDeleteOrg = !!org && canDelete('crm', 'organizations', org.created_by_id ?? null) && !vis.preview
 
@@ -144,7 +151,7 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
       {(tab === 'Overview' || !seeTab(tab)) && <OverviewTab org={org} />}
       {/* Role editor preview: the sub-tabs load their own records, so the preview only shows a note under them. */}
       {tab !== 'Overview' && seeTab(tab) && vis.preview && <p style={{ fontSize: 13, color: '#78716c', padding: '14px 16px', borderRadius: 12, background: '#fff', border: '1px dashed rgba(0,0,0,0.12)', margin: 0 }}>Shown with the real records on the page; the preview only decides whether this tab is offered.</p>}
-      {tab === 'Contacts' && seeTab(tab) && !vis.preview && <ContactsTab org={org} canModify={isOwnerOrAdmin && canFeature('crm', 'organizations', 'contacts', 'edit')} canCreate={canFeature('crm', 'organizations', 'contacts', 'create')} onRefresh={load} />}
+      {tab === 'Contacts' && seeTab(tab) && !vis.preview && <ContactsTab org={org} canModify={canFeature('crm', 'organizations', 'contacts', 'edit')} canEditContact={canEditContact} canCreate={canFeature('crm', 'organizations', 'contacts', 'create')} onRefresh={load} />}
       {tab === 'Inquiries' && seeTab(tab) && !vis.preview && <InquiriesTab orgId={org.id} orgRef={refOf(org)} canModify={can('crm', 'inquiries_tenders', 'create')} contacts={org.contacts} />}
       {tab === 'Tenders' && seeTab(tab) && !vis.preview && <TendersTab orgId={org.id} orgRef={refOf(org)} canModify={can('crm', 'inquiries_tenders', 'create')} />}
       {tab === 'Audit Trail' && seeTab(tab) && !vis.preview && <AuditTab orgId={org.id} />}
@@ -210,7 +217,7 @@ function OverviewTab({ org }: { org: OrganizationDetail }) {
   )
 }
 
-function ContactsTab({ org, canModify, canCreate, onRefresh }: { org: OrganizationDetail; canModify: boolean; canCreate: boolean; onRefresh: () => void }) {
+function ContactsTab({ org, canModify, canEditContact, canCreate, onRefresh }: { org: OrganizationDetail; canModify: boolean; canEditContact: (c: OrgContact) => boolean; canCreate: boolean; onRefresh: () => void }) {
   const backSuffix = useBackSuffix('Contacts')
   const router = useRouter()
   const emptyForm = { name: '', designation: '', mobile: '', email: '', department: '' }
@@ -438,7 +445,7 @@ function ContactsTab({ org, canModify, canCreate, onRefresh }: { org: Organizati
                   )}
                 </div>
               </div>
-              {canModify && (
+              {canEditContact(c) && (
                 <button onClick={() => startEdit(c)} data-tour={c.id === org.contacts[0]?.id ? 'orgdetail-contact-edit-btn' : undefined} style={{ ...smallSecondaryBtnStyle, flexShrink: 0 }}>Edit</button>
               )}
               </div>

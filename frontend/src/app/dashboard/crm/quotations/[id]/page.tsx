@@ -1,7 +1,7 @@
 'use client'
 
 // Link target for a quotation (approval inbox / notifications): the quotation
-// lives on its inquiry's Quotations tab, so open that.
+// lives on its inquiry's or tender's Quotations tab, so open that.
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
@@ -22,8 +22,10 @@ export default function QuotationRedirectPage() {
   useEffect(() => {
     if (!isAuthorized || !id) return
     crmQuotationStatusApi.link(id)
-      .then((q) => router.replace(`${recordPath('/dashboard/crm/inquiries', q, 'inquiry_id')}?tab=quotations`))
-      .catch((err) => setError(extractErrorMessages(err, 'Failed to open the quotation.')))
+      .then((q) => router.replace(q.tender_id
+        ? `${recordPath('/dashboard/crm/tenders', q, 'tender_id')}?tab=quotations`
+        : `${recordPath('/dashboard/crm/inquiries', q, 'inquiry_id')}?tab=quotations`))
+      .catch((err) => setError(extractErrorMessages(err, "Could not open this quotation. It may have been deleted, or you may not have access to its inquiry or tender - ask the sender to check, or open it from CRM › Inquiries & Tenders › Quotations tab.")))
   }, [isAuthorized, id, router])
 
   if (isLoading || !isAuthorized) return null

@@ -127,7 +127,8 @@ def test_project_manager_manages_only_own_project(client, db, w):
     assert r.status_code == 200 and r.json()["priority"] == "urgent" and r.json()["can_manage"] is True
     r = client.patch(f"{API}/projects/{theirs['id']}", headers=auth(w["pm"]), json={"priority": "urgent"})
     assert r.status_code == 403
-    assert r.json()["detail"] == "Only management or the project manager of PEW-60 can edit the project."
+    # The tick decides (2026-11-14): Overview › Edit is held, the project is outside the Edit scope.
+    assert "can't edit the project on PEW-60" in r.json()["detail"] and "Edit scope" in r.json()["detail"]
     # Viewer reads, but can_manage is False and edits are refused.
     v = client.get(f"{API}/projects/{mine['id']}", headers=auth(w["viewer"]))
     assert v.status_code == 200 and v.json()["can_manage"] is False

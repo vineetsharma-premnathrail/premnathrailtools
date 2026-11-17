@@ -151,6 +151,10 @@ def _price_quotation_line(session: Session, ln) -> None:
         return
     q = ln.quotation if ln.quotation is not None else (session.get(Quotation, ln.quotation_id) if ln.quotation_id else None)
     org_id = session.query(Inquiry.org_id).filter(Inquiry.id == q.inquiry_id).scalar() if q is not None and q.inquiry_id else None
+    if org_id is None and q is not None and getattr(q, "tender_id", None):
+        # A tender's price bid: the customer is the tender's organization.
+        from app.modules.crm.models.tender import Tender
+        org_id = session.query(Tender.org_id).filter(Tender.id == q.tender_id).scalar()
     r = pricing.resolve(session, product_id=ln.product_id, customer_id=org_id, on=(q.quote_date if q is not None else None))
     ln.list_price = r["price"]
     if r["price"] is None or ln.unit_price is None:

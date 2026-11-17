@@ -8,6 +8,7 @@ import Sidebar from '@/components/Sidebar'
 import LoadingSpinner from '@/components/LoadingSpinner'
 import GlobalActivity from '@/components/shared/GlobalActivity'
 import AppLock from '@/components/shared/AppLock'
+import TypingAssist from '@/components/typing-assist/TypingAssist'
 import ScrollRevealObserver from '@/components/ScrollRevealObserver'
 import TableFit from '@/components/shared/TableFit'
 import { TourProvider } from '@/components/tour/TourContext'
@@ -99,6 +100,7 @@ export default function DashboardLayout({
       <TourOverlay />
       <GlobalActivity />
       <AppLock />
+      <TypingAssist />
     </div>
     </TourProvider>
   )

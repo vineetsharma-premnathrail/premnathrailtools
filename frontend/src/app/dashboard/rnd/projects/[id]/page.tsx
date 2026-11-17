@@ -578,7 +578,7 @@ export default function RndProjectDetailPage() {
       <ConfirmDialog
         open={confirmOpen}
         title="Delete this project?"
-        message={`This deletes "${project.title}" (${project.project_number}). A project that still has attachments, experiments or prototypes can't be deleted — remove those first.`}
+        message={`This deletes "${project.title}" (${project.project_number}). A project that still has attachments can't be deleted — remove those first.`}
         confirmLabel="Delete"
         onConfirm={handleDelete}
         onCancel={() => setConfirmOpen(false)}

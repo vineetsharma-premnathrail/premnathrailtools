@@ -47,8 +47,8 @@ RND_REASON_SOURCE_KIND = {"customer_complaint": "quality_complaint", "ncr": "ncr
 
 
 class RndProject(Base, TimestampMixin, SoftDeleteMixin):
-    """An R&D project (SAP PS CJ20 equivalent) — the parent record every
-    experiment, prototype, and the feasibility study hang off, ending in a
+    """An R&D project (SAP PS CJ20 equivalent) — the parent record the
+    tasks and the feasibility study hang off, ending in a
     formal handover to Production."""
 
     __tablename__ = "rnd_projects"

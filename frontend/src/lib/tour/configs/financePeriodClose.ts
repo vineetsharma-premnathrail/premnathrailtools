@@ -27,13 +27,13 @@ const config: TourConfig = {
     {
       target: 'fin-period-close-btn',
       title: 'Close <month>',
-      purpose: 'Locks the selected month. Only a Finance Manager sees this button.',
+      purpose: 'Locks the selected month. Shown to roles with Approve on Period Close.',
       after: 'You can add optional notes. The close is refused, with the reason, if any document dated in that month (invoice, note, payment, journal) is still a draft — post or cancel those first.',
     },
     {
       target: 'fin-period-reopen-btn',
       title: 'Reopen',
-      purpose: 'Unlocks a closed month. Only an admin sees this button, and a reason is required.',
+      purpose: 'Unlocks a closed month. Shown to roles with Approve on Period Close, and a reason is required.',
       after: 'The reason is kept on the audit trail and shown in the table.',
     },
     {

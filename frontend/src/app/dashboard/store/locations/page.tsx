@@ -14,12 +14,16 @@ import StoreSettingsNav from '@/components/store/StoreSettingsNav'
 import MessageDialog from '@/components/erp/MessageDialog'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
-import { useCan } from '@/lib/permissions'
+import { useCan, viewScope } from '@/lib/permissions'
 import Select from '@/components/shared/Select'
 
 export default function StoreLocationsPage() {
-  const { isAuthorized, isLoading } = useRequireApp('store')
+  const { isAuthorized, isLoading, user } = useRequireApp('store')
   const { can, canDelete } = useCan()
+  // Only an admin (or organization-wide Store access) creates a store in another plant; the
+  // server refuses it — so other plants are greyed out here with the reason (owner, 2026-11-14).
+  const storeScope = viewScope(user, 'store')
+  const ownPlantOnly = user?.role !== 'admin' && storeScope !== 'organization' && storeScope !== 'multi_plant'
   const [locations, setLocations] = useState<StoreLocation[]>([])
   const [branches, setBranches] = useState<Branch[]>([])
   const [loading, setLoading] = useState(true)
@@ -172,8 +176,15 @@ export default function StoreLocationsPage() {
                   <label style={sheetLabel}>Branch</label>
                   <Select data-tour="wh-branch" style={sheetInput} value={branchId} onChange={(e) => setBranchId(e.target.value)}>
                     <option value="">— Select —</option>
-                    {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                    {branches.map((b) => <option key={b.id} value={b.id} disabled={ownPlantOnly && b.id !== user?.branch_id}>{b.name}</option>)}
                   </Select>
+                  {ownPlantOnly && (
+                    <p style={{ fontSize: 11.5, color: TEXT.muted, margin: '4px 0 0' }}>
+                      {user?.branch_id
+                        ? 'You can add a store only in your own plant — an admin adds stores for other plants and sets each store’s manager.'
+                        : 'Your user has no plant — ask an admin to set it in Organization › Users before adding a store.'}
+                    </p>
+                  )}
                 </div>
                 <div style={{ flex: '1 1 200px' }}>
                   <label style={sheetLabel}>Store Type</label>

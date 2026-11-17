@@ -278,10 +278,13 @@ def list_items(
     search: str | None = Query(None),
     status: str | None = Query(None),
     no_lead_time: bool = Query(False, description="Only items with no purchase lead time (MRP treats these as assumed)"),
+    needs_review: bool = Query(False, description="Only items added at inward whose details still need review"),
     db: Session = Depends(get_db),
     user: User = Depends(require_store_lookup()),
 ):
     query = db.query(StoreItem)
+    if needs_review:
+        query = query.filter(StoreItem.needs_review.is_(True))
     if no_lead_time:
         query = query.filter(StoreItem.lead_time_days.is_(None))
     if category is not None:
@@ -357,6 +360,43 @@ def store_units(db: Session) -> list[Branch]:
     own name at (form, Excel import / export)."""
     with_store = db.query(StoreLocation.branch_id).filter(StoreLocation.branch_id.isnot(None), StoreLocation.status == "active")
     return db.query(Branch).filter(Branch.status == "active", Branch.id.in_(with_store)).order_by(Branch.name).all()
+
+
+@router.get("/similar")
+async def similar_items(
+    name: str = Query(..., min_length=1, max_length=200),
+    spec: str | None = Query(None, max_length=500),
+    vendor_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_tab_action("store", "items", "create")),
+):
+    """Items that look like the one about to be added (quick add at inward):
+    same name on this vendor's earlier bill, same name, or a similar name
+    (services/item_similar.py). Read-only."""
+    from app.modules.store.services.item_similar import similar_items as find
+    return find(db, name, spec, vendor_id)
+
+
+@router.post("/{item_id}/mark-reviewed", response_model=StoreItemResponse)
+async def mark_item_reviewed(
+    item_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_tab_action("store", "items", "edit")),
+):
+    """Clears 'Added at inward - needs review' once the Item Master owner has
+    completed the item's details (audited)."""
+    item = db.query(StoreItem).filter(StoreItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found — it may have been deleted. Reload the Item Master.")
+    if item.needs_review:
+        from app.modules.main.models.audit_log import AuditLog
+        item.needs_review = False
+        db.add(AuditLog(entity_type="store_item", entity_id=item.id, action="item_reviewed", performed_by_id=user.id,
+                        summary=f"{user.name or user.email} marked item {item.item_code} ({item.item_name}) as reviewed "
+                                f"(it was added at inward)."))
+        db.commit()
+        db.refresh(item)
+    return _to_response(item, db, detail=True, user=user)
 
 
 @router.get("/{item_id}", response_model=StoreItemResponse)
@@ -457,6 +497,11 @@ async def create_item(
     user: User = Depends(require_tab_action("store", "items", "create")),
 ):
     data = payload.model_dump()
+    from_inward = bool(data.pop("from_inward", False))
+    if from_inward:
+        # Quick add from the Before-PO receipt: that receipt cannot book batch / serial items,
+        # and the rest of the details are completed later (needs_review, cleared by Mark reviewed).
+        data.update(batch_controlled=False, serial_controlled=False, expiry_controlled=False, needs_review=True)
     if not (data.get("item_name") or "").strip():
         raise HTTPException(status_code=400, detail="Enter the item name.")
     if not data.get("uom"):
@@ -479,6 +524,12 @@ async def create_item(
     data["unit_names"] = _clean_unit_names(db, data.get("unit_names"))
     item = StoreItem(**data)
     db.add(item)
+    if from_inward:
+        from app.modules.main.models.audit_log import AuditLog
+        db.flush()
+        db.add(AuditLog(entity_type="store_item", entity_id=item.id, action="item_added_at_inward", performed_by_id=user.id,
+                        summary=f"{user.name or user.email} added item {item.item_code} ({item.item_name}) from a goods "
+                                "receipt — its details need review in the Item Master."))
     db.commit()
     db.refresh(item)
     return _to_response(item, db, detail=True, user=user)

@@ -237,8 +237,8 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       context,
       title: 'Delete this project?',
       message:
-          'This deletes "${p['title']}" (${p['project_number']}). A project that still has attachments, experiments or '
-          "prototypes can't be deleted — remove those first.",
+          'This deletes "${p['title']}" (${p['project_number']}). A project that still has attachments '
+          "can't be deleted — remove those first.",
       confirmLabel: 'Delete',
       danger: true,
     );
@@ -260,7 +260,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       saveLabel: 'Save members',
       builder: (ctx, setS) => [
         const Hint(
-          'Project Leads plan milestones and hand out tasks. Only people listed here can be given tasks on this project.',
+          'Project Leads manage the members and give tasks to the team. Only people listed here can be given tasks on this project.',
         ),
         PeoplePicker(label: 'Project Leads', users: _users, value: leads, exclude: team, onChanged: (v) => setS(() => leads = v)),
         PeoplePicker(label: 'Team Members', users: _users, value: team, exclude: leads, onChanged: (v) => setS(() => team = v)),
@@ -423,7 +423,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       padding: const EdgeInsets.only(top: 12, bottom: 32),
       children: [
         const NoteBox(
-          'Project Leads plan milestones and hand out tasks. Only people listed here can be given tasks on this project.',
+          'Project Leads manage the members and give tasks to the team. Only people listed here can be given tasks on this project.',
           color: Brand.muted,
         ),
         if (canEdit)
@@ -506,7 +506,7 @@ class _BudgetCard extends StatelessWidget {
             'Budget & spend',
             children: [
               Text(
-                'Costs are hidden for your role (R&D › Prototypes › BOM costs). Ask an admin if you need to see the budget.',
+                'Costs are hidden for your role (R&D › Prototype / Research › Budget & costs). Ask an admin if you need to see the budget.',
                 style: TextStyle(color: Brand.muted),
               ),
             ],

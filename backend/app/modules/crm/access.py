@@ -7,7 +7,9 @@ from fastapi import Depends, HTTPException
 from sqlalchemy import and_, false, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.core.data_scope import ensure_in_scope, in_scope, register_scoped, scope_filter
+from app.core.data_scope import (
+    SCOPE_LABELS, can_change, ensure_can_change, ensure_in_scope, in_scope, register_scoped, scope_filter, user_edit_scope,
+)
 from app.core.permission_registry import can_feature, can_view_tab, is_admin_user
 from app.core.permissions import GRANT_HINT, ensure_feature_action, ensure_tab_action, record_owner_id
 from app.modules.crm.models.activity import Activity
@@ -111,6 +113,18 @@ def _activity_parent(db: Session, activity: Activity):
     return parent_record(db, "organization", activity.related_id or activity.org_id)
 
 
+def ensure_can_attach(db: Session, user: User, related_module: str | None, related_id: int | None) -> None:
+    """Uploading a file onto an inquiry / tender is changing it: the CRM Edit
+    scope must cover it (default = its creator, BD owner, sales engineer).
+    Organizations are the shared customer master (owner, 2026-10-27) — any CRM
+    user with the grant may attach to one, so only their view scope applies."""
+    if tab_for(related_module) != INQ:
+        return
+    parent = parent_record(db, related_module, related_id)
+    if parent is not None:
+        ensure_can_change(db, user, parent, action="upload documents to")
+
+
 def ensure_activity_in_scope(db: Session, user: User, activity: Activity) -> None:
     """A follow-up is open to whoever its own scope covers (creator / assignee …)
     or whoever can see the inquiry / tender / organization it is logged against."""
@@ -165,6 +179,33 @@ def can_child_view(user: User, related_module: str | None, feature: str) -> bool
     if tab_for(related_module) == INQ:
         return can_feature(user, MODULE, INQ, feature, "view")
     return can_view_tab(user, MODULE, ORGS)
+
+
+def can_change_quotation(db: Session, user: User, quot, inquiry) -> bool:
+    """Who may revise / submit / send / record the outcome of a quotation: its
+    creator, or anyone whose CRM Edit scope (Role › Data access › Edit) covers
+    the inquiry — by default the inquiry's creator, BD owner and sales engineer
+    (owner, 2026-11-03: set per role, never a hardcoded creator rule). The
+    Quotations feature grant is checked separately."""
+    if quot is not None and quot.created_by_id == user.id:
+        return True
+    return inquiry is not None and can_change(db, user, inquiry)
+
+
+def ensure_can_change_quotation(db: Session, user: User, quot, inquiry, verb: str) -> None:
+    """403 with the reason when can_change_quotation is False."""
+    if can_change_quotation(db, user, quot, inquiry):
+        return
+    level = SCOPE_LABELS[user_edit_scope(user, MODULE)]
+    number = getattr(quot, "quot_number", None) if quot is not None else None
+    what = f"quotation {number}" if number else "a quotation on this inquiry"
+    uid = getattr(inquiry, "universal_id", None)
+    inq = f"inquiry {uid}" if uid else "this inquiry"
+    made = "it was made by someone else and " if quot is not None else ""
+    raise HTTPException(status_code=403, detail=(
+        f"You can't {verb} {what} — {made}{inq} is outside your CRM Edit scope ('{level}'). Ask its creator, the "
+        "inquiry's BD owner, or an admin to widen the Edit scope of your role in Organization › Role & Permissions "
+        "(Data access › Edit)."))
 
 
 def ensure_own(user: User, record, what: str) -> None:

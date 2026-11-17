@@ -3,6 +3,7 @@
 /** Finance > Purchase — purchase invoices (PO-linked with 3-way match, or
  *  direct for services/expenses) and debit notes (purchase returns). */
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import ScopeNote from '@/components/shared/ScopeNote'
 import Link from 'next/link'
 import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
@@ -169,7 +170,7 @@ export default function FinancePurchasePage() {
 
   if (isLoading || !isAuthorized) return null
 
-  const ctx = { userId: user?.id, canApproveVariance: !!user?.is_finance_manager && canFeature('accounts', 'purchase_invoices', 'variance_approval', 'approve'), setup, ledgers, rates, vendors, pos }
+  const ctx = { userId: user?.id, canApproveVariance: canFeature('accounts', 'purchase_invoices', 'variance_approval', 'approve'), setup, ledgers, rates, vendors, pos }
   return (
     <div>
       <FinanceNav />
@@ -177,7 +178,8 @@ export default function FinancePurchasePage() {
       <ErrorBanner error={error} />
       {setup && setup.warnings.length > 0 && <InfoBanner tone="warning">{setup.warnings.map((w) => <div key={w}>{w}</div>)}</InfoBanner>}
       <SubTabs tabs={visibleTabs} value={tab} onChange={setTab} />
-      {tab === 'Purchase Invoices' ? <InvoicesTab {...ctx} /> : <DebitNotesTab {...ctx} />}
+      {tab === 'Purchase Invoices' && <InvoicesTab {...ctx} />}
+      {tab === 'Debit Notes' && <DebitNotesTab {...ctx} />}
     </div>
   )
 }
@@ -287,6 +289,7 @@ function InvoicesTab(ctx: Ctx) {
         </div>
       </div>
 
+      <ScopeNote module="accounts" empty={!loading && rows.length === 0} />
       <TableWrap minWidth={1350} tour="fin-pinv-table">
         <thead>
           <tr>
@@ -767,6 +770,7 @@ function DebitNotesTab(ctx: Ctx) {
         </div>
       )}
 
+      <ScopeNote module="accounts" empty={!loading && rows.length === 0} />
       <TableWrap minWidth={1150} tour="fin-dn-table">
         <thead>
           <tr>

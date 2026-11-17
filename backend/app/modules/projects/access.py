@@ -3,7 +3,8 @@
 Data scope (app/core/data_scope.py, module key "projects"):
   - Projects: own = I am the project manager or created it; assigned = I lead,
     assist on or head the department of one of its WBS elements, or a task of it
-    is assigned to me. No plant column — plant scope uses the PM's / creator's
+    is assigned to me, I co-own one of its milestones or hold one of its sub-tasks
+    (2026-11-14). No plant column — plant scope uses the PM's / creator's
     plant.
   - WBS: own = I lead or submitted it; assigned = I assist on it, head
     its department, have a task in it, or manage its project.
@@ -40,7 +41,7 @@ from app.modules.organization.services import approval_engine as engine
 from app.modules.organization.services.approval_engine import StageDef, TransactionType, register_transaction
 from app.modules.projects.models.milestone import PmProjectMilestone
 from app.modules.projects.models.project import PmProject
-from app.modules.projects.models.task import PmProjectTask
+from app.modules.projects.models.task import PmProjectTask, PmTaskSubtask
 
 MILESTONE_KEY = "projects.milestone_acceptance"
 MILESTONE_ENTITY = "pm_milestone"
@@ -69,11 +70,28 @@ def _team_milestone_ids(db: Session, user) -> list[int]:
     return ids
 
 
+def _co_owned_task_ids(db: Session, user) -> list[int]:
+    """Milestones / tasks naming the user as a co-owner (JSON list, read in
+    Python so it works on every database)."""
+    return [tid for tid, ids in db.query(PmProjectTask.id, PmProjectTask.co_owner_ids)
+            .filter(PmProjectTask.co_owner_ids.isnot(None)).all()
+            if user.id in [int(i) for i in (ids or []) if str(i).isdigit()]]
+
+
+def _tasks_with_my_subtasks(user):
+    """Tasks / milestones holding a sub-task assigned to the user."""
+    return select(PmTaskSubtask.task_id).where(PmTaskSubtask.assignee_id == user.id)
+
+
 def _projects_i_work_on(user):
     db = object_session(user)
     milestone_ids = _team_milestone_ids(db, user) if db is not None else []
+    co_owned = _co_owned_task_ids(db, user) if db is not None else []
     from_milestones = select(PmProjectMilestone.project_id).where(PmProjectMilestone.id.in_(milestone_ids or [-1]))
-    from_tasks = select(PmProjectTask.project_id).where(PmProjectTask.assignee_id == user.id)
+    from_tasks = select(PmProjectTask.project_id).where(or_(
+        PmProjectTask.assignee_id == user.id, PmProjectTask.id.in_(co_owned or [-1]),
+        PmProjectTask.id.in_(_tasks_with_my_subtasks(user)),
+    ))
     return or_(PmProject.id.in_(from_milestones), PmProject.id.in_(from_tasks))
 
 
@@ -89,8 +107,10 @@ def _milestones_i_work_on(user):
 def _tasks_i_oversee(user):
     db = object_session(user)
     milestone_ids = _team_milestone_ids(db, user) if db is not None else []
+    co_owned = _co_owned_task_ids(db, user) if db is not None else []
     managed = select(PmProject.id).where(or_(PmProject.project_manager_id == user.id, PmProject.created_by_id == user.id))
-    return or_(PmProjectTask.milestone_id.in_(milestone_ids or [-1]), PmProjectTask.project_id.in_(managed))
+    return or_(PmProjectTask.milestone_id.in_(milestone_ids or [-1]), PmProjectTask.project_id.in_(managed),
+               PmProjectTask.id.in_(co_owned or [-1]), PmProjectTask.id.in_(_tasks_with_my_subtasks(user)))
 
 
 register_scoped(PmProject, "projects", owner=("project_manager_id", "created_by_id"),

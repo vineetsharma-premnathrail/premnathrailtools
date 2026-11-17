@@ -39,7 +39,7 @@ from app.modules.p2p import po_split
 from app.modules.p2p.pre_po import attachment_content_response, receipt_to_response, save_attachment
 from app.modules.p2p.pricing import mask_for
 from app.modules.p2p.routes.p2p_requests import BUYER_RULE_KEY, _write_audit as _write_pr_audit
-from app.modules.p2p.routes.rfq import _ensure_vendor_can_get_po, _purchase_tab, _to_response as _rfq_response
+from app.modules.p2p.routes.rfq import _ensure_vendor_can_get_po, _p2p_tab, _to_response as _rfq_response
 from app.modules.p2p.schemas.rfq import RFQResponse
 from app.modules.p2p.service import generate_p2p_number, generate_rfq_number
 from app.modules.store.models.item import StoreItem
@@ -62,7 +62,7 @@ class PrePoRequisitionResponse(BaseModel):
 async def list_pending_pre_po_receipts(
     limit: int = Query(200, ge=1, le=1000),
     db: Session = Depends(get_db),
-    user: User = Depends(_purchase_tab("purchase_orders", "view")),
+    user: User = Depends(_p2p_tab("purchase_orders", "view")),
 ):
     """Receipts Store is holding that still need a PO, oldest number first.
     Buyers see receipts of every plant (no plant filter) - the same rule as the
@@ -77,7 +77,7 @@ async def list_pending_pre_po_receipts(
 async def create_requisition_for_pre_po_receipt(
     receipt_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(_purchase_tab("purchase_orders", "create")),
+    user: User = Depends(_p2p_tab("purchase_orders", "create")),
 ):
     # Making the requisition makes the caller its buyer of its requisition, so the same assign-buyer rule applies
     # (Role & Permissions > Procurement > Purchase Requisitions > Assign buyer).
@@ -192,7 +192,7 @@ def _receipt_or_404(db: Session, receipt_id: int) -> StorePrePoReceipt:
 async def get_receipt_of_po(
     po_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(_purchase_tab("purchase_orders", "view")),
+    user: User = Depends(_p2p_tab("purchase_orders", "view")),
 ):
     """The Before-PO receipt a PO was made from, or null for an ordinary PO."""
     po = db.get(P2PPurchaseOrder, po_id)
@@ -210,7 +210,7 @@ async def attach_file_to_pre_po_receipt(
     file: UploadFile = File(...),
     doc_type: str = Form("other"),
     db: Session = Depends(get_db),
-    user: User = Depends(_purchase_tab("purchase_orders", "view")),
+    user: User = Depends(_p2p_tab("purchase_orders", "view")),
 ):
     """Procurement attaches the vendor invoice / challan from the PO page."""
     if not (is_admin_user(user) or can_perform(user, "p2p", "purchase_orders", "create") or can_perform(user, "p2p", "purchase_orders", "edit")):
@@ -227,6 +227,6 @@ async def get_pre_po_receipt_attachment(
     receipt_id: int,
     attachment_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(_purchase_tab("purchase_orders", "view")),
+    user: User = Depends(_p2p_tab("purchase_orders", "view")),
 ):
     return await attachment_content_response(_receipt_or_404(db, receipt_id), attachment_id)

@@ -12,6 +12,7 @@ import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { extractErrorMessages, isValidEmail, isValidPinCode, VALIDATION_MESSAGES } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import SearchableSelect from '@/components/erp/SearchableSelect'
+import SimilarRecordsHint from '@/components/typing-assist/SimilarRecordsHint'
 import VendorReferralSection, { referralError, referralFromVendor, referralPayload } from '@/components/shared/VendorReferral'
 import { FormSheet, SheetColumns, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 
@@ -119,6 +120,7 @@ export default function VendorFormDialog({ vendor, onClose, onSaved }: {
               <div style={{ minWidth: 0 }}>
                 <label style={sheetLabel}>Company name <Req /></label>
                 <input value={form.name} onChange={(e) => set('name', e.target.value)} style={sheetInput} autoFocus />
+                {!vendor && <SimilarRecordsHint kind="vendor" name={form.name} />}
               </div>
               <VendorReferralSection bare value={referral} onChange={setReferral} required={!vendor || !!vendor.referral_type} tour="vendor-form-referred-by"
                 current={vendor?.referred_by_user_id ? { id: vendor.referred_by_user_id, name: vendor.referred_by_user_name || 'Former employee' } : null} />

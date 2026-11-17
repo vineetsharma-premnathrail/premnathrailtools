@@ -76,8 +76,6 @@ from app.modules.hydraulic.models.maintenance import HydMaintenancePlan, HydServ
 from app.modules.hydraulic.models.spare_part import HydSparePart
 from app.modules.hydraulic.models.document import HydDocument
 from app.modules.rnd.models.project import RndProject
-from app.modules.rnd.models.experiment import RndExperiment
-from app.modules.rnd.models.prototype import RndPrototype, RndPrototypeBomItem
 from app.modules.rnd.models.feasibility import RndFeasibilityStudy
 from app.modules.rnd.models.document import RndDocument
 from app.modules.rnd.models.requirement import RndRequirement, RndRequirementRevision
@@ -328,12 +326,6 @@ register_audited(HrOvertime, entity_type="hr_overtime", module_key="hr", label="
 # R&D
 # ---------------------------------------------------------------------------
 register_audited(RndProject, entity_type="rnd_project", module_key="rnd", label="R&D project", ref=lambda o: o.project_number)
-register_audited(RndExperiment, entity_type="rnd_experiment", module_key="rnd", label="Experiment", ref=lambda o: o.experiment_number)
-register_audited(RndPrototype, entity_type="rnd_prototype", module_key="rnd", label="Prototype", ref=lambda o: f"{o.prototype_number} ({o.version})")
-register_audited(
-    RndPrototypeBomItem, entity_type="rnd_prototype_bom_item", module_key="rnd", label="Prototype BOM line",
-    ref=lambda o: f"'{o.item_name}' x {o.quantity}", parent_attr="prototype_id", parent_entity_type="rnd_prototype", child_action="bom_line",
-)
 register_audited(RndFeasibilityStudy, entity_type="rnd_feasibility_study", module_key="rnd", label="Feasibility study", ref=lambda o: f"for project #{o.project_id}")
 register_audited(RndDocument, entity_type="rnd_document", module_key="rnd", label="R&D document", ref=lambda o: f"'{o.title}' ({o.file_name})")
 register_audited(RndRequirement, entity_type="rnd_requirement", module_key="rnd", label="R&D requirement", ref=lambda o: o.rd_number)

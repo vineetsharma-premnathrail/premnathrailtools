@@ -23,7 +23,7 @@ import type { RndPerson, RndTask } from '@/types'
 
 export type RndTaskKind = 'requirement' | 'project'
 
-type Parent = { kind: 'requirement' | 'project' | 'pm_project'; id: number; id_ref?: string; source?: 'inquiry' | 'tender'; ref: string; title: string | null }
+type Parent = { kind: 'requirement' | 'project' | 'pm_project' | 'machine'; id: number; id_ref?: string; source?: 'inquiry' | 'tender'; ref: string; title: string | null }
 type Detail = { tasks: RndTask[]; parent: Parent; can_manage: boolean; can_open_parent: boolean }
 
 const PROJECT_TASK_LABELS: TaskLabels = {
@@ -34,17 +34,18 @@ const PROJECT_TASK_LABELS: TaskLabels = {
   emptyOther: 'No tasks yet.',
 }
 
-const PARENT_LABEL: Record<Parent['kind'], string> = { requirement: 'Requirement', project: 'Prototype / Research', pm_project: 'Project' }
+const PARENT_LABEL: Record<Parent['kind'], string> = { requirement: 'Requirement', project: 'Prototype / Research', pm_project: 'Project', machine: 'Machine' }
 
 function projectTaskApi(parent: Parent | null, reload: () => Promise<RndTask[]>): TaskApi {
   const pm = parent?.kind === 'pm_project'
+  const machine = parent?.kind === 'machine'
   const id = parent?.id ?? 0
-  const access = () => (pm ? rndApi.pmProjectTaskAccess(id) : rndApi.projectTaskAccess(id))
+  const access = () => (machine ? rndApi.machineTaskAccess(id) : pm ? rndApi.pmProjectTaskAccess(id) : rndApi.projectTaskAccess(id))
   return {
     list: reload,
     people: async () => (await access()).people,
     team: async () => (await access()).team,
-    create: (p, parentId) => (pm ? rndApi.createPmProjectTask(id, p, parentId) : rndApi.createProjectTask(id, p, parentId)),
+    create: (p, parentId) => (machine ? rndApi.createMachineTask(id, p, parentId) : pm ? rndApi.createPmProjectTask(id, p, parentId) : rndApi.createProjectTask(id, p, parentId)),
     edit: rndApi.editProjectTask,
     progress: rndApi.projectTaskProgress,
     extend: rndApi.extendProjectTask,
@@ -120,7 +121,7 @@ export default function RndTaskPage({ kind }: { kind: RndTaskKind }) {
     try {
       router.push(parent.kind === 'requirement'
         ? `${recordPath(`/dashboard/rnd/requirements/${parent.source || 'inquiry'}`, parent)}?tab=tasks`
-        : parent.kind === 'pm_project' ? recordPath('/dashboard/rnd/project-tasks', parent) : `${recordPath('/dashboard/rnd/projects', parent)}?tab=tasks`)
+        : parent.kind === 'machine' ? recordPath('/dashboard/rnd/machine-tasks', parent) : parent.kind === 'pm_project' ? recordPath('/dashboard/rnd/project-tasks', parent) : `${recordPath('/dashboard/rnd/projects', parent)}?tab=tasks`)
     } catch (err) {
       setError(extractErrorMessages(err, 'Could not open it — reload the page and try again.'))
     }

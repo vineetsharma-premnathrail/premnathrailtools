@@ -26,6 +26,11 @@ const config: TourConfig = {
       purpose: 'All R&D projects with filters; open one to move it through its stages, record feasibility and hand it over.',
     },
     {
+      target: 'rnd-nav-documents',
+      title: 'Documents',
+      purpose: 'Specs, drawings and test reports of all R&D projects in one list — shown when your role ticks View on Documents.',
+    },
+    {
       target: 'rnd-nav-tools',
       title: 'Engineering Tools',
       purpose: 'The engineering calculators — Braking, Hydraulic, Qmax, Load Distribution, Tractive Effort, Vehicle Performance and Spline.',

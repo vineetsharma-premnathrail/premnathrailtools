@@ -7,26 +7,6 @@ class RndProjectMember(BaseModel):
     name: str
 
 
-class RndProjectExperimentSummary(BaseModel):
-    id: int
-    experiment_number: str
-    title: str
-    status: str
-    result: str | None = None
-    experiment_date: date | None = None
-
-
-class RndProjectPrototypeSummary(BaseModel):
-    id: int
-    prototype_number: str
-    name: str
-    version: str
-    status: str
-    bom_cost: float | None = 0  # None = hidden (R&D › Prototypes › BOM costs)
-    production_bom_id: int | None = None
-    production_bom_number: str | None = None
-
-
 class RndProjectCreate(BaseModel):
     title: str
     project_type: str = "new_product"
@@ -134,15 +114,12 @@ class RndProjectResponse(BaseModel):
     lead_name: str | None = None  # all leads, comma-separated
     leads: list[RndProjectMember] = []
     team_members: list[RndProjectMember] = []
-    actual_cost: float | None = 0  # None = hidden (R&D › Prototypes › BOM costs)
     # The Finance budget behind the project; budget_from_finance = linked to a
     # budget Finance created (its amount is Finance's, not typed on the project).
     internal_order_id: int | None = None
     internal_order_code: str | None = None
     internal_order_name: str | None = None
     budget_from_finance: bool = False
-    experiment_count: int = 0
-    prototype_count: int = 0
     origin_label: str | None = None
     improvement_reason_label: str | None = None
     product_name: str | None = None
@@ -154,7 +131,5 @@ class RndProjectResponse(BaseModel):
 
 
 class RndProjectDetailResponse(RndProjectResponse):
-    experiments: list[RndProjectExperimentSummary] = []
-    prototypes: list[RndProjectPrototypeSummary] = []
     has_feasibility: bool = False
     feasibility_recommendation: str | None = None

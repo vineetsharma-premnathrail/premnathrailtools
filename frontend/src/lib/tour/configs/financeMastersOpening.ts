@@ -69,7 +69,7 @@ const config: TourConfig = {
     {
       target: 'fin-ob-post-btn',
       title: 'Post Opening Balances',
-      purpose: 'Enabled only when balanced, dated, and you are a Finance Manager or admin.',
+      purpose: 'Enabled only when balanced and dated. Shown to roles with Edit on Opening Balances.',
       after: 'You confirm, then one Opening Balance voucher is posted. Party bills now show in Outstanding and ageing. It can be done only once — to redo it, reverse that voucher first.',
     },
   ],

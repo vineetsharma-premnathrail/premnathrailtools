@@ -191,9 +191,9 @@ def test_only_creator_or_admin_moves_inquiry_stage_or_edits_or_deletes(client, c
     inq = make_inquiry(client, ctx["owner"], ctx["org"]["id"])
     other, admin = auth(ctx["other"]), auth(ctx["admin"])
     resp = client.post(f"{API}/inquiries/{inq['id']}/stages", json={"stage": "Negotiation"}, headers=other)
-    assert resp.status_code == 403 and "change this inquiry's stage" in resp.json()["detail"]
+    assert resp.status_code == 403 and "change the stage of" in resp.json()["detail"] and "Edit scope" in resp.json()["detail"]
     resp = client.patch(f"{API}/inquiries/{inq['id']}", json={"product": "x"}, headers=other)
-    assert resp.status_code == 403 and "edit this inquiry" in resp.json()["detail"]
+    assert resp.status_code == 403 and "can't edit it" in resp.json()["detail"] and "Edit scope" in resp.json()["detail"]
     resp = client.delete(f"{API}/inquiries/{inq['id']}", headers=other)
     assert resp.status_code == 403 and "created yourself" in resp.json()["detail"]
     # Read access is open to every CRM user.
@@ -300,7 +300,7 @@ def test_tender_stage_transitions(client, ctx):
     stages = [s["stage"] for s in client.get(f"{API}/tenders/{t['id']}/stages", headers=h).json()]
     assert stages[0] == "Tender created" and stages[-1] == "Awarded / Lost"
     resp = client.post(f"{API}/tenders/{t['id']}/stages", json={"stage": "Bid Submitted"}, headers=auth(ctx["other"]))
-    assert resp.status_code == 403 and "change this tender's stage" in resp.json()["detail"]
+    assert resp.status_code == 403 and "change the stage of" in resp.json()["detail"] and "Edit scope" in resp.json()["detail"]
 
 
 def test_tender_patch_spec_revision_excludes_stage(client, ctx):
@@ -316,7 +316,7 @@ def test_tender_patch_spec_revision_excludes_stage(client, ctx):
 def test_tender_owner_rules_and_soft_delete(client, ctx):
     t = make_tender(client, ctx["owner"], ctx["org"]["id"])
     resp = client.patch(f"{API}/tenders/{t['id']}", json={"tender_name": "x"}, headers=auth(ctx["other"]))
-    assert resp.status_code == 403 and "edit this tender" in resp.json()["detail"]
+    assert resp.status_code == 403 and "can't edit it" in resp.json()["detail"] and "Edit scope" in resp.json()["detail"]
     resp = client.delete(f"{API}/tenders/{t['id']}", headers=auth(ctx["other"]))
     assert resp.status_code == 403 and "created yourself" in resp.json()["detail"]
     assert client.delete(f"{API}/tenders/{t['id']}", headers=auth(ctx["admin"])).status_code == 204
@@ -464,7 +464,7 @@ def test_contact_scoped_to_its_org_and_owner(client, ctx):
     assert client.patch(f"{API}/organizations/{other_org['id']}/contacts/{contact['id']}", json={"name": "x"}, headers=h).status_code == 404
     assert client.post(f"{API}/organizations/99999/contacts", json={"name": "x"}, headers=h).status_code == 404
     resp = client.delete(f"{API}/organizations/{org_id}/contacts/{contact['id']}", headers=auth(ctx["other"]))
-    assert resp.status_code == 403 and "delete this contact" in resp.json()["detail"]
+    assert resp.status_code == 403 and "delete a contact you added yourself" in resp.json()["detail"]
     assert client.delete(f"{API}/organizations/{org_id}/contacts/{contact['id']}", headers=auth(ctx["admin"])).status_code == 200
 
 
@@ -518,7 +518,7 @@ def test_followup_mom_revision_bumps_only_on_printed_fields(client, ctx):
 def test_followup_owner_rules(client, ctx):
     act = client.post(f"{API}/activities", json={"org_id": ctx["org"]["id"]}, headers=auth(ctx["owner"])).json()
     resp = client.patch(f"{API}/activities/{act['id']}", json={"remarks": "x"}, headers=auth(ctx["other"]))
-    assert resp.status_code == 403 and "edit this activity" in resp.json()["detail"]
+    assert resp.status_code == 403 and "can't edit it" in resp.json()["detail"] and "Edit scope" in resp.json()["detail"]
     resp = client.delete(f"{API}/activities/{act['id']}", headers=auth(ctx["other"]))
     assert resp.status_code == 403 and "created yourself" in resp.json()["detail"]
     assert client.delete(f"{API}/activities/{act['id']}", headers=auth(ctx["admin"])).status_code == 200

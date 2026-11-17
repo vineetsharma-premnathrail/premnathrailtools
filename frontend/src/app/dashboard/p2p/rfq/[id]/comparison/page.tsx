@@ -54,7 +54,8 @@ function fmtDay(iso: string | null | undefined): string {
 const fileLink: React.CSSProperties = { fontSize: 12, color: '#2563eb', cursor: 'pointer', background: 'none', border: 'none', padding: 0, textAlign: 'left', wordBreak: 'break-all' }
 
 export default function QuotationComparisonPage() {
-  const { isAuthorized, isLoading } = useRequireApp('purchase')
+  // Procurement module; the R.F.Q › Quotation comparison tick below decides the page (2026-11-14).
+  const { isAuthorized, isLoading } = useRequireApp('p2p')
   const router = useRouter()
   const params = useParams()
   const { id: rfqId, error: linkError } = useRecordId(params?.id as string)

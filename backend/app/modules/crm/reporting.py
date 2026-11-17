@@ -7,7 +7,7 @@ Two datasets, computed in Python over narrow-column selects:
 
     lead       one row per live inquiry (an inquiry is the CRM lead), scoped
                with apply_scope like the Inquiries list
-    quotation  one row per quotation of a scoped, live inquiry
+    quotation  one row per quotation of a scoped, live inquiry or tender
 
 Money (expected value, quoted value) needs CRM › Inquiries & Tenders › Prices &
 margins. Per-person figures (leads per BD owner) need CRM › Reports › People &
@@ -20,7 +20,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable, Iterable
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.data_scope import apply_scope
@@ -32,6 +32,7 @@ from app.core.reporting import (
 )
 from app.modules.crm.models.inquiry import Inquiry, Quotation, QuotationLineItem
 from app.modules.crm.models.organization import Organization
+from app.modules.crm.models.tender import Tender
 from app.modules.crm.services.opportunity import LOST_REASONS, is_lost, is_won
 from app.modules.main.models.user import User
 
@@ -131,21 +132,43 @@ def _load_leads(db: Session, user: Any, today: date) -> list[dict]:
     return leads
 
 
+def _load_tender_parents(db: Session, user: Any) -> dict[int, dict]:
+    """The scoped live tenders that carry quotations (a tender's price bid), keyed by tender id, with the
+    fields the quotation dataset copies from its inquiry. A tender has no product category or BD-owner user
+    id: category is "Not set" and the owner is matched from the BD owner's name."""
+    q = (db.query(Tender.id, Tender.universal_id, Tender.org_id, Organization.name, Tender.railway_zone, Tender.lead_source,
+                  Tender.bd_owner)
+         .select_from(Tender).join(Organization, Organization.id == Tender.org_id)
+         .filter(Tender.is_deleted == False, Tender.id.in_(db.query(Quotation.tender_id).filter(Quotation.tender_id.isnot(None)).statement)))  # noqa: E712
+    raw = apply_scope(q, user, Tender, db).all()
+    names = {(r[6] or "").strip().lower() for r in raw if (r[6] or "").strip()}
+    owners = {(u.name or "").strip().lower(): u.id for u in db.query(User).filter(func.lower(func.trim(User.name)).in_(list(names))).all()} if names else {}
+    return {tid: {"number": number, "customer_id": org_id, "customer": org_name or NOT_SET, "zone": _text(zone), "source": _text(source),
+                  "category": NOT_SET, "owner_id": owners.get((owner or "").strip().lower()), "owner": (owner or "").strip() or "No BD owner"}
+            for (tid, number, org_id, org_name, zone, source, owner) in raw}
+
+
 def _load_quotations(db: Session, user: Any, today: date) -> list[dict]:
-    """Quotation rows: quotations of scoped live inquiries only, lead fields copied in."""
+    """Quotation rows: quotations of scoped live inquiries and tenders only, lead fields copied in.
+    A tender's quotation shows the tender number where an inquiry's shows the inquiry number."""
     by_id = {r["inquiry_id"]: r for r in _load_leads(db, user, today)}
-    quots = db.query(Quotation).filter(Quotation.inquiry_id.in_(list(by_id))).all() if by_id else []
+    tenders = _load_tender_parents(db, user)
+    quots = db.query(Quotation).filter(or_(Quotation.inquiry_id.in_(list(by_id)), Quotation.tender_id.in_(list(tenders)))).all()         if (by_id or tenders) else []
     items: dict[int, list[QuotationLineItem]] = {}
     if quots:
         for it in db.query(QuotationLineItem).filter(QuotationLineItem.quotation_id.in_([x.id for x in quots])).all():
             items.setdefault(it.quotation_id, []).append(it)
     quotations: list[dict] = []
     for x in quots:
-        lead = by_id[x.inquiry_id]
+        lead = by_id.get(x.inquiry_id) if x.inquiry_id is not None else tenders.get(x.tender_id)
+        if lead is None:  # the parent is deleted or outside the viewer's scope
+            continue
         total = _quote_total(x, items.get(x.id, []))
         export = x.quotation_type == "Export"
         quotations.append({
-            "quotation_id": x.id, "inquiry_id": x.inquiry_id, "quot_number": x.quot_number or f"#{x.id}",
+            "quotation_id": x.id, "inquiry_id": x.inquiry_id, "tender_id": x.tender_id,
+            "lead_key": f"inquiry:{x.inquiry_id}" if x.inquiry_id is not None else f"tender:{x.tender_id}",
+            "quot_number": x.quot_number or f"#{x.id}",
             "inquiry_number": lead["number"], "quote_date": x.quote_date or _ist_date(x.created_at),
             "customer_id": lead["customer_id"], "customer": lead["customer"], "zone": lead["zone"],
             "source": lead["source"], "category": lead["category"],
@@ -316,7 +339,7 @@ QUOT_DIMENSIONS = (
 
 QUOT_MEASURES = (
     _m("count", "Quotations", "int", "count"),
-    _m("leads", "Leads quoted", "int", "count_distinct", field="inquiry_id"),
+    _m("leads", "Leads quoted", "int", "count_distinct", field="lead_key"),
     _m("sent", "Sent to customer", "int", "count", where=lambda r: r["quot_status"] in ("sent", "accepted", "lost", "expired"),
        drill={"f_quot_status": "sent,accepted,lost,expired"}),
     _m("accepted", "Accepted", "int", "count", where=lambda r: r["quot_status"] == "accepted",
@@ -342,7 +365,7 @@ QUOT_FILTERS = (
 QUOT_COLUMNS = (
     _col("quot_number", "Quotation No", default=True, link=LEAD_LINK, searchable=True),
     _col("quote_date", "Quote date", "date", True),
-    _col("inquiry_number", "Inquiry No", "text", True, searchable=True),
+    _col("inquiry_number", "Inquiry / Tender No", "text", True, searchable=True),
     _col("customer", "Customer", "text", True, searchable=True),
     _col("quot_status", "Status", "status", True), _col("quotation_type", "Domestic / Export", "text", True),
     _col("pricing_mode", "Pricing"), _col("item_count", "Items", "int"), _col("revisions", "Revisions", "int"),
@@ -379,7 +402,7 @@ def register_datasets() -> None:
         module="crm", key="quotation", label="Quotations", record_noun="quotations",
         date_fields=QUOT_DATE_FIELDS, default_date_field="quote_date", dimensions=QUOT_DIMENSIONS,
         measures=QUOT_MEASURES, filters=QUOT_FILTERS, columns=QUOT_COLUMNS, default_sort=("quot_number", "asc"),
-        load=load_quotation_rows, money_feature=_MONEY, id_keys=("inquiry_id", "quotation_id")))
+        load=load_quotation_rows, money_feature=_MONEY, id_keys=("inquiry_id", "tender_id", "quotation_id")))
 
 
 def register_reports() -> None:

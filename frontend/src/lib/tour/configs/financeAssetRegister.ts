@@ -42,7 +42,7 @@ const config: TourConfig = {
       purpose: 'Code, name and location, cost ledger, put-to-use date, cost, method (SLM months / WDV %), accumulated depreciation, book value, and the date depreciated up to ("Not yet" for a new asset).',
       options: [
         { value: 'Edit (row)', meaning: 'Change name, description, location or cost centre only.' },
-        { value: 'Dispose (row)', meaning: 'Finance Manager — sell or scrap the asset and post the profit/loss.' },
+        { value: 'Dispose (row)', meaning: 'Needs Edit on Asset Register — sell or scrap the asset and post the profit/loss.' },
         { value: 'Delete (row)', meaning: 'Only for an asset never depreciated (e.g. entered by mistake).' },
       ],
     },

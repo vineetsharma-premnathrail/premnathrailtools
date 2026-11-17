@@ -2,7 +2,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.permissions import require_app_access
+from app.core.permission_registry import can_view_tab
+from app.core.permissions import GRANT_HINT, PermissionDenied, require_app_access
 from app.db.session import get_db
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.main.models.user import User
@@ -15,8 +16,16 @@ from app.modules.quality.services.settings import (
 router = APIRouter(prefix="/quality/settings", tags=["Quality"], dependencies=[Depends(require_app_access("quality"))])
 
 
+# Screens outside Settings read a few values (the lot list's waiting days,
+# the plan editor's defaults), so their tabs may read them too.
+_SETTINGS_READERS = ("settings", "inspection_lots", "my_inspections", "inspection_plans")
+
+
 @router.get("")
 async def get_settings(db: Session = Depends(get_db), user: User = Depends(require_app_access("quality"))):
+    # Deny by default: 'View' on Quality Settings (or on a tab whose screen reads these values).
+    if not any(can_view_tab(user, "quality", t) for t in _SETTINGS_READERS):
+        raise PermissionDenied("You don't have 'View' permission on Quality › Quality Settings. " + GRANT_HINT, "quality:settings:view")
     return {
         "values": get_all_settings(db),
         "specs": [{"key": k, **{kk: vv for kk, vv in spec.items() if kk != "default"}, "default": spec["default"]}
@@ -29,7 +38,7 @@ async def get_settings(db: Session = Depends(get_db), user: User = Depends(requi
 @router.put("")
 async def update_settings(payload: QualitySettingsUpdatePayload, db: Session = Depends(get_db), user: User = Depends(require_app_access("quality"))):
     if not access.can_edit_settings(user):
-        raise HTTPException(status_code=403, detail="Only a Quality head or an admin can change Quality settings. Ask an admin to apply the Quality head role.")
+        raise HTTPException(status_code=403, detail="Changing Quality settings needs 'Edit' on Quality › Quality Settings. Ask an admin to add it to one of your roles in Organization › Role & Permissions.")
     try:
         values = save_settings(db, payload.values)
     except ValueError as e:

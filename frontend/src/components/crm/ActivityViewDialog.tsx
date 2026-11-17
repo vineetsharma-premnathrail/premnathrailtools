@@ -2,6 +2,7 @@
 
 import { useAuth } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
+import { activityChangeable } from '@/components/crm/changeRights'
 import { CrmActivity } from '@/types'
 import ManagedDocumentPanel from '@/components/shared/ManagedDocumentPanel'
 import { RichText } from '@/components/RichTextEditor'
@@ -10,10 +11,14 @@ import { FormSheet, SheetSection, SHEET, sheetBtn } from '@/components/shared/Fo
 
 export default function ActivityViewDialog({ activity, onClose }: { activity: CrmActivity | null; onClose: () => void }) {
   const { user } = useAuth()
-  const { can } = useCan()
+  const { can, canFeature } = useCan()
   if (!activity) return null
-  const tab = activity.related_module === 'inquiry' || activity.related_module === 'tender' ? 'inquiries_tenders' : 'organizations'
-  const canModify = (user?.role === 'admin' || activity.created_by_id === user?.id) && can('crm', tab, 'edit')
+  // Same rule as the backend (crm/access.py ensure_child_action + Edit scope): inquiry / tender follow-ups need
+  // Inquiries & Tenders › Follow-ups › Edit, organization follow-ups Organizations › Edit; and the follow-up must be
+  // inside the role's CRM Edit scope (default = its creator and the person it is assigned to).
+  const onInquiryOrTender = activity.related_module === 'inquiry' || activity.related_module === 'tender'
+  const grant = onInquiryOrTender ? canFeature('crm', 'inquiries_tenders', 'followups', 'edit') : can('crm', 'organizations', 'edit')
+  const canModify = grant && activityChangeable(user, activity)
   const dateSlug = (activity.created_at || '').slice(0, 10).replace(/-/g, '') || 'undated'
   return (
     <FormSheet width={600} icon="chat" title={activity.activity_type || 'Follow Up'} subtitle={activity.subject || 'Follow-up details'} onClose={onClose} busy={false}

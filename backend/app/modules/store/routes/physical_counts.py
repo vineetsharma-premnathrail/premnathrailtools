@@ -28,7 +28,7 @@ from app.modules.store.schemas.physical_count import (
     StorePhysicalCountCreate, StorePhysicalCountResponse, StorePhysicalCountSubmitPayload,
 )
 from app.modules.store.service import generate_physical_count_number, generate_stock_adjustment_number
-from app.modules.store.services.approvals import ADJUSTMENT_KEY
+from app.modules.store.services.approvals import ADJUSTMENT_KEY, ensure_adjustment_approver
 from app.modules.store.services.plant_access import ensure_location_allowed, visible_location_ids
 
 router = APIRouter(prefix="/store/physical-counts", tags=["Store"])
@@ -260,13 +260,12 @@ async def submit_count(count_id: int, payload: StorePhysicalCountSubmitPayload, 
     # Differences go through the Store Manager approval as one adjustment
     # (same rules as Store › Adjustments: a Store Manager, never yourself).
     if payload.approver_id == user.id:
-        raise HTTPException(status_code=400, detail="You can't approve your own count differences — pick a different Store Manager.")
+        raise HTTPException(status_code=400, detail="You can't approve your own count differences — pick a different approver.")
     approver = db.query(User).filter(User.id == payload.approver_id, User.is_active == True).first()  # noqa: E712
     if not approver:
         raise HTTPException(status_code=400, detail="The selected approver was not found or is no longer active — pick another user.")
-    if not (approver.is_store_manager or (location.manager_user_id and location.manager_user_id == approver.id)):
-        raise HTTPException(status_code=400, detail=f"{approver.name or approver.email} isn't a Store Manager, so they can't approve stock corrections — "
-                                                    f"pick a Store Manager (or {location.name}'s own manager).")
+    # The approver must hold Store › Adjustments › Approve (the matrix tick decides, not a user flag).
+    ensure_adjustment_approver(approver, "stock corrections")
     # The role's assign-to rule (Role & Permissions › Store › Adjustments › Physical / cycle count).
     assignee_rules.ensure_allowed(db, user, APPROVER_RULE_KEY, approver)
     adjustment = StoreStockAdjustment(

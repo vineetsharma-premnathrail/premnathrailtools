@@ -6,6 +6,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { crmApi } from '@/lib/api'
 import { CrmActivity } from '@/types'
 import CrmNav from '@/components/crm/CrmNav'
+import ScopeNote from '@/components/shared/ScopeNote'
 import { secondaryBtnStyle } from '@/components/crm/ui'
 import { stripHtml } from '@/components/RichTextEditor'
 import { formatDate } from '@/lib/format'
@@ -98,6 +99,7 @@ export default function FollowUpsPage() {
         </div>
       )}
 
+      <ScopeNote module="crm" empty={!loading && rows.length === 0} />
       <div data-tour="followups-table" style={{ ...panelStyle, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>

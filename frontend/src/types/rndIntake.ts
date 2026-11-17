@@ -166,10 +166,10 @@ export interface RndTaskRow {
   type: RndTaskType
   title: string
   parent: {
-    kind: 'requirement' | 'project' | 'pm_project'
+    kind: 'requirement' | 'project' | 'pm_project' | 'machine'
     id: number
     id_ref?: string
-    /** R&D ID (requirement), RND number (project) or PEW code (pm_project). */
+    /** R&D ID (requirement), RND number (project) PEW code (pm_project) or machine serial (machine: a past machine in All Projects). */
     ref: string
     title: string | null
     source?: RndReqSource
@@ -202,7 +202,7 @@ export interface RndTaskGroup {
   user_id?: number
   name?: string | null
   // by_project rows (project or requirement)
-  kind?: 'requirement' | 'project' | 'pm_project'
+  kind?: 'requirement' | 'project' | 'pm_project' | 'machine'
   ref?: string
   title?: string | null
   source?: RndReqSource
@@ -223,6 +223,7 @@ export interface RndTaskFilters {
   requirement_id?: number
   rnd_project_id?: number
   pm_project_id?: number
+  machine_id?: number
   assigned_to_id?: number
   department?: string
   status?: string
@@ -241,6 +242,8 @@ export interface RndTaskCreatePayload {
   record_id?: number
   rnd_project_id?: number
   pm_project_id?: number
+  /** A past machine (All Projects) — sent instead of pm_project_id. */
+  machine_id?: number
   title: string
   remarks?: string
   assigned_to_id: number

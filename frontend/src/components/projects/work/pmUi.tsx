@@ -8,7 +8,8 @@ import { createPortal } from 'react-dom'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import { inputStyle as sharedInput, thStyle as sharedTh, tdStyle as sharedTd, btnBase, smallBtnSize, pillStyle } from '@/components/shared/ui'
 import { formatDate } from '@/lib/format'
-import { PermissionAction, useCan } from '@/lib/permissions'
+import { PermissionAction, can, useCan } from '@/lib/permissions'
+import type { User } from '@/types'
 
 /** Project Management features (backend core/features/projects.py, all on
  * projects:overview): milestones, milestone_status, tasks, task_checklist,
@@ -19,6 +20,15 @@ export function usePmFeature() {
   const { can, canFeature } = useCan()
   const pmRole = can('projects', 'overview', 'view')
   return (feature: string, action: PermissionAction) => !pmRole || canFeature('projects', 'overview', feature, action)
+}
+
+/** Tabs whose View opens a project page (backend routes/project.py WORKSPACE_TABS). */
+export const PROJECT_PAGE_TABS = ['all_projects', 'overview', 'milestones', 'documents', 'project_history'] as const
+
+/** Whether `user` can open a project page — link a project code only then
+ * (a My Tasks-only user would land on a refusal). Plain function, safe after early returns. */
+export function canOpenProjectPage(user: User | null | undefined): boolean {
+  return !!user?.apps?.includes('projects') && PROJECT_PAGE_TABS.some((t) => can(user, 'projects', t, 'view'))
 }
 
 export const MILESTONE_LABELS: Record<string, string> = {

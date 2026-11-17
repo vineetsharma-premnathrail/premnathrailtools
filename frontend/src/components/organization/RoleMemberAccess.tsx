@@ -11,6 +11,7 @@ import { SheetSection, SHEET, sheetBtn, sheetInput, sheetHint, SheetIcon } from 
 import PermissionMatrixEditor from '@/components/organization/PermissionMatrixEditor'
 import RoleNotificationsEditor, { NotificationEventCatalog } from '@/components/organization/RoleNotificationsEditor'
 import ApprovesInPanel from '@/components/organization/ApprovesInPanel'
+import AccessTruthNote, { EffectiveAccess } from '@/components/organization/AccessTruthNote'
 import { useSodGuard } from '@/components/organization/useSodGuard'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
@@ -123,7 +124,7 @@ export default function RoleMemberAccess({ tab, user, catalog, eventCatalog }: {
     await sod.guard(user.id, { granular_permissions: extras }, (reason) => governedUsersApi.updatePermissions(user.id, extras, reason))
     setSavedExtras(extras)
     setEffective(await usersApi.getEffectivePermissions(user.id))
-  }, `Saved for ${user.name} only — the role is unchanged for its other holders. ${user.name} gets it on their next page load.`)
+  }, `Saved for ${user.name} only — the role is unchanged for its other holders. ${user.name} is told by a bell notification and their open pages pick it up within a minute (or on reload).`)
 
   const saveScopes = () => run(async () => {
     const rows = await securityApi.saveUserDataScopes(user.id, scopeEdit)
@@ -165,6 +166,7 @@ export default function RoleMemberAccess({ tab, user, catalog, eventCatalog }: {
       {tab === 'Permissions' && (
         <SheetSection icon="list" title={`Permissions — ${user.name}`}>
           {!seePerms ? noAccess('Extra permissions') : !seeUsers ? <p style={{ fontSize: 13, color: SHEET.MUTED, margin: 0 }}>Editing a user&apos;s extra permissions also needs Organization › Users › View, so the user&apos;s current extras can be shown first.</p> : !effective || !userLoaded ? <p style={{ fontSize: 13, color: SHEET.MUTED }}>{loadErr || userErr ? 'Could not load — see the message above.' : 'Loading…'}</p> : <>
+            <AccessTruthNote effective={effective as EffectiveAccess} userName={user.name} />
             {intro(<>Faded, locked ticks come from <b>{user.name}</b>&apos;s roles. Tick more to give <b>only {user.name}</b> extra access — the role stays the same for everyone else. To take away something a role gives, change or remove that role.</>)}
             {lockNote}
             <PermissionMatrixEditor registry={catalog} value={extras} onChange={setExtras} readOnly={!editPerms} inherited={fromRoles} />

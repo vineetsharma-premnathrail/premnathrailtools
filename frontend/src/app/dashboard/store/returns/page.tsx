@@ -13,6 +13,7 @@ import MessageDialog from '@/components/erp/MessageDialog'
 import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
+import ScopeNote from '@/components/shared/ScopeNote'
 
 const STATUS_LABELS: Record<string, string> = { pending_approval: 'Pending Approval', approved: 'Approved', rejected: 'Rejected', cancelled: 'Withdrawn' }
 const STATUS_HEX: Record<string, string> = { pending_approval: '#d97706', approved: '#16a34a', rejected: '#dc2626', cancelled: '#78716c' }
@@ -54,6 +55,7 @@ export default function StoreMaterialReturnsPage() {
 
       <MessageDialog open={!!error} variant="error" title="Failed to Load Material Returns" message={error} onClose={() => setError('')} actionLabel="Reload" onAction={() => window.location.reload()} />
 
+      <ScopeNote module="store" empty={!loading && returns.length === 0} />
       <div data-tour="returns-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
           <thead>

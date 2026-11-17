@@ -29,19 +29,18 @@ RND_DOC_PICKER_CATEGORIES = tuple(c for c in RND_DOC_CATEGORIES if c != "technic
 
 
 class RndDocument(Base, TimestampMixin, SoftDeleteMixin):
-    """A file attached to an R&D project — optionally narrowed to one of its
-    experiments or prototypes. Bytes live in SharePoint; only the pointer and
+    """A file attached to an R&D project. Bytes live in SharePoint; only the pointer and
     metadata live here, same pattern as QualityDocument / CrmDocument."""
 
     __tablename__ = "rnd_documents"
-    __table_args__ = (CheckConstraint("project_id IS NOT NULL OR pm_project_id IS NOT NULL", name="ck_rnd_documents_parent"),)
+    __table_args__ = (CheckConstraint("project_id IS NOT NULL OR pm_project_id IS NOT NULL OR machine_id IS NOT NULL", name="ck_rnd_documents_parent"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     # NULL only on files of an R&D task given on a Project Management project (pm_project_id set).
     project_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("rnd_projects.id"), index=True, nullable=True)
     pm_project_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("pm_projects.id"), index=True, nullable=True)
-    experiment_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("rnd_experiments.id"), index=True, nullable=True)
-    prototype_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("rnd_prototypes.id"), index=True, nullable=True)
+    # Files of an R&D task given on a past machine of All Projects (erp_projects).
+    machine_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("erp_projects.id"), index=True, nullable=True)
     # Set when the file belongs to a project task (project_tasks.py): "brief"
     # = the lead's files, "work" = the assignee's. Task files stay out of the
     # project's Attachments list.

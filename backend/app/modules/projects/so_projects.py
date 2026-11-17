@@ -150,9 +150,9 @@ def needs_project(so: SalesOrder) -> bool:
 
 
 def _title(so: SalesOrder) -> str:
-    who = so.customer_name or "Customer"
-    ref = so.customer_po_number or so.loa_number or so.display_number
-    return f"{who} — {ref}"[:400]
+    # Customer only — the PO number stays in the project's own PO field, never in its
+    # name (owner, 2026-11-17).
+    return (so.customer_name or "Customer")[:400]
 
 
 def _so_dates(so: SalesOrder) -> tuple[date | None, date | None]:

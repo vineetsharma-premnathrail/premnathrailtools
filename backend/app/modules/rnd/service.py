@@ -1,22 +1,19 @@
-"""Plain-function helpers for the R&D module — project / experiment /
-prototype number generation, the project stage gates, and prototype cost
-roll-ups. Mirrors app/modules/quality/service.py's number-generation pattern."""
+"""Plain-function helpers for the R&D module — project number generation and
+the project stage gates. Mirrors app/modules/quality/service.py's number-generation pattern."""
 from datetime import date
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from app.modules.rnd.models.project import RndProject, RND_PROJECT_STAGES
-from app.modules.rnd.models.experiment import RndExperiment
-from app.modules.rnd.models.prototype import RndPrototype, RndPrototypeBomItem
 from app.modules.rnd.models.feasibility import RndFeasibilityStudy
 
 
 def hide_costs(user) -> bool:
-    """True when prototype BOM costs must be blanked for `user`: their roles
-    lack R&D › Prototypes › BOM costs and they can't edit prototypes (an
-    editor enters the costs, so editing implies seeing them)."""
+    """True when a project's budget / spend must be blanked for `user`: their
+    roles lack R&D › Prototype / Research › Budget & costs and they can't edit
+    projects (an editor sets the budget, so editing implies seeing it)."""
     from app.core.permission_registry import can_feature, can_perform
-    return not (can_feature(user, "rnd", "prototypes", "costs", "view") or can_perform(user, "rnd", "prototypes", "edit"))
+    return not (can_feature(user, "rnd", "projects", "costs", "view") or can_perform(user, "rnd", "projects", "edit"))
 
 
 def _lock_number_series(db: Session, prefix: str) -> None:
@@ -42,14 +39,6 @@ def generate_project_number(db: Session) -> str:
     return _next_number(db, RndProject.project_number, "RND")
 
 
-def generate_experiment_number(db: Session) -> str:
-    return _next_number(db, RndExperiment.experiment_number, "EXP")
-
-
-def generate_prototype_number(db: Session) -> str:
-    return _next_number(db, RndPrototype.prototype_number, "PRT")
-
-
 def user_names(db: Session, ids) -> dict[int, str]:
     """id -> display name for a batch of user ids (None/missing ids skipped)."""
     from app.modules.main.models.user import User
@@ -58,21 +47,6 @@ def user_names(db: Session, ids) -> dict[int, str]:
     if not wanted:
         return {}
     return {u.id: (u.name or u.email) for u in db.query(User).filter(User.id.in_(wanted)).all()}
-
-
-def prototype_bom_cost(prototype: RndPrototype) -> float:
-    return round(sum((i.quantity or 0) * (i.unit_cost or 0) for i in prototype.bom_items), 2)
-
-
-def project_actual_cost(db: Session, project_id: int) -> float:
-    """Actual R&D spend = sum of every live prototype's BOM cost."""
-    total = (
-        db.query(func.coalesce(func.sum(RndPrototypeBomItem.quantity * func.coalesce(RndPrototypeBomItem.unit_cost, 0)), 0))
-        .join(RndPrototype, RndPrototype.id == RndPrototypeBomItem.prototype_id)
-        .filter(RndPrototype.project_id == project_id, RndPrototype.is_deleted == False)  # noqa: E712
-        .scalar()
-    )
-    return round(float(total or 0), 2)
 
 
 STAGE_LABELS = {

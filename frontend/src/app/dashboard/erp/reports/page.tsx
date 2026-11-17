@@ -1,11 +1,10 @@
 'use client'
 
-import { useRequireApp } from '@/hooks/useAuth'
-import ErpNav from '@/components/erp/ErpNav'
+import ErpNav, { useErpTabAccess } from '@/components/erp/ErpNav'
 import ModuleDashboardPage from '@/components/reports/ModuleDashboardPage'
 
 export default function ErpReportsPage() {
-  const { isAuthorized, isLoading } = useRequireApp('erp')
+  const { isAuthorized, isLoading } = useErpTabAccess('reports')
   if (isLoading || !isAuthorized) return null
   return (
     <ModuleDashboardPage

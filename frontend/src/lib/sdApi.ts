@@ -1,7 +1,7 @@
 // SD (CRM / Sales) wave 2 endpoints: customer addresses, quotation status,
 // opportunity reports, proforma invoices. Kept beside api.ts (same apiClient)
 // so parallel work on the big shared client doesn't collide.
-import { apiClient } from './api'
+import { apiClient, quotParentBase, type QuotParent } from './api'
 import type { CrmForecast, CrmWinLoss, OrgAddress, QuotationItem, QuotationStatusView, SalesProforma } from '@/types'
 
 export type QuotationAction = 'submit' | 'withdraw' | 'approve' | 'reject' | 'return' | 'send' | 'accept' | 'lost' | 'reopen'
@@ -22,14 +22,15 @@ export const crmAddressApi = {
 }
 
 export const crmQuotationStatusApi = {
-  status: async (inquiryId: number, quotId: number): Promise<QuotationStatusView> => {
-    const { data } = await apiClient.get(`/crm/inquiries/${inquiryId}/quotations/${quotId}/status`); return data
+  // `parent`: a plain number = an inquiry (old form); { kind: 'tender', id } = a tender's quotation.
+  status: async (parent: QuotParent, quotId: number): Promise<QuotationStatusView> => {
+    const { data } = await apiClient.get(`${quotParentBase(parent)}/quotations/${quotId}/status`); return data
   },
-  act: async (inquiryId: number, quotId: number, action: QuotationAction, payload: { comment?: string; sent_on?: string } = {}):
+  act: async (parent: QuotParent, quotId: number, action: QuotationAction, payload: { comment?: string; sent_on?: string } = {}):
     Promise<QuotationItem & { status_view: QuotationStatusView }> => {
-    const { data } = await apiClient.post(`/crm/inquiries/${inquiryId}/quotations/${quotId}/${action}`, payload); return data
+    const { data } = await apiClient.post(`${quotParentBase(parent)}/quotations/${quotId}/${action}`, payload); return data
   },
-  link: async (quotId: number): Promise<{ id: number; inquiry_id: number; quot_number: string; status: string }> => {
+  link: async (quotId: number): Promise<{ id: number; inquiry_id: number | null; tender_id?: number | null; quot_number: string; status: string }> => {
     const { data } = await apiClient.get(`/crm/quotations/${quotId}`); return data
   },
 }

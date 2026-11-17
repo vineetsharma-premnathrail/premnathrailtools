@@ -11,11 +11,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.data_scope import ensure_in_scope
-from app.core.permissions import ensure_feature_action, require_app_access, require_tab_access, require_tab_action
+from app.core.permissions import ensure_feature_action, require_tab_access, require_tab_action
 from app.modules.p2p.pricing import mask_for
 import app.modules.p2p.access  # noqa: F401 — registers the Procurement data scopes
 from app.db.session import get_db
 from app.modules.main.models.user import User
+from app.modules.main.routes.auth import get_current_user
 from app.modules.organization.services import approval_engine as engine
 from app.modules.p2p import po_amendments as svc
 from app.modules.p2p.models.p2p_request import P2PRequest
@@ -55,7 +56,7 @@ def _out(db: Session, am: P2PPOAmendment, po: P2PPurchaseOrder | None = None, wa
 
 @router.get("/amendments/{amendment_id}", response_model=POAmendmentResponse,
             dependencies=[Depends(require_tab_access("p2p", "purchase_orders"))])
-def get_amendment(amendment_id: int, db: Session = Depends(get_db), user: User = Depends(require_app_access("purchase"))):
+def get_amendment(amendment_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     ensure_feature_action(user, "p2p", "purchase_orders", "amendments", "view")
     am = db.get(P2PPOAmendment, amendment_id)
     if am is None:
@@ -65,7 +66,7 @@ def get_amendment(amendment_id: int, db: Session = Depends(get_db), user: User =
 
 
 @router.get("/{po_id}/amendment-context", dependencies=[Depends(require_tab_access("p2p", "purchase_orders"))])
-def amendment_context(po_id: int, db: Session = Depends(get_db), user: User = Depends(require_app_access("purchase"))):
+def amendment_context(po_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """What the Amend PO form needs: each line with what was received /
     invoiced (the quantity floor) and whether its price is still changeable."""
     ensure_feature_action(user, "p2p", "purchase_orders", "amendments", "view")
@@ -96,7 +97,7 @@ def amendment_context(po_id: int, db: Session = Depends(get_db), user: User = De
 
 @router.get("/{po_id}/amendments", response_model=list[POAmendmentResponse],
             dependencies=[Depends(require_tab_access("p2p", "purchase_orders"))])
-def list_amendments(po_id: int, db: Session = Depends(get_db), user: User = Depends(require_app_access("purchase"))):
+def list_amendments(po_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     ensure_feature_action(user, "p2p", "purchase_orders", "amendments", "view")
     po = _po(db, po_id, user)
     rows = db.query(P2PPOAmendment).filter(P2PPOAmendment.purchase_order_id == po.id).order_by(P2PPOAmendment.amendment_no.desc(),
@@ -107,7 +108,7 @@ def list_amendments(po_id: int, db: Session = Depends(get_db), user: User = Depe
 @router.post("/{po_id}/amendments", response_model=POAmendmentResponse,
              dependencies=[Depends(require_tab_action("p2p", "purchase_orders", "edit"))])
 def create_amendment(po_id: int, payload: POAmendmentCreate, db: Session = Depends(get_db),
-                     user: User = Depends(require_app_access("purchase"))):
+                     user: User = Depends(get_current_user)):
     ensure_feature_action(user, "p2p", "purchase_orders", "amendments", "create")
     po = _po(db, po_id, user)
     pr = db.get(P2PRequest, po.p2p_request_id) if po.p2p_request_id else None
@@ -120,7 +121,7 @@ def create_amendment(po_id: int, payload: POAmendmentCreate, db: Session = Depen
 @router.post("/{po_id}/amendments/{amendment_id}/withdraw", response_model=POAmendmentResponse,
              dependencies=[Depends(require_tab_action("p2p", "purchase_orders", "edit"))])
 def withdraw_amendment(po_id: int, amendment_id: int, payload: POAmendmentWithdrawPayload, db: Session = Depends(get_db),
-                       user: User = Depends(require_app_access("purchase"))):
+                       user: User = Depends(get_current_user)):
     ensure_feature_action(user, "p2p", "purchase_orders", "amendments", "cancel")
     po = _po(db, po_id, user)
     am = db.query(P2PPOAmendment).filter(P2PPOAmendment.id == amendment_id, P2PPOAmendment.purchase_order_id == po.id).first()
@@ -139,7 +140,7 @@ def withdraw_amendment(po_id: int, amendment_id: int, payload: POAmendmentWithdr
 
 
 @router.get("/{po_id}/versions", dependencies=[Depends(require_tab_access("p2p", "purchase_orders"))])
-def po_versions(po_id: int, db: Session = Depends(get_db), user: User = Depends(require_app_access("purchase"))):
+def po_versions(po_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Version history: v0 = the PO as first released, then the PO after each
     approved amendment (with what changed and who approved it)."""
     ensure_feature_action(user, "p2p", "purchase_orders", "amendments", "view")

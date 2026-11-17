@@ -98,8 +98,6 @@ class RndRequirementTask(Base, TimestampMixin):
     # (design / electrical / hydraulic) — the assignee's side when assigned.
     # Drives the department chips on the requirement's task list.
     department: Mapped[str] = mapped_column(String(20), nullable=False, default="rnd", server_default="rnd")
-    # The milestone this task sits in (rnd_requirement_milestones); NULL = "No milestone".
-    milestone_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("rnd_requirement_milestones.id", ondelete="SET NULL"), index=True, nullable=True)
 
 
 class RndTaskEvent(Base):
@@ -135,47 +133,12 @@ class RndRequirementProjectLink(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
-RND_SHARE_DEPARTMENTS = ("design", "electrical", "hydraulic")
-RND_SHARE_STATUSES = ("open", "responded", "replaced")
-RND_SHARE_RESPONSES = ("feasible", "feasible_with_changes", "not_feasible")
-
-
-class RndRequirementShare(Base, TimestampMixin):
-    """The R&D head sharing a requirement with an engineering department
-    (Design, Electrical, Hydraulic & Pneumatic) for its feasibility input —
-    the "R&D feasibility with Design + E/H/P" step before the technical offer.
-
-    open → responded (the department's reply: feasible / feasible with
-    changes / not feasible, remarks, files). Sharing again with the same
-    department is a new row: a still-open earlier share becomes "replaced"
-    (the department answers only the latest), and every earlier reply stays
-    on record. There is no withdraw — the head corrects by sharing again."""
-
-    __tablename__ = "rnd_requirement_shares"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    source: Mapped[str] = mapped_column(String(20), nullable=False)
-    record_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
-    department: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
-    note: Mapped[str] = mapped_column(Text, nullable=False)
-    due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default="open", server_default="open")
-    shared_by_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
-    response: Mapped[str | None] = mapped_column(String(30), nullable=True)
-    response_remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
-    responded_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
-    responded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    replaced_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("rnd_requirement_shares.id"), nullable=True)
-    replaced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
-
 class RndRequirementDocVisibility(Base, TimestampMixin):
-    """Who may see a document uploaded to a requirement's Documents tab.
-
-    Every department working on a requirement (R&D and the departments it is
-    shared with) uploads under its own name and decides whether the other
-    departments see the file (shared_with_all) or only its own people do.
-    A requirement document without a row is R&D's and visible to all."""
+    """One row per requirement document: its category (`category`, see
+    RND_DOC_CATEGORIES). The per-department visibility switch was removed on
+    2026-10-30 (`department` / `shared_with_all` are no longer read: every R&D
+    user sees every file); only the category is live. A document without a row
+    shows as "other"."""
 
     __tablename__ = "rnd_requirement_doc_visibility"
 

@@ -36,10 +36,11 @@ register_features(
     _feature("history", "Timeline", "subtab", {"view": "view"},
              "The Timeline tab of a requirement: revisions BD sent (with what changed), accept / return, responses, tasks, offers and documents in one list (R&D side only)."),
     # Explicit-only (None): never inherited and never given by a module preset — a role or a user's
-    # extra permission must tick it. The R&D head and admins accept / return without it.
-    _feature("review", "Review (accept / return to BD)", "action", {"view": "view", "approve": None, "reject": None},
-             "Approve = accept a requirement (or a new revision of it) that BD sent; Reject = return it to BD with the reason to fix. "
-             "The R&D head and admins can always do both; tick it for someone else on purpose."),
+    # extra permission must tick it. The R&D head accepts without it. Return to BD was removed
+    # (owner 2026-10-30), so there is no Reject action; grants of it saved earlier are ignored.
+    _feature("review", "Review (accept)", "action", {"view": "view", "approve": None},
+             "Approve = accept a requirement (or a new revision of it) that BD sent. "
+             "The R&D head can always accept; tick it for someone else on purpose."),
     _feature("technical_offers", "Technical Offers", "subtab", {
         "view": "view", "create": "view", "edit": "view", "delete": "view", "approve": "view",
     }, "Technical Offers sub-tab: see offers; create = upload a Word / PDF offer (Technical Offer team or the R&D head, once the requirement is accepted); edit its title / date / notes before release; delete a not-yet-released upload; approve = release the offer to the BD team (R&D head)."),
@@ -60,24 +61,13 @@ register_features(
 register_features(
     "rnd", "projects",
     _feature("tasks", "Project tasks", "subtab", {
-        "view": "view", "create": "view", "edit": "view", "approve": "view", "cancel": "view",
-    }, "The Tasks board of a Prototype / Research project: see tasks, create tasks / sub-tasks, edit / reopen, decide approval requests and cancel. Record rules stay: project leads give tasks, the task's creator reviews it."),
+        "view": "view", "create": "edit", "edit": "view", "approve": "view", "cancel": "view",
+    }, "The Tasks board of a Prototype / Research project: see tasks, create tasks / sub-tasks, edit / reopen, decide approval requests and cancel. Create = give tasks on projects inside the role's Edit scope (project leads and the R&D head always may); the task's creator reviews it."),
     _feature("team", "Project lead & team", "picker", {"view": "view"},
              "Only carries the role's 'Assign to' rule for the Project Lead(s) and Team Members pickers of a Prototype / Research project. Changing them still needs 'edit' on Prototype / Research."),
-)
-
-register_features(
-    "rnd", "experiments",
-    _feature("conducted_by", "Conducted by", "picker", {"view": "view"},
-             "Only carries the role's 'Assign to' rule for the 'Conducted by' picker of an experiment / test. Setting it still needs 'create' / 'edit' on Experiments & Tests."),
-)
-
-register_features(
-    "rnd", "prototypes",
-    _feature("release_production", "Release to Production", "action", {"view": "view", "approve": "approve"},
-             "The Release to Production panel of a prototype: see its release status; approve = freeze the BOM and release it to Production."),
-    _feature("costs", "BOM costs", "sensitive", {"view": "view"},
-             "Prototype BOM unit / line costs and the BOM total (also on the project page). People with 'edit' on Prototypes always see them — they enter the costs."),
+    # Moved here from the removed Prototypes tab (2026-11-17); the migration carries old rnd:prototypes.costs grants over.
+    _feature("costs", "Budget & costs", "sensitive", {"view": "view"},
+             "The project's budget card: budget, committed (open POs), actual spend and available. People with 'edit' on Prototype / Research always see it."),
 )
 
 # "Assign to" rules per role (core/assignee_rules.py).
@@ -87,8 +77,6 @@ register_pickers("rnd", "projects",
                  ("tasks", "Assign tasks to", "Who this role may give project tasks / sub-tasks to, or reassign them to."))
 register_pickers("rnd", "projects",
                  ("team", "Pick project lead & team","Who this role may make a project lead or team member when creating or editing a Prototype / Research project."))
-register_pickers("rnd", "experiments",
-                 ("conducted_by", "Assign experiment to", "Who this role may set as 'Conducted by' on an experiment / test (new or edited)."))
 
 # R&D › R&D Tasks board. The tab is declared in core/permission_registry.py; the feature is registered
 # only once it is (a feature on an undeclared tab would stop the app from importing).
@@ -108,7 +96,7 @@ if "tasks" in MODULES["rnd"]["actions"]:
 # the projects list, and on the R&D Tasks › Create Task form. Coded values come from the
 # model / core constants (never retyped); a value a role does not allow is also refused by
 # the server (routes/projects.py, routes/tasks.py). The calculator tool pages are not part
-# of this (owner rule: untouchable). BOM / budget money stays behind the "BOM costs" switch.
+# of this (owner rule: untouchable). Budget money stays behind the "Budget & costs" switch.
 from app.core.priority import PRIORITY_LABELS  # noqa: E402
 from app.core.visibility import register_visibility  # noqa: E402
 from app.modules.rnd.models.project import RND_IMPROVEMENT_REASON_LABELS, RND_ORIGIN_LABELS  # noqa: E402
@@ -144,7 +132,7 @@ register_visibility(
         ("detail_members", "Members & remarks", "Team members and remarks.", False, "detail"),
         ("detail_attachments", "Attachments", "The project's files on the Overview.", False, "detail"),
         ("detail_budget", "Budget card",
-         "Budget, committed, actual and available. Figures still follow the BOM costs switch; this only hides the card on screen.", False, "detail"),
+         "Budget, committed, actual and available. Figures still follow the Budget & costs switch; this only hides the card on screen.", False, "detail"),
     ),
     options=(
         ("origin", "Project Origin", dict(RND_ORIGIN_LABELS),

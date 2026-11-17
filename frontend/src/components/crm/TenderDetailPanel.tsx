@@ -5,12 +5,13 @@ import { useEffect, useRef, useState, Fragment, ReactNode } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
+import { activityChangeable, tenderChangeable } from '@/components/crm/changeRights'
 import { useVisibility } from '@/lib/visibility'
 import { VisSection } from '@/lib/visibilityComponents'
 import { sampleContact, sampleOrganizations, sampleTenders } from '@/lib/crmPreviewSamples'
 import { crmApi } from '@/lib/api'
 import { recordVisit } from '@/lib/crmShortcuts'
-import { Tender, Organization, OrgContact, CrmActivity, CrmDocument, CrmStageLogEntry, RndRequestAssignment } from '@/types'
+import { Tender, Organization, OrgContact, QuotationItem, CrmActivity, CrmDocument, CrmStageLogEntry, RndRequestAssignment } from '@/types'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import ReasonSheet from '@/components/shared/ReasonSheet'
 import CrmDocumentFolder, { DocumentSearch } from '@/components/crm/CrmDocumentFolder'
@@ -22,6 +23,7 @@ import MomExportDialog from '@/components/crm/MomExportDialog'
 import TechnicalOfferPickerDialog from '@/components/crm/TechnicalOfferPickerDialog'
 import RndIntakeCard from '@/components/crm/RndIntakeCard'
 import BdTechnicalOffers from '@/components/crm/BdTechnicalOffers'
+import { QuotationsTab, seesQuotationPrices } from '@/components/crm/InquiryDetailPanel'
 import type { CrmRndRequirement } from '@/types/rndIntake'
 import { TND_STAGES, TENDER_STATUSES, tenderStatusColor, FOLLOW_UP_STATUSES } from '@/components/crm/constants'
 import { inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, RevisionSelector, SpecDetailRow, SpecRevision, StageProgress, smallDangerBtnStyle, smallSecondaryBtnStyle, AnchoredMenu } from '@/components/crm/ui'
@@ -33,12 +35,15 @@ import { priorityLabel } from '@/lib/priority'
 import { segmentBtnStyle, RowCount, Pill, pillStyle, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 
 // ?tab=technical-offers opens the Technical Offers tab (an older ?tab=discussion link lands on Info — there is no Discussion any more).
-const tabFromUrl = (): 'Technical Offers' | 'Info' =>
-  typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tab') === 'technical-offers' ? 'Technical Offers' : 'Info'
+// ?tab=quotations (quotation approval link) opens the Quotations tab.
+const tabFromUrl = (): 'Technical Offers' | 'Quotations' | 'Info' => {
+  const t = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('tab') : null
+  return t === 'quotations' ? 'Quotations' : t === 'technical-offers' ? 'Technical Offers' : 'Info'
+}
 
-const TABS = ['Info', 'Documents', 'Technical Offers', 'Dates', 'Follow Ups', 'Timeline'] as const
+const TABS = ['Info', 'Documents', 'Technical Offers', 'Quotations', 'Dates', 'Follow Ups', 'Timeline'] as const
 // Role-wise visibility section of each sub-tab (core/features/crm.py); 'Info' always shows.
-const TAB_SECTION: Partial<Record<typeof TABS[number], string>> = { 'Dates': 'tnd_detail_dates', 'Technical Offers': 'tnd_detail_technical_offers', 'Documents': 'tnd_detail_documents', 'Follow Ups': 'tnd_detail_followups', 'Timeline': 'tnd_detail_timeline' }
+const TAB_SECTION: Partial<Record<typeof TABS[number], string>> = { 'Dates': 'tnd_detail_dates', 'Quotations': 'tnd_detail_quotations', 'Technical Offers': 'tnd_detail_technical_offers', 'Documents': 'tnd_detail_documents', 'Follow Ups': 'tnd_detail_followups', 'Timeline': 'tnd_detail_timeline' }
 
 export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: number; onDeleted?: () => void }) {
   const { user } = useAuth()
@@ -103,14 +108,17 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenderId])
 
-  // Creator-or-admin (backend rule) AND Inquiries & Tenders › Edit in the Permission Matrix.
-  const canModify = !!tender && !!user && (user.role === 'admin' || tender.created_by_id === user.id) && can('crm', 'inquiries_tenders', 'edit') && !vis.preview
+  // Inquiries & Tenders › Edit tick AND the tender inside the role's CRM Edit scope (Role › Data access › Edit;
+  // default = its creator and BD owner) — the backend's ensure_can_change.
+  const changeable = tenderChangeable(user, tender) && !vis.preview
+  const canModify = changeable && can('crm', 'inquiries_tenders', 'edit')
   const canDeleteRecord = !!tender && canDelete('crm', 'inquiries_tenders', tender.created_by_id ?? null) && !vis.preview
   // Tenders share the Inquiries & Tenders tab, so they share its features (core/features/crm.py).
   // A sub-tab needs its feature grant; role-wise visibility then hides it on screen (the preview draws every tab).
   const seeTab = (t: typeof TABS[number]) => (vis.preview || !TAB_SECTION[t] || vis.showSection(TAB_SECTION[t]!)) && (t === 'Info'
     || (t === 'Dates' && canFeature('crm', 'inquiries_tenders', 'tender_dates', 'view'))
     || (t === 'Technical Offers' && canFeature('crm', 'inquiries_tenders', 'technical_offer', 'view'))
+    || (t === 'Quotations' && canFeature('crm', 'inquiries_tenders', 'quotations', 'view'))
     || (t === 'Documents' && canFeature('crm', 'inquiries_tenders', 'documents', 'view'))
     || (t === 'Follow Ups' && canFeature('crm', 'inquiries_tenders', 'followups', 'view'))
     || (t === 'Timeline' && canFeature('crm', 'inquiries_tenders', 'timeline', 'view')))
@@ -202,14 +210,14 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
       <MessageDialog open={!!error} variant="error" title="Tender Action Failed" message={error} onClose={() => setError('')} />
 
       {editing && (
-        <StageProgress stage={tender.current_stage} stages={TND_STAGES} canModify={canModify && canFeature('crm', 'inquiries_tenders', 'stage', 'edit')} allowBackward onRequestChange={setPendingStage} tourId="tender-stage-progress" />
+        <StageProgress stage={tender.current_stage} stages={TND_STAGES} canModify={changeable && canFeature('crm', 'inquiries_tenders', 'stage', 'edit')} allowBackward onRequestChange={setPendingStage} tourId="tender-stage-progress" />
       )}
       {!editing && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
           <StageProgress
             stage={tender.current_stage}
             stages={TND_STAGES}
-            canModify={canModify && canFeature('crm', 'inquiries_tenders', 'stage', 'edit')}
+            canModify={changeable && canFeature('crm', 'inquiries_tenders', 'stage', 'edit')}
             allowBackward
             onRequestChange={setPendingStage}
             tourId="tender-stage-progress"
@@ -290,7 +298,8 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
       {tab === 'Dates' && seeTab('Dates') && <DatesTab tender={tender} />}
       {tab !== 'Info' && tab !== 'Dates' && seeTab(tab) && vis.preview && <p style={{ fontSize: 13, color: '#78716c', padding: '14px 16px', borderRadius: 12, background: '#fff', border: '1px dashed rgba(0,0,0,0.12)', margin: 0 }}>Shown with the real records on the page; the preview only decides whether this tab is offered.</p>}
       {tab === 'Technical Offers' && seeTab('Technical Offers') && !vis.preview && <BdTechnicalOffers kind="tender" recordId={tender.id} />}
-      {tab === 'Documents' && seeTab('Documents') && !vis.preview && <DocumentsTab tender={tender} canModify={canModify && canFeature('crm', 'inquiries_tenders', 'documents', 'create')} isAdmin={isAdmin} />}
+      {tab === 'Quotations' && seeTab('Quotations') && !vis.preview && <QuotationsTab parent={{ kind: 'tender', id: tender.id }} record={tender} org={org} contact={contact} />}
+      {tab === 'Documents' && seeTab('Documents') && !vis.preview && <DocumentsTab tender={tender} canModify={changeable && canFeature('crm', 'inquiries_tenders', 'documents', 'create')} isAdmin={isAdmin} />}
       {tab === 'Follow Ups' && seeTab('Follow Ups') && !vis.preview && <ActivitiesTab tender={tender} org={org} />}
       {tab === 'Timeline' && seeTab('Timeline') && !vis.preview && <TimelineTab tenderId={tender.id} />}
 
@@ -439,11 +448,36 @@ function DocumentsTab({ tender, canModify }: { tender: Tender; canModify: boolea
   const [error, setError] = useState<string | string[]>('')
   const [loadError, setLoadError] = useState<string | string[]>('')
   const [docSearch, setDocSearch] = useState('')
+  const [quotations, setQuotations] = useState<QuotationItem[]>([])
 
   const load = () => crmApi.listDocuments({ related_module: 'tender', related_id: tender.id })
     .then(setDocuments)
     .catch((err) => setLoadError(extractErrorMessages(err, 'Could not load the documents of this tender. Reload the page; if it persists, check that you still have CRM access.')))
   useEffect(() => { load() }, [tender.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  // The tender's quotations are generated documents: listed under Internal Documents and opened as their
+  // current PDF of record (Word edits included). Their PDF is the priced offer: needs Quotations › Print and prices.
+  const { canFeature: canFeatureDocs } = useCan()
+  const seeQuotationDocs = canFeatureDocs('crm', 'inquiries_tenders', 'quotations', 'view')
+    && canFeatureDocs('crm', 'inquiries_tenders', 'quotations', 'print') && seesQuotationPrices(canFeatureDocs)
+  useEffect(() => {
+    if (!seeQuotationDocs) return
+    crmApi.listQuotations({ kind: 'tender', id: tender.id })
+      .then(setQuotations)
+      .catch((err) => setLoadError(extractErrorMessages(err, 'Could not load the quotations of this tender for Internal Documents. Reload the page.')))
+  }, [tender.id, seeQuotationDocs])
+
+  const openQuotationPdf = async (q: QuotationItem) => {
+    const tab = window.open('', '_blank')
+    try {
+      const blob = await crmApi.downloadQuotationPdf({ kind: 'tender', id: tender.id }, q.id)
+      const url = URL.createObjectURL(blob)
+      if (tab) tab.location.href = url
+      else window.location.assign(url)
+    } catch (err) {
+      tab?.close()
+      setError(extractErrorMessages(err, `Could not open quotation ${q.quot_number || q.id}. You need Inquiries & Tenders › Quotations › Print (and Prices & margins) to open quotation PDFs.`))
+    }
+  }
 
   const clientDocs = documents.filter((d) => d.folder_type === 'client')
   // Sent TOR PDFs are filed as internal; R&D's reply files are listed with them.
@@ -457,7 +491,15 @@ function DocumentsTab({ tender, canModify }: { tender: Tender; canModify: boolea
       <MessageDialog open={!!loadError} variant="error" title="Cannot Load Documents" message={loadError} onClose={() => setLoadError('')} />
       <DocumentSearch value={docSearch} onChange={setDocSearch} />
       <CrmDocumentFolder tourId="tender-docs-client" title="Client Documents" folderType="client" docs={clientDocs} related={related} canModify={canModify} onUploaded={load} setError={setError} query={docSearch} />
-      <CrmDocumentFolder tourId="tender-docs-internal" title="Internal Documents" folderType="internal" docs={internalDocs} related={related} canModify={canModify} onUploaded={load} setError={setError} query={docSearch} />
+      <CrmDocumentFolder tourId="tender-docs-internal" title="Internal Documents" folderType="internal" docs={internalDocs} related={related} canModify={canModify} onUploaded={load} setError={setError} query={docSearch}
+        generated={(seeQuotationDocs ? quotations : []).map((q) => ({
+          key: `quotation-${q.id}`,
+          name: `${q.quot_number || `Quotation-${q.id}`}.pdf`,
+          category: `Quotation${q.revision_number ? ` · rev ${q.revision_number}` : ''} · generated`,
+          createdAt: q.created_at,
+          open: () => openQuotationPdf(q),
+        }))}
+      />
     </div>
   )
 }
@@ -510,7 +552,8 @@ function ActivitiesTab({ tender, org }: { tender: Tender; org: Organization | nu
     setShowForm(false)
   }
 
-  const canEditActivity = (a: CrmActivity) => canFeature('crm', 'inquiries_tenders', 'followups', 'edit') && !!user && (user.role === 'admin' || a.created_by_id === user.id)
+  // Follow-ups › Edit tick + the follow-up inside the CRM Edit scope (default = its creator and assignee).
+  const canEditActivity = (a: CrmActivity) => canFeature('crm', 'inquiries_tenders', 'followups', 'edit') && activityChangeable(user, a)
   const changeStatus = (a: CrmActivity, status: string) => crmApi.updateActivity(a.id, { status }).then(load)
 
   const handleDelete = async () => {
@@ -644,7 +687,7 @@ function ChangeStatusButton({ currentStatus, statuses, onSelect, tourId }: { cur
 
 type TenderTimelineEntry = {
   key: string
-  kind: 'created' | 'updated' | 'deleted' | 'stage' | 'followup' | 'info' | 'email' | 'email_failed'
+  kind: 'created' | 'updated' | 'deleted' | 'stage' | 'followup' | 'info' | 'email' | 'email_failed' | 'rnd_query'
   title: string
   detail?: string
   by?: string
@@ -660,9 +703,11 @@ const TENDER_TIMELINE_KIND_STYLE: Record<TenderTimelineEntry['kind'], { bg: stri
   info: { bg: 'rgba(99,102,241,0.12)', text: '#4338ca', label: 'Info Update' },
   email: { bg: 'rgba(13,148,136,0.12)', text: '#0f766e', label: 'Email Sent' },
   email_failed: { bg: 'rgba(220,38,38,0.1)', text: '#b91c1c', label: 'Email Failed' },
+  rnd_query: { bg: 'rgba(124,58,237,0.12)', text: '#6d28d9', label: 'R&D Query' },
 }
 
 function auditActionKind(action: string): TenderTimelineEntry['kind'] {
+  if (action === 'rnd_asked_details') return 'rnd_query'
   if (action === 'created') return 'created'
   if (action === 'deleted') return 'deleted'
   if (action.endsWith('_sent')) return 'email'
@@ -712,6 +757,13 @@ function cleanAuditTitle(summary: string | null, actor: string | null | undefine
   return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
+// "Name (R&D) asked for more details on R1: question" → "Asked for more details on R1: question" (name is in the meta line).
+function rndQueryTitle(summary: string | null, actor: string | null | undefined): string {
+  let s = summary || 'R&D asked for more details'
+  if (actor && s.startsWith(actor)) s = s.slice(actor.length).replace(/^\s*\(R&D\)\s*/, '')
+  return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
 function TimelineTab({ tenderId }: { tenderId: number }) {
   const [entries, setEntries] = useState<TenderTimelineEntry[] | null>(null)
   const seeFollowupsTl = useCan().canFeature('crm', 'inquiries_tenders', 'followups', 'view')
@@ -732,7 +784,8 @@ function TimelineTab({ tenderId }: { tenderId: number }) {
           .map((a: { id: number; action: string; summary: string | null; performed_by: string; performed_at: string | null }) => ({
             key: `audit-${a.id}`,
             kind: auditActionKind(a.action),
-            title: cleanAuditTitle(a.summary, a.performed_by) || `Tender ${a.action}`,
+            // R&D's question is shown as written (no field-name relabelling of its text).
+            title: a.action === 'rnd_asked_details' ? rndQueryTitle(a.summary, a.performed_by) : cleanAuditTitle(a.summary, a.performed_by) || `Tender ${a.action}`,
             by: a.performed_by,
             date: a.performed_at,
           })),

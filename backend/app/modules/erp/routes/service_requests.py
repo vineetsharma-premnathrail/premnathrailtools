@@ -2,7 +2,7 @@ from app.core.like import like_escape
 from datetime import date, datetime, timezone, timedelta
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Query, Request, UploadFile, File
 from sqlalchemy import func
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, object_session, selectinload
 
 from app.core.config import settings
 from app.core.priority import parse_priority
@@ -10,7 +10,7 @@ from app.core.permissions import (
     ensure_can_delete, ensure_feature_action, ensure_tab_action, has_erp_permission, require_app_access,
     require_feature_action, require_tab_access,
 )
-from app.core.permission_registry import can_access_module, is_admin_user
+from app.core.permission_registry import can_access_module
 from app.core import assignee_rules, visibility
 from app.db.session import SessionLocal, get_db
 from app.modules.main.models.user import User
@@ -57,7 +57,7 @@ from app.utils.notifications import broadcast_notification, notify_user
 from app.modules.erp.settings import get_setting as get_erp_setting
 from app.modules.erp.notify import approver_ids, broadcast_except, fire_event, role_event
 from app.modules.erp import access as erp_access
-from app.core.data_scope import apply_scope, ensure_in_scope
+from app.core.data_scope import apply_scope, can_change, ensure_can_change, ensure_in_scope
 from app.modules.organization.services import approval_engine as engine
 from app.auth.microsoft import get_app_graph_token
 from app.utils.value_diff import changed as value_changed
@@ -273,18 +273,19 @@ _SR_POST_CLOSE_EDITABLE = frozenset({
 
 
 def _can_edit(sr: ServiceRequest, user: User) -> bool:
-    """Admins always pass. The SR's assigned engineer passes too (they do the
-    work, so they must be able to record RCA, materials and files — each
-    route still checks its own feature permission). Everyone else must both
-    own the SR (be its creator) and hold Service Requests › Edit in the
-    Permission Matrix. Removing a child line (material, photo, attachment) is
-    part of editing the SR, so it is decided here too — deleting the SR itself
-    goes through ensure_can_delete."""
-    if is_admin_user(user):
-        return True
-    if sr.assigned_service_person_id and sr.assigned_service_person_id == user.id:
-        return True
-    return sr.created_by_id == user.id and has_erp_permission(user, "sr_edit")
+    """Whether the SR is inside the user's Service Edit scope (Organization ›
+    Role & Permissions › Data access › Edit; default = the SR's creator and its
+    assigned engineer, admins everything) — owner decision 2026-11-03: "change
+    only your own" is set per role, never coded. The tab / feature tick (Service
+    Requests › Edit, Materials › Create …) is checked by each route. Removing a
+    child line (material, photo, attachment) is part of editing the SR, so it is
+    decided here too — deleting the SR itself goes through ensure_can_delete."""
+    return can_change(object_session(sr), user, sr)
+
+
+def _ensure_can_edit(sr: ServiceRequest, user: User, action: str) -> None:
+    """403 with the Edit-scope reason when the SR is outside the user's Edit scope."""
+    ensure_can_change(object_session(sr), user, sr, action=action)
 
 
 # Role "Assign to" rule for the engineer — same rule as the visit's engineer
@@ -602,6 +603,9 @@ async def list_deleted_service_requests(
             "deleted_at": deleted_at.isoformat() if deleted_at else None,
             "days_remaining": days_remaining,
             "created_by_id": sr.created_by_id,
+            "assigned_service_person_id": sr.assigned_service_person_id,
+            # Restore = Recycle Bin › Edit (checked on the page) + this SR inside the Edit scope.
+            "can_restore": _can_edit(sr, _user),
         })
     return items
 
@@ -680,8 +684,9 @@ async def update_service_request(
     user: User = Depends(require_app_access("erp")),
 ):
     sr = _get_live_sr(db, sr_id, user=user)
-    if not _can_edit(sr, user):
-        raise HTTPException(status_code=403, detail="Only the creator (with edit permission) can edit this service request.")
+    # The Service Requests › Edit tick + the Edit scope decide (owner, 2026-11-03 / 11-14).
+    ensure_tab_action(user, "erp", "service_requests", "edit")
+    _ensure_can_edit(sr, user, "edit")
     _ensure_unlocked(sr)
 
     changes = data.model_dump(exclude_unset=True)
@@ -1088,12 +1093,8 @@ async def restore_service_request(
         raise HTTPException(status_code=404, detail="That service request is not in the Recycle Bin — it may already be restored or permanently removed. Refresh the Recycle Bin.")
     ensure_tab_action(user, "erp", "recycle_bin", "edit")  # restoring = Recycle Bin › Edit
     ensure_in_scope(db, user, sr)
-    if not is_admin_user(user) and sr.created_by_id != user.id:
-        raise HTTPException(
-            status_code=403,
-            detail=f"You can only restore a service request you created yourself — {sr.request_number} was created by someone else. "
-                   "Ask its creator or an admin to restore it.",
-        )
+    # Recycle Bin › Edit + the Service Edit scope decide (owner, 2026-11-03 / 11-14).
+    ensure_can_change(db, user, sr, action="restore")
     machine = db.query(Project).filter(Project.id == sr.project_id).first()
     if machine and machine.is_deleted:
         raise HTTPException(
@@ -1154,8 +1155,7 @@ async def upload_service_request_attachments(
 ):
     sr = _get_live_sr(db, sr_id, with_project=True, user=user)
     ensure_feature_action(user, "erp", "service_requests", "attachments", "create")
-    if not _can_edit(sr, user):
-        raise HTTPException(status_code=403, detail="Only the creator (with edit permission) can add attachments to this service request.")
+    _ensure_can_edit(sr, user, "add attachments to")
     _ensure_unlocked(sr)
     if not settings.SHAREPOINT_SITE_ID:
         raise HTTPException(status_code=503, detail=_SHAREPOINT_MISSING)
@@ -1293,8 +1293,7 @@ async def delete_service_request_attachment(
 ):
     sr = _get_live_sr(db, sr_id, user=user)
     ensure_feature_action(user, "erp", "service_requests", "attachments", "delete")
-    if not _can_edit(sr, user):  # removing an attachment = editing the SR
-        raise HTTPException(status_code=403, detail="Only the SR's creator (with Service Requests › Edit) or an admin can remove attachments from this service request.")
+    _ensure_can_edit(sr, user, "remove attachments from")
     _ensure_unlocked(sr)
 
     attachment = db.query(ServiceRequestAttachment).filter(
@@ -1368,8 +1367,7 @@ async def add_material(
 ):
     sr = _get_live_sr(db, sr_id, user=user)
     ensure_feature_action(user, "erp", "service_requests", "materials", "create")
-    if not _can_edit(sr, user):
-        raise HTTPException(status_code=403, detail="Only the creator (with edit permission) or an admin can add materials to this service request.")
+    _ensure_can_edit(sr, user, "add materials to")
     _ensure_unlocked(sr)
     _ensure_open_for_materials(sr)
     sr_sensitive.ensure_may_change(user, payload.model_dump(), None, sr_sensitive.MATERIAL_MONEY, "spare price / budget")
@@ -1421,8 +1419,7 @@ async def update_material(
 ):
     sr = _get_live_sr(db, sr_id, user=user)
     ensure_feature_action(user, "erp", "service_requests", "materials", "edit")
-    if not _can_edit(sr, user):
-        raise HTTPException(status_code=403, detail="Only the creator (with edit permission) or an admin can update materials on this service request.")
+    _ensure_can_edit(sr, user, "update materials on")
     _ensure_unlocked(sr)
     _ensure_open_for_materials(sr)
     mat = _get_live_material(db, sr_id, mat_id)
@@ -1485,8 +1482,7 @@ async def delete_material(
 ):
     sr = _get_live_sr(db, sr_id, user=user)
     ensure_feature_action(user, "erp", "service_requests", "materials", "delete")
-    if not _can_edit(sr, user):  # removing a material line = editing the SR
-        raise HTTPException(status_code=403, detail="Only the SR's creator (with Service Requests › Edit) or an admin can remove materials from this service request.")
+    _ensure_can_edit(sr, user, "remove materials from")
     _ensure_unlocked(sr)
     _ensure_open_for_materials(sr)
     mat = _get_live_material(db, sr_id, mat_id)
@@ -1520,8 +1516,7 @@ async def upload_material_attachments(
 ):
     sr = _get_live_sr(db, sr_id, with_project=True, user=user)
     ensure_feature_action(user, "erp", "service_requests", "materials", "create")
-    if not _can_edit(sr, user):
-        raise HTTPException(status_code=403, detail="Only the creator (with edit permission) or an admin can add photos to this material.")
+    _ensure_can_edit(sr, user, "add material photos to")
     _ensure_unlocked(sr)
     mat = _get_live_material(db, sr_id, mat_id)
     if not settings.SHAREPOINT_SITE_ID:
@@ -1622,8 +1617,7 @@ async def delete_material_attachment(
 ):
     sr = _get_live_sr(db, sr_id, user=user)
     ensure_feature_action(user, "erp", "service_requests", "materials", "delete")
-    if not _can_edit(sr, user):  # removing a photo = editing the SR
-        raise HTTPException(status_code=403, detail="Only the SR's creator (with Service Requests › Edit) or an admin can remove photos from this material.")
+    _ensure_can_edit(sr, user, "remove material photos from")
     _ensure_unlocked(sr)
     attachment = _get_material_photo(db, sr_id, mat_id, attachment_id)
     mat_name = db.query(ServiceMaterial.material_name).filter(ServiceMaterial.id == mat_id).scalar() or f"#{mat_id}"
@@ -1735,8 +1729,7 @@ async def raise_purchase_requisition(
 
     sr = _get_live_sr(db, sr_id, user=user)
     ensure_feature_action(user, "erp", "service_requests", "purchase_requisition", "create")
-    if not _can_edit(sr, user):
-        raise HTTPException(status_code=403, detail="Only the creator (with edit permission) or an admin can raise a purchase requisition for this service request.")
+    _ensure_can_edit(sr, user, "raise a purchase requisition for")
     _ensure_unlocked(sr)
     _ensure_open_for_purchase(sr)
 
@@ -1868,8 +1861,7 @@ async def material_request(
     if not payload.items:
         raise HTTPException(status_code=400, detail="Add at least one item — pick it from the Item Master.")
     sr = _get_live_sr(db, sr_id, user=user)
-    if not _can_edit(sr, user):
-        raise HTTPException(status_code=403, detail="Only the creator (with edit permission) or an admin can request material for this service request.")
+    _ensure_can_edit(sr, user, "request material for")
     _ensure_unlocked(sr)
     _ensure_open_for_materials(sr)
 
@@ -1954,8 +1946,7 @@ async def receive_material(
     (see p2p/routes/p2p_requests.py), not by ERP."""
     sr = _get_live_sr(db, sr_id, user=user)
     ensure_feature_action(user, "erp", "service_requests", "materials", "edit")
-    if not _can_edit(sr, user):
-        raise HTTPException(status_code=403, detail="Only the creator (with edit permission) or an admin can mark materials received on this service request.")
+    _ensure_can_edit(sr, user, "mark materials received on")
     _ensure_unlocked(sr)
     _ensure_open_for_materials(sr)
     mat = _get_live_material(db, sr_id, mat_id)
@@ -2117,14 +2108,15 @@ async def list_issue_locations(
 # ── Service billing (AR invoice through Finance) ───────────────────────────
 
 def _ensure_can_bill(sr: ServiceRequest, user: User) -> None:
-    if _can_edit(sr, user):
+    if has_erp_permission(user, "sr_edit") and _can_edit(sr, user):
         return
     try:
         ensure_tab_action(user, "accounts", "sales_invoices", "create")
     except HTTPException:
         raise HTTPException(
             status_code=403,
-            detail="Raising the invoice of an SR needs edit rights on the SR (its creator with Service Requests › Edit) or "
+            detail="Raising the invoice of an SR needs Service Requests › Edit with this SR inside your Edit scope "
+                   "(Role › Data access › Edit — by default SRs you raised or are the assigned engineer of), or "
                    "Finance › Sales Invoices › Create. Ask the SR owner or Finance to raise it.",
         )
 
@@ -2188,12 +2180,7 @@ async def resend_client_email(
     user: User = Depends(require_app_access("erp")),
 ):
     sr = _get_live_sr(db, sr_id, user=user)
-    if not _can_edit(sr, user):
-        raise HTTPException(
-            status_code=403,
-            detail="Only the creator of this service request (with edit permission) or an admin can re-send the client email, "
-                   "because it goes out in the sender's name.",
-        )
+    _ensure_can_edit(sr, user, "re-send the client email of")
     if not sr.reported_by_email:
         raise HTTPException(status_code=400, detail="No client email on this service request — add the Reported-by email on the Edit page first.")
 
@@ -2268,8 +2255,7 @@ async def upload_sr_pr_attachments(
     P2P attachments route would refuse them."""
     sr = _get_live_sr(db, sr_id, user=user)
     ensure_feature_action(user, "erp", "service_requests", "purchase_requisition", "create")
-    if not _can_edit(sr, user):
-        raise HTTPException(status_code=403, detail="Only the creator (with edit permission) or an admin can add documents to this service request's purchase requisition.")
+    _ensure_can_edit(sr, user, "add purchase requisition documents to")
     _ensure_unlocked(sr)
     _ensure_open_for_purchase(sr)
     linked = db.query(ServiceMaterial.id).filter(ServiceMaterial.service_request_id == sr_id, ServiceMaterial.pr_id == pr_id).first()

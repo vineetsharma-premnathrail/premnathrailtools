@@ -253,7 +253,7 @@ export default function AdvancesWriteOffsPage() {
                     </SField>
                   </SheetSection>
                   <p style={sheetHint}>
-                    Up to the small-difference tolerance (Finance Settings) any Payments editor can post it; above it a Finance Manager must. A rate
+                    Up to the small-difference tolerance (Finance Settings) any Payments editor can post it; above it, someone with Approve on Payments &amp; Receipts must. A rate
                     difference or return needs a credit / debit note instead, so GST is reversed.
                   </p>
                 </>}

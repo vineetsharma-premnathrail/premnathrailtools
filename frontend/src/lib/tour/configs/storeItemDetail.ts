@@ -10,6 +10,12 @@ const config: TourConfig = {
       purpose: 'Returns to the Item Master list.',
     },
     {
+      target: 'item-needs-review',
+      title: 'Added at inward — needs review',
+      purpose: 'This item was added from a goods receipt with only its type, category, name and unit. Complete the rest with Edit (stock levels, quality check on receipt, HSN / GST, ledgers).',
+      after: 'Mark reviewed clears the note and the item leaves the Needs review count; the change is on the audit trail.',
+    },
+    {
       target: 'item-detail-edit-btn',
       title: 'Edit',
       purpose: 'Switches every field on this page into an editable form — Item Code stays fixed, everything else can be changed.',

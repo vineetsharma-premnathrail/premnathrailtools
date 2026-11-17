@@ -10,7 +10,7 @@ from app.modules.accounts.schemas.inventory_valuation import (
     InventoryValuationCreate, InventoryValuationLineUpdate, InventoryValuationCancelPayload, InventoryValuationResponse,
 )
 from app.modules.accounts.services import inventory, fiscal
-from app.modules.accounts.routes._common import write_audit, who, service_errors, require_finance_manager
+from app.modules.accounts.routes._common import write_audit, who, service_errors
 
 router = APIRouter(prefix="/accounts/inventory", tags=["Accounts"])
 
@@ -65,7 +65,6 @@ async def update_valuation_line_route(line_id: int, payload: InventoryValuationL
 async def post_valuation_route(valuation_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db),
                                user: User = Depends(require_feature_action("accounts", "inventory", "closing_stock", "approve"))):
     from app.modules.accounts import role_events_b
-    require_finance_manager(user, "post closing stock")
     with service_errors(db):
         val = inventory.post_valuation(db, valuation_id=valuation_id, posted_by_id=user.id)
     write_audit(db, "inventory_valuation", val.id, "posted", user, f"{who(user)} posted closing stock for {val.accounting_period} ({val.total_value:,.2f}).")
@@ -81,7 +80,6 @@ async def post_valuation_route(valuation_id: int, background_tasks: BackgroundTa
 @router.post("/valuations/{valuation_id}/cancel", response_model=InventoryValuationResponse)
 async def cancel_valuation_route(valuation_id: int, payload: InventoryValuationCancelPayload, db: Session = Depends(get_db),
                                  user: User = Depends(require_feature_action("accounts", "inventory", "closing_stock", "cancel"))):
-    require_finance_manager(user, "cancel a closing-stock valuation")
     with service_errors(db):
         val = inventory.cancel_valuation(db, valuation_id=valuation_id, user_id=user.id, reason=payload.reason)
     write_audit(db, "inventory_valuation", val.id, "cancelled", user, f"{who(user)} cancelled closing stock for {val.accounting_period}: {payload.reason}")

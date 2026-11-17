@@ -3,7 +3,8 @@
   C-24  a Material Issue against a reservation consumes that reservation
   C-23  posted issues / adjustments can be reversed
   C-09  manual Receipt / Issue / Damage entries are removed for everyone (2026-10-12);
-        a stock adjustment's approver must be a Store Manager
+        a stock adjustment's approver must hold Store › Adjustments › Approve (2026-11-14:
+        the Role matrix tick decides, not the Store Manager flag)
 
 A control the code does NOT enforce yet keeps its test, marked
 xfail(strict=True) with the reason "OPEN: <id> ...", so the test starts
@@ -192,6 +193,11 @@ def test_c09_creator_cannot_approve_own_adjustment(client, env):
     assert r.status_code == 400 and "your own" in r.json()["detail"]
 
 
-def test_c09_plain_store_user_cannot_be_adjustment_approver(client, env):
-    r = _adjust(client, env, env["clerk"])
+def test_c09_user_without_approve_tick_cannot_be_adjustment_approver(client, db, env):
+    # The Role matrix tick decides (2026-11-14): a user without Store › Adjustments › Approve is refused.
+    no_tick = User(email="open.notick@premnathrail.com", name="notick", role="user", is_active=True,
+                   granular_permissions=["store:adjustments:view"])
+    db.add(no_tick)
+    db.commit()
+    r = _adjust(client, env, no_tick)
     assert r.status_code == 400, r.text

@@ -127,7 +127,7 @@ const config: TourConfig = {
     {
       target: 'pr-detail-send-procurement-btn',
       title: 'Send to Procurement',
-      purpose: 'Purchase team / admin only, shown when stock does not fully cover the line. Marks this line to be bought from a vendor instead of issued from stock.',
+      purpose: 'Shown to roles with Edit on Purchase Requisitions and its Stock check & issue from stock feature, when stock does not fully cover the line. Marks this line to be bought from a vendor instead of issued from stock.',
       after: 'After you confirm, the line goes to the RFQ/PO process.',
     },
     {

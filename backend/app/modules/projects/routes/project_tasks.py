@@ -666,7 +666,7 @@ async def list_tasks(project_id: int, db: Session = Depends(get_db),
 async def create_task(project_id: int, payload: DeptTaskCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db),
                       user: User = Depends(require_feature_action("projects", "overview", "milestones", "create"))):
     project = _project_or_404(db, project_id, user)
-    wf.require_manage(project, user, "add milestones")
+    wf.require_manage(project, user, "add milestones", grant=("overview.milestones", "create"))
     _require_open(project)
     title = payload.title.strip()
     if not title:

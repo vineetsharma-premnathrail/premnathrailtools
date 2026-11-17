@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
 import { organizationApi, p2pApi, storeApi, PrStockAvailability } from '@/lib/api'
 import { P2PPurposeMeta, P2PRequest, P2PRequestLineItemInput, StoreItem } from '@/types'
 import SearchableSelect from '@/components/erp/SearchableSelect'
@@ -85,6 +86,7 @@ const th: React.CSSProperties = { textAlign: 'left', padding: '8px 8px', fontSiz
 
 export default function NewP2PRequestPage() {
   const { isAuthorized, isLoading } = useRequireApp('p2p')
+  const { can } = useCan()
   const router = useRouter()
   const searchParams = useSearchParams()
   // ?edit=<ref>: edit an existing requisition (draft, returned, or one not yet
@@ -472,6 +474,10 @@ export default function NewP2PRequestPage() {
 
   if (isLoading || !isAuthorized) return null
   if (editLinkError) return <InvalidRecordLink message={editLinkError} listHref="/dashboard/p2p" />
+  // The page follows its own tick (2026-11-14): Create on Purchase Requisitions (Edit too when editing one).
+  if (!(can('p2p', 'purchase_requisitions', 'create') || (editRef && can('p2p', 'purchase_requisitions', 'edit')))) {
+    return (<div><P2PNav /><p role="alert" style={{ fontSize: 13, color: '#b91c1c' }}>You don&apos;t have &apos;Create&apos; permission on Procurement › Purchase Requisitions, so you can&apos;t raise a requisition. Ask an admin to add it to your role in Organization › Role &amp; Permissions.</p></div>)
+  }
 
   const inApproval = !!editing && (editing.status === 'submitted' || editing.status === 'approved')
   const heading = !editing ? 'New Purchase Requisition'

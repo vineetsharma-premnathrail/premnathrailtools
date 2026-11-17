@@ -23,7 +23,7 @@ const config: TourConfig = {
     {
       target: 'iq-import-btn',
       title: 'Import',
-      purpose: 'Admins only: upload the CRM CSV to add or update customer organizations, contacts, inquiries and follow-ups in one go.',
+      purpose: 'Shown when your role has CRM › Customer Organizations › Import: upload the CRM CSV to add or update customer organizations, contacts, inquiries and follow-ups in one go.',
     },
     {
       target: 'iq-search',

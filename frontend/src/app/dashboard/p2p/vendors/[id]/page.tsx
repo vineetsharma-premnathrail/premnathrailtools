@@ -48,7 +48,8 @@ export default function VendorDetailPage() {
   const seeCatalog = vendorFeature('catalog', 'view')
   // Editors always see the rates they maintain (as the backend does).
   const seePrices = !viaVendorsTab || canEditVendor || canFeature('p2p', 'vendors', 'prices', 'view')
-  const allowed = !!user && (user.role === 'admin' || !!user.apps?.some((a) => a === 'purchase' || a === 'accounts'))
+  // The Vendors tab tick decides (2026-11-14), or Accounts (Finance shares the vendor master).
+  const allowed = !!user && (user.role === 'admin' || can('p2p', 'vendors', 'view') || !!user.apps?.includes('accounts'))
   const router = useRouter()
   const { id: linkedId, error: linkError } = useRecordId(useParams<{ id: string }>().id)
   const id = linkedId ?? 0

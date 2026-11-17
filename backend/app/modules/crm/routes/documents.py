@@ -6,7 +6,8 @@ from app.core.config import settings
 from app.db.session import get_db
 from app.core.permissions import ensure_can_delete, require_app_access
 from app.modules.crm.access import (
-    INQ, PARENT_MODELS, can_child_view, ensure_child_action, ensure_own, ensure_parent_in_scope, parent_record, tab_for,
+    INQ, PARENT_MODELS, can_child_view, ensure_can_attach, ensure_child_action, ensure_own, ensure_parent_in_scope,
+    parent_record, tab_for,
 )
 from app.modules.main.routes.auth import get_current_user
 from app.modules.main.models.user import User
@@ -128,6 +129,7 @@ async def upload_documents(
     _ensure_upload_target(db, related_module, related_id, related_sub_module)
     ensure_child_action(user, related_module, "documents", "create", "edit")
     ensure_parent_in_scope(db, user, related_module, related_id)
+    ensure_can_attach(db, user, related_module, related_id)
     if not settings.SHAREPOINT_SITE_ID:
         raise HTTPException(status_code=503, detail="SharePoint site is not configured")
 
@@ -199,6 +201,7 @@ async def start_direct_upload(
     document's folder and signs what it was opened for."""
     ensure_child_action(user, payload.related_module, "documents", "create", "edit")
     ensure_parent_in_scope(db, user, payload.related_module, payload.related_id)
+    ensure_can_attach(db, user, payload.related_module, payload.related_id)
     if not settings.SHAREPOINT_SITE_ID:
         raise HTTPException(status_code=503, detail="SharePoint site is not configured")
     file_name = validate_upload_metadata(payload.file_name, payload.file_size, payload.content_type)
@@ -231,6 +234,7 @@ async def complete_direct_upload(
     _ensure_upload_target(db, claims.get("related_module"), claims.get("related_id"), payload.related_sub_module)
     ensure_child_action(user, claims.get("related_module"), "documents", "create", "edit")
     ensure_parent_in_scope(db, user, claims.get("related_module"), claims.get("related_id"))
+    ensure_can_attach(db, user, claims.get("related_module"), claims.get("related_id"))
     if not settings.SHAREPOINT_SITE_ID:
         raise HTTPException(status_code=503, detail="SharePoint site is not configured")
     result = await verify_direct_upload(

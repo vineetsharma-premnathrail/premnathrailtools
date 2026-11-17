@@ -9,6 +9,7 @@ import { TEXT, GLASS, SHADOWS, DANGER, WARNING } from '@/lib/theme'
 import QualityNav from '@/components/quality/QualityNav'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
+import ScopeNote from '@/components/shared/ScopeNote'
 
 type KpiTone = 'bad' | 'warn' | 'neutral'
 
@@ -77,6 +78,8 @@ export default function QualityDashboardPage() {
         </p>
       )}
 
+      {/* The counts below cover only the lots / records within the user's Quality data access. */}
+      {seeDashboard && <ScopeNote module="quality" />}
       {seeDashboard && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 14 }}>
         {KPI_CARDS.map((c) => {
           const tone = cardTone(c.tone)

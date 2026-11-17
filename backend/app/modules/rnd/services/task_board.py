@@ -4,7 +4,8 @@
 There is no task "type" column — type is which table a task lives in and, for
 a project task, which parent it has: "requirement", "prototype" (a Prototype /
 Research project) or "project" (a Project Management "All Projects" project,
-rnd_project_tasks.pm_project_id — since 2026-11-03). A row is built once (`collect`) and the list,
+rnd_project_tasks.pm_project_id — since 2026-11-03; or a past machine of All Projects,
+rnd_project_tasks.machine_id — since 2026-11-17, shown under type "project" with the serial as reference). A row is built once (`collect`) and the list,
 the summary tiles, the per-person and the per-project views all read the same
 filtered rows, so they always agree (AC-54).
 
@@ -21,6 +22,7 @@ before anything is counted.
 """
 from __future__ import annotations
 
+import re
 from datetime import date
 from typing import Any
 
@@ -32,11 +34,12 @@ from app.core.permission_registry import can_feature
 from app.modules.crm.models.inquiry import Inquiry
 from app.modules.crm.models.tender import Tender
 from app.modules.crm.services.requirement_movement import today_ist
+from app.modules.erp.models.project import Project as ErpMachine
 from app.modules.main.models.user import User
 from app.modules.projects.models.project import PmProject
 from app.modules.rnd.models.project import RndProject
 from app.modules.rnd.models.project_task import RndProjectTask
-from app.modules.rnd.models.requirement import RndRequirement
+from app.modules.rnd.models.requirement import RndRequirement, RndRequirementRevision
 from app.modules.rnd.models.requirement_work import RndRequirementTask
 from app.modules.rnd.services import requirement_access as ra
 from app.modules.rnd.services import requirements as intake
@@ -45,6 +48,8 @@ from app.core.record_ref import encode_ref
 
 TYPES = ("requirement", "prototype", "project")
 STATUS_FILTERS = ("open", "submitted", "closed", "cancelled", "overdue", "pending")
+# The page's "Completed" filter sends "completed"; the stored status is "closed".
+STATUS_ALIASES = {"completed": "closed"}
 PROGRESS_BANDS = ("0", "1-49", "50-99", "100")
 MAX_PAGE_SIZE = 200
 
@@ -76,6 +81,11 @@ def _band(progress: int) -> str:
     return "100"
 
 
+def natural_key(text: str | None) -> list:
+    """Sort key that reads numbers as numbers: PEW-2 < PEW-10 < PEW-77 < PEW-77-1 < PEW-78."""
+    return [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", (text or "").lower())]
+
+
 def _user_label(u: User | None) -> str | None:
     return (u.name or u.email) if u else None
 
@@ -91,21 +101,48 @@ def with_refs(parent: dict) -> dict:
     return out
 
 
-def _requirement_parents(db: Session, tasks: list[RndRequirementTask]) -> dict[tuple[str, int], dict]:
+def _requirement_parents(db: Session, tasks: list[RndRequirementTask]) -> tuple[dict[tuple[str, int], dict], set[tuple[str, int]]]:
+    """(parents, deleted): the parent card of each requirement (3 queries per source however many tasks)
+    and the (source, record_id) pairs whose inquiry / tender is soft-deleted — those tasks are hidden."""
     keys = {(t.source, t.record_id) for t in tasks}
     out: dict[tuple[str, int], dict] = {}
+    deleted: set[tuple[str, int]] = set()
     for source, model in (("inquiry", Inquiry), ("tender", Tender)):
         ids = [rid for s, rid in keys if s == source]
         if not ids:
             continue
         reqs = {r.record_id: r for r in db.query(RndRequirement).filter(RndRequirement.source == source, RndRequirement.record_id.in_(ids)).all()}
         for rec in db.query(model).filter(model.id.in_(ids)).all():
+            if rec.is_deleted:
+                deleted.add((source, rec.id))
+                continue
             req = reqs.get(rec.id)
             title = rec.product if source == "inquiry" else rec.tender_name
             out[(source, rec.id)] = {
                 "kind": "requirement", "id": req.id if req else None, "source": source, "record_id": rec.id,
                 "ref": req.rd_number if req else (rec.universal_id or f"{source} #{rec.id}"), "title": title,
             }
+    return out, deleted
+
+
+def _changed_flags(db: Session, tasks: list[RndRequirementTask]) -> dict[int, bool]:
+    """Same answer as intake.changed_flags (a newer revision arrived and is not accepted yet, AC-16),
+    for the whole board in two queries instead of two per requirement."""
+    keys = {(t.source, t.record_id) for t in tasks if t.revision_no is not None}
+    latest: dict[tuple[str, int], tuple[int, str]] = {}
+    for source in ("inquiry", "tender"):
+        ids = [rid for s, rid in keys if s == source]
+        if not ids:
+            continue
+        reqs = {r.id: (source, r.record_id) for r in db.query(RndRequirement).filter(RndRequirement.source == source, RndRequirement.record_id.in_(ids)).all()}
+        if not reqs:
+            continue
+        for rev in db.query(RndRequirementRevision).filter(RndRequirementRevision.requirement_id.in_(list(reqs))).order_by(RndRequirementRevision.revision_no.asc()).all():
+            latest[reqs[rev.requirement_id]] = (rev.revision_no, rev.status)  # ascending: the last one wins
+    out: dict[int, bool] = {}
+    for t in tasks:
+        state = latest.get((t.source, t.record_id)) if t.revision_no is not None else None
+        out[t.id] = bool(state and state[0] > t.revision_no and state[1] not in intake.WORK_OPEN)
     return out
 
 
@@ -117,6 +154,7 @@ def collect(db: Session, user: User, filters: dict[str, Any]) -> list[dict]:
     if wanted_type and wanted_type not in TYPES:
         raise HTTPException(status_code=422, detail=f"Type '{wanted_type}' isn't valid — pick Requirement, Prototype or Project.")
     status = filters.get("status")
+    status = STATUS_ALIASES.get(status, status) if status else status
     if status and status not in STATUS_FILTERS:
         raise HTTPException(status_code=422, detail=f"Status '{status}' isn't valid — pick one of {', '.join(STATUS_FILTERS)}.")
     band = filters.get("progress_band")
@@ -147,7 +185,8 @@ def collect(db: Session, user: User, filters: dict[str, Any]) -> list[dict]:
         return q
 
     req_tasks: list[RndRequirementTask] = []
-    if wanted_type in (None, "requirement") and not filters.get("rnd_project_id") and not filters.get("pm_project_id"):
+    if (wanted_type in (None, "requirement") and not filters.get("rnd_project_id") and not filters.get("pm_project_id")
+            and not filters.get("machine_id")):
         q = base(RndRequirementTask)
         if filters.get("requirement_id"):
             rq = db.get(RndRequirement, filters["requirement_id"])
@@ -160,20 +199,29 @@ def collect(db: Session, user: User, filters: dict[str, Any]) -> list[dict]:
             q = q.filter(RndProjectTask.project_id == filters["rnd_project_id"])
         elif filters.get("pm_project_id"):
             q = q.filter(RndProjectTask.pm_project_id == filters["pm_project_id"])
+        elif filters.get("machine_id"):
+            q = q.filter(RndProjectTask.machine_id == filters["machine_id"])
         elif wanted_type == "prototype":
             q = q.filter(RndProjectTask.project_id.isnot(None))
         elif wanted_type == "project":
-            q = q.filter(RndProjectTask.pm_project_id.isnot(None))
+            q = q.filter(or_(RndProjectTask.pm_project_id.isnot(None), RndProjectTask.machine_id.isnot(None)))
         proj_tasks = q.all()
 
     uids = {t.assigned_to_id for t in req_tasks + proj_tasks} | {t.created_by_id for t in req_tasks + proj_tasks}
     users = {u.id: u for u in db.query(User).filter(User.id.in_(uids)).all()} if uids else {}
-    parents_req = _requirement_parents(db, req_tasks)
+    parents_req, deleted_reqs = _requirement_parents(db, req_tasks)
     rnd_ids = {t.project_id for t in proj_tasks if t.project_id}
     pm_ids = {t.pm_project_id for t in proj_tasks if t.pm_project_id}
+    machine_ids = {t.machine_id for t in proj_tasks if t.machine_id}
+    machines = {m.id: m for m in db.query(ErpMachine).filter(ErpMachine.id.in_(machine_ids)).all()} if machine_ids else {}
     projects = {p.id: p for p in db.query(RndProject).filter(RndProject.id.in_(rnd_ids)).all()} if rnd_ids else {}
     pm_projects = {p.id: p for p in db.query(PmProject).filter(PmProject.id.in_(pm_ids)).all()} if pm_ids else {}
-    changed = intake.changed_flags(db, req_tasks)
+    # Tasks of a deleted inquiry / tender, Prototype / Research project or machine would only 404 when opened.
+    req_tasks = [t for t in req_tasks if (t.source, t.record_id) not in deleted_reqs]
+    proj_tasks = [t for t in proj_tasks if not (
+        (t.project_id and projects.get(t.project_id) is not None and projects[t.project_id].is_deleted)
+        or (t.machine_id and machines.get(t.machine_id) is not None and machines[t.machine_id].is_deleted))]
+    changed = _changed_flags(db, req_tasks)
 
     def row(kind: str, t, parent: dict, changed_flag: bool) -> dict:
         assignee = users.get(t.assigned_to_id)
@@ -195,6 +243,12 @@ def collect(db: Session, user: User, filters: dict[str, Any]) -> list[dict]:
             "kind": "requirement", "id": None, "source": t.source, "record_id": t.record_id, "ref": f"{t.source} #{t.record_id}", "title": None}
         rows.append(row("requirement", t, with_refs(parent), changed.get(t.id, False)))
     for t in proj_tasks:
+        if t.machine_id:
+            m = machines.get(t.machine_id)
+            parent = {"kind": "machine", "id": t.machine_id, "ref": m.serial_number if m else f"Machine #{t.machine_id}",
+                      "title": ((m.client_company or m.model_name or "").strip() or None) if m else None}
+            rows.append(row("project", t, with_refs(parent), False))
+            continue
         if t.pm_project_id:
             pm = pm_projects.get(t.pm_project_id)
             parent = {"kind": "pm_project", "id": t.pm_project_id, "ref": pm.project_code if pm else f"Project #{t.pm_project_id}", "title": pm.name if pm else None}
@@ -219,7 +273,7 @@ def collect(db: Session, user: User, filters: dict[str, Any]) -> list[dict]:
     if term:
         rows = [r for r in rows if term in (r["title"] or "").lower() or term in (r["parent"]["ref"] or "").lower()
                 or term in (r["parent"].get("title") or "").lower() or term in (r["assignee"]["name"] or "").lower()]
-    rows.sort(key=lambda r: (r["parent"]["ref"] or "", r["id"]))
+    rows.sort(key=lambda r: (natural_key(r["parent"]["ref"]), r["id"]))
     return rows
 
 
@@ -258,7 +312,7 @@ def analytics(rows: list[dict]) -> dict:
     return {
         "totals": _tally(rows),
         "by_user": sorted((finish(g) for g in by_user.values()), key=lambda g: (g["name"] or "")),
-        "by_project": sorted((finish(g) for g in by_parent.values()), key=lambda g: (g["ref"] or "")),
+        "by_project": sorted((finish(g) for g in by_parent.values()), key=lambda g: natural_key(g["ref"])),
     }
 
 

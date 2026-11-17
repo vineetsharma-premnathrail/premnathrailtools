@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
 import { useCan } from '@/lib/permissions'
-import { physicalCountsApi, storeApi, usersApi } from '@/lib/api'
+import { physicalCountsApi, storeApi } from '@/lib/api'
 import { DirectoryUser, StoreItem, StorePhysicalCount } from '@/types'
 import { DANGER, SUCCESS } from '@/lib/theme'
 import StoreNav from '@/components/store/StoreNav'
@@ -19,11 +19,12 @@ import { itemOptionDetail } from '@/lib/itemOptions'
 import { extractErrorMessages } from '@/lib/validation'
 import { useRecordId, recordPath } from '@/lib/recordRef'
 import { RowCount, Pill, TableScroll, thStyle, tdStyle, numThStyle, numTdStyle, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
+import { listAdjustmentApprovers } from '@/components/store/adjustmentApprovers'
 
 const qty = (v?: number | null) => (v == null ? '—' : v.toLocaleString('en-IN', { maximumFractionDigits: 3 }))
 const ADJ_STATUS_LABELS: Record<string, string> = { pending_approval: 'Pending Approval', approved: 'Approved', rejected: 'Rejected', cancelled: 'Withdrawn' }
 
-const STATUS_LABELS: Record<string, string> = { counting: 'Counting — stock frozen', submitted: 'Awaiting Store Manager approval', posted: 'Posted', cancelled: 'Cancelled' }
+const STATUS_LABELS: Record<string, string> = { counting: 'Counting — stock frozen', submitted: 'Awaiting approval', posted: 'Posted', cancelled: 'Cancelled' }
 const STATUS_HEX: Record<string, string> = { counting: '#d97706', submitted: '#2563eb', posted: '#16a34a', cancelled: '#94a3b8' }
 
 export default function PhysicalCountDetailPage() {
@@ -64,7 +65,7 @@ export default function PhysicalCountDetailPage() {
   useEffect(() => {
     if (!isAuthorized || count?.status !== 'counting' || !canWork) return
     if (!items.length) storeApi.listItems({ status: 'active' }).then(setItems).catch(() => setItems([]))
-    if (!directory.length) usersApi.directory().then(setDirectory).catch(() => setDirectory([]))
+    if (!directory.length) listAdjustmentApprovers().then(setDirectory).catch(() => setDirectory([]))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthorized, count?.status, canWork])
 
@@ -100,7 +101,7 @@ export default function PhysicalCountDetailPage() {
     if (changed.length) { setError('Save the counts you entered first.'); return }
     // No approver needed when nothing differs — the server closes the count; otherwise it names who is missing.
     run(() => physicalCountsApi.submit(count.id, { approver_id: Number(approverId) || 0, reason: reason.trim() || undefined }),
-      'Count submitted. If there were differences, the Store Manager approves them before stock changes.')
+      'Count submitted. If there were differences, the approver you picked approves them before stock changes.')
   }
 
   return (
@@ -203,11 +204,11 @@ export default function PhysicalCountDetailPage() {
           <div data-tour="store-count-submit">
             <SheetSection icon="shield" title="Submit Count">
               <p style={{ fontSize: 12.5, color: SHEET.MUTED, margin: '0 0 12px' }}>
-                Every line must be counted. Differences become one Stock Adjustment that a Store Manager (not you) approves; stock changes only on approval. With no difference the count closes at once.
+                Every line must be counted. Differences become one Stock Adjustment that someone holding Store › Adjustments › Approve (not you) approves; stock changes only on approval. With no difference the count closes at once.
               </p>
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                 <div style={{ flex: '0 1 340px', minWidth: 240 }}>
-                  <label style={sheetLabel}>Store Manager to approve differences</label>
+                  <label style={sheetLabel}>Approver of the differences</label>
                   <SearchableSelect value={approverId} onChange={setApproverId} placeholder="Search name or email…"
                     options={directory.filter((u) => u.id !== user?.id && allowApprover(u.id)).map((u) => ({ value: String(u.id), label: `${u.name} — ${u.email}` }))} />
                 </div>

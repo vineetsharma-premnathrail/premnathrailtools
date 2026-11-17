@@ -378,6 +378,8 @@ def build_quotation_pdf(ctx: Mapping[str, Any]) -> io.BytesIO:
     bill_to.setStyle(TableStyle([("LEFTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 1), ("BOTTOMPADDING", (0, 0), (-1, -1), 1)]))
 
     meta_pairs = [("Quotation #", quote_number_display), ("Quotation date", ctx.get("quote_date") or "-")]
+    if ctx.get("tender_number"):  # a tender's price bid names the tender it answers
+        meta_pairs.append(("Tender No.", ctx["tender_number"]))
     if ctx.get("technical_offer_number"):
         meta_pairs.append(("Technical offer #", ctx["technical_offer_number"]))
     if ctx.get("technical_offer_date"):

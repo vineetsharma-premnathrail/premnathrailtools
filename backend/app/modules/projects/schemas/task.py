@@ -155,6 +155,8 @@ class PmMilestoneWorkspaceResponse(BaseModel):
     # Members see only their own tasks; guests (tagged in chat) see none.
     tasks: list[PmProjectTaskResponse]
     evidence: list[PmProjectDocumentResponse]
+    # May accept / reject a submitted WBS on the pre-engine path (workflow.can_decide);
+    # the screen ANDs it with Milestones › Edit.
     can_manage: bool = False
     can_plan: bool = False
     # manage | lead | member | guest

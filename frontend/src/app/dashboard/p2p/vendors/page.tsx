@@ -30,8 +30,8 @@ export default function VendorsPage() {
   const { user, isLoading } = useAuth()
   const router = useRouter()
   const { can } = useCan()
-  // Same as the backend lookup: Vendors view, the Purchase desk or Accounts.
-  const allowed = !!user && (user.role === 'admin' || can('p2p', 'vendors', 'view') || !!user.apps?.some((a) => a === 'purchase' || a === 'accounts'))
+  // The Vendors tab tick decides (2026-11-14), or Accounts (Finance shares the vendor master).
+  const allowed = !!user && (user.role === 'admin' || can('p2p', 'vendors', 'view') || !!user.apps?.includes('accounts'))
   const [vendors, setVendors] = useState<ProcurementVendor[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')

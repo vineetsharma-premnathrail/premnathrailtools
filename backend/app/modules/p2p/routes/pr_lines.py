@@ -23,8 +23,8 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
 from app.core import assignee_rules
-from app.core.permission_registry import can_view_tab
-from app.core.permissions import GRANT_HINT, ensure_feature_action, ensure_tab_action, require_app_access
+from app.core.permission_registry import can_feature, can_view_tab
+from app.core.permissions import GRANT_HINT, ensure_feature_action, ensure_tab_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.organization.models.approval import ApprovalRequest
@@ -46,6 +46,7 @@ from app.modules.p2p.routes.p2p_requests import (
     _get_pr_or_404,
     _requester_or_purchase,
     _sees_pr_feature,
+    _works_every_pr,
     _to_response,
     _write_audit,
 )
@@ -157,7 +158,7 @@ def reassign_line_buyer(
     item_id: int,
     payload: ReassignBuyerPayload,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),  # Purchase desk only, like assigning the main buyer
+    user: User = Depends(_requester_or_purchase),  # the grants below decide (2026-11-14), not the Purchase Desk
 ):
     """The Purchase head hands the NOT-YET-ORDERED quantity of one line to another buyer. Quantity that is
     already on a PO stays with that PO's buyer. The old buyer's RFQ line is withdrawn (kept as history with the
@@ -184,12 +185,13 @@ def reassign_line_buyer(
         raise HTTPException(
             status_code=422,
             detail="The requester can't be the buyer of their own requisition — pick someone from the Purchase team.")
-    if "purchase" not in new_buyer.get_apps() or not can_view_tab(new_buyer, "p2p", "purchase_requisitions"):
+    if not can_view_tab(new_buyer, "p2p", "purchase_requisitions") or not (
+            _works_every_pr(new_buyer) or can_feature(new_buyer, "p2p", "purchase_requisitions", "my_lines", "view")):
         raise HTTPException(
             status_code=409,
-            detail=f"{_who(new_buyer)} is not in the Purchase team (they need the Procurement buyer desk and 'View' on "
-                   "Purchase Requisitions), so they could not open or work this line. "
-                   "Pick another buyer, or ask an admin to give them Procurement access first.")
+            detail=f"{_who(new_buyer)} can't work requisition lines (they need 'View' on Procurement > Purchase Requisitions "
+                   "and its My Lines tab), so they could not open or work this line. "
+                   "Pick another buyer, or ask an admin to give them those permissions first.")
     # The role's assign-to rule (Role & Permissions > Procurement > Purchase Requisitions > Assign buyer).
     assignee_rules.ensure_allowed(db, user, BUYER_RULE_KEY, new_buyer)
 
@@ -279,7 +281,7 @@ def short_close_line(
     item_id: int,
     payload: ShortClosePayload,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),  # Purchase desk only, like the other line actions
+    user: User = Depends(_requester_or_purchase),  # the grants below decide (2026-11-14), not the Purchase Desk
 ):
     """Writes off quantity of ONE line that has not been ordered (the buyer decided not to buy it). The line's
     buy quantity drops, awards above the new quantity are trimmed, and the requisition closes by itself when
@@ -510,7 +512,8 @@ def get_tracker(
     #   * management - a viewer outside the Purchase team who already passes the commercials check.
     # Any other buyer on the same requisition sees the PO number and stage only; a requester never sees either.
     see_all = po_split.can_work_all_lines(user)
-    purchase_team = "purchase" in user.get_apps()
+    # A buyer (Purchase Desk, or a buyer on this requisition) among buyers sees only their own POs' vendors.
+    purchase_team = _works_every_pr(user) or user.id in buyer_ids
     rfq_buyer = {rid: (b or c) for rid, b, c in db.query(RFQ.id, RFQ.buyer_id, RFQ.created_by_id)
                  .filter(RFQ.id.in_({po.rfq_id for po in pos if po.rfq_id})).all()} if pos else {}
 

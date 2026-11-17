@@ -63,7 +63,7 @@ final erpModules = <ErpModule>[
     key: 'rnd',
     menuLabel: 'R&D',
     title: 'R&D',
-    description: 'R&D projects, experiments & test data, prototypes, feasibility, and railway engineering calculators.',
+    description: 'R&D requirements, Prototype / Research projects, feasibility, and railway engineering calculators.',
     icon: Icons.science_outlined,
     color: Color(0xFF2563EB),
     visibleFor: _app('rnd'),

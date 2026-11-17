@@ -14,14 +14,14 @@ const config: TourConfig = {
     {
       target: 'fin-gst-new-btn',
       title: '+ Add Rate',
-      purpose: 'Opens the Add GST rate popup. Shown only to a Finance Manager or admin.',
+      purpose: 'Opens the Add GST rate popup. Shown only to roles with Create on GST Rates.',
       autoActivateOnAdvance: true,
     },
     {
       target: 'fin-gst-rate',
       title: 'Rate %',
       required: true,
-      whatToEnter: 'The rate in percent, numbers only. Shown only to a Finance Manager or admin.',
+      whatToEnter: 'The rate in percent, numbers only.',
       validExample: '18',
       invalidExample: '18% or 0.18',
     },

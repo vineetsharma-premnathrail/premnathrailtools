@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import get_db
+from app.core.data_scope import ensure_can_change
 from app.core.permissions import ensure_can_delete, require_app_access
 from app.core.permission_registry import can_feature
 from app.modules.crm.access import (
@@ -32,8 +33,10 @@ MOM_ENTITY = "crm_activity_mom"
 MOM_FIELDS = {"subject", "org_id", "assigned_to", "contact_ids", "remarks", "action_plan", "next_followup"}
 
 
-def _can_modify(record, user: User) -> bool:
-    return user.role == "admin" or record.created_by_id == user.id
+def _ensure_can_change(db: Session, user: User, activity: Activity, action: str) -> None:
+    """The follow-up's Edit scope decides (Role › Data access › Edit; default =
+    its creator and the person it is assigned to) — owner, 2026-11-03."""
+    ensure_can_change(db, user, activity, action=action)
 
 
 @router.get("/team-members")
@@ -211,8 +214,7 @@ async def update_activity(
         raise HTTPException(status_code=404, detail="Activity not found")
     ensure_activity_in_scope(db, user, activity)
     ensure_child_action(user, activity.related_module, "followups", "edit", "edit")
-    if not _can_modify(activity, user):
-        raise HTTPException(status_code=403, detail="Only the creator or an admin can edit this activity.")
+    _ensure_can_change(db, user, activity, "edit")
     json_data = payload.model_dump(exclude_unset=True, mode="json")
     mom_changed = False
     for field, value in payload.model_dump(exclude_unset=True).items():
@@ -239,8 +241,7 @@ async def upload_activity_attachments(
         raise HTTPException(status_code=404, detail="Activity not found")
     ensure_activity_in_scope(db, user, activity)
     ensure_child_action(user, activity.related_module, "followups", "edit", "edit")
-    if not _can_modify(activity, user):
-        raise HTTPException(status_code=403, detail="Only the creator or an admin can add photos to this activity.")
+    _ensure_can_change(db, user, activity, "add photos to")
     if not settings.SHAREPOINT_SITE_ID:
         raise HTTPException(status_code=503, detail="SharePoint site is not configured")
 
@@ -324,8 +325,7 @@ async def delete_activity_attachment(
     ensure_activity_in_scope(db, user, activity)
     # Removing a photo is editing the follow-up, not deleting a record.
     ensure_child_action(user, activity.related_module, "followups", "edit", "edit")
-    if not _can_modify(activity, user):
-        raise HTTPException(status_code=403, detail="Only the creator or an admin can delete photos from this activity.")
+    _ensure_can_change(db, user, activity, "remove photos from")
 
     attachment = db.query(ActivityAttachment).filter(
         ActivityAttachment.id == attachment_id, ActivityAttachment.activity_id == activity_id
@@ -422,8 +422,8 @@ def _activity_mom_target(db: Session, activity_id: int, user: User, modify: bool
         ensure_child_action(user, activity.related_module, "followups", "edit", "edit")
     else:
         ensure_child_action(user, activity.related_module, "followups", "view", "view")
-    if modify and not _can_modify(activity, user):
-        raise HTTPException(status_code=403, detail="Only the follow-up's creator or an admin can change its Word MoM.")
+    if modify:
+        _ensure_can_change(db, user, activity, "change the Word MoM of")
     _, stem = _activity_mom_docx(db, activity)
     return managed_documents.DocumentTarget(
         entity_id=activity.id, revision=activity.mom_revision,

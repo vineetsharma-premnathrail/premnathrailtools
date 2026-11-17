@@ -36,3 +36,17 @@ export function canActOnTab(moduleKey: string, subtabKey: string, user: User | n
   if (!(user?.apps as string[] | undefined)?.includes(moduleKey)) return false
   return canViewTab(moduleKey, subtabKey, user)
 }
+
+/**
+ * The first tab of a module nav list `user` may open — where a module's
+ * landing page sends someone who can't view its Dashboard (owner, 2026-11-14:
+ * "permission di hai fir bhi show nahi hota" — landing on a 403 looked like
+ * no access at all). Returns undefined when no tab is viewable.
+ */
+export function firstViewableTab<T extends { href: string }>(
+  moduleKey: string,
+  tabs: readonly T[],
+  user: User | null | undefined,
+): T | undefined {
+  return filterTabsByAccess(moduleKey, tabs, user)[0]
+}

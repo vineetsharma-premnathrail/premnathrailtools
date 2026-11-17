@@ -10,7 +10,9 @@ from app.core.permission_registry import can_feature
 from app.core.permissions import ensure_can_delete, ensure_feature_action, require_feature_action, require_tab_access
 from app.core.data_scope import apply_scope, ensure_in_scope
 import app.modules.crm.access  # noqa: F401 — registers the CRM data-scope models
-from app.modules.crm.access import QUOTATION_LINE_MONEY_FIELDS, QUOTATION_MONEY_FIELDS, blank, sees_quotation_prices
+from app.modules.crm.access import (
+    QUOTATION_LINE_MONEY_FIELDS, QUOTATION_MONEY_FIELDS, blank, ensure_can_change_quotation, sees_quotation_prices,
+)
 from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.crm.models.inquiry import Inquiry, Quotation, QuotationLineItem
@@ -27,16 +29,14 @@ from app.modules.main.services import managed_documents
 from app.utils.document_merge import merge_docx, merge_pdf
 from app.modules.rnd.models.technical_offer import RndTechnicalOffer
 from app.modules.rnd.services import technical_offers
+from app.modules.crm.services import quotation_parent as qparent
 from app.modules.crm.services import quotation_status as qstatus
+from app.modules.crm.services.quotation_parent import INQUIRY, TENDER
 from app.utils.value_diff import changed as value_changed
 
 QUOTATION_ENTITY = "crm_quotation"
 
 router = APIRouter(prefix="/crm", tags=["CRM - Workflow"])
-
-
-def _can_modify(record, user: User) -> bool:
-    return user.role == "admin" or record.created_by_id == user.id
 
 
 def _load_live_inquiry(db: Session, inquiry_id: int, user: User, lock: bool = False) -> Inquiry:
@@ -144,19 +144,28 @@ async def list_quotation_products(db: Session = Depends(get_db), _user: User = D
     }
 
 
-@router.get("/inquiries/{inquiry_id}/quotation-products/{product_id}/price")
-async def quotation_product_price(inquiry_id: int, product_id: int, db: Session = Depends(get_db), _user: User = Depends(require_feature_action("crm", "inquiries_tenders", "quotations", "view"))):
+def _product_price(db: Session, user: User, kind: str, parent_id: int, product_id: int) -> dict:
     """The price the Product master's pricing conditions give this customer today — prefills the
     unit price on a quotation line (a typed different price still needs a reason, see
     products/linking.py). Blank for a user without CRM › Prices & margins."""
     from app.modules.products import pricing
-    inquiry = _load_live_inquiry(db, inquiry_id, _user)
-    if not sees_quotation_prices(_user):
+    parent = qparent.load_live(db, kind, parent_id, user)
+    if not sees_quotation_prices(user):
         return {"price": None}
     if not db.query(FinishedProduct.id).filter(FinishedProduct.id == product_id).first():
         raise HTTPException(status_code=404, detail="Product not found — pick the product again from the list.")
-    r = pricing.resolve(db, product_id=product_id, customer_id=inquiry.org_id)
+    r = pricing.resolve(db, product_id=product_id, customer_id=parent.org_id)
     return {"price": r["price"], "price_source": r["price_source"]}
+
+
+@router.get("/inquiries/{inquiry_id}/quotation-products/{product_id}/price")
+async def quotation_product_price(inquiry_id: int, product_id: int, db: Session = Depends(get_db), _user: User = Depends(require_feature_action("crm", "inquiries_tenders", "quotations", "view"))):
+    return _product_price(db, _user, INQUIRY, inquiry_id, product_id)
+
+
+@router.get("/tenders/{tender_id}/quotation-products/{product_id}/price")
+async def tender_quotation_product_price(tender_id: int, product_id: int, db: Session = Depends(get_db), _user: User = Depends(require_feature_action("crm", "inquiries_tenders", "quotations", "view"))):
+    return _product_price(db, _user, TENDER, tender_id, product_id)
 
 
 def ensure_quotation_prices(user: User) -> None:
@@ -209,10 +218,12 @@ def _based_on_earlier_revision(db: Session, o: RndTechnicalOffer) -> bool:
     return bool(req and o.requirement_revision_no < req.current_revision)
 
 
-def _quotable_offer(db: Session, inquiry: Inquiry, offer_id: int) -> RndTechnicalOffer:
+def _quotable_offer(db: Session, inquiry: Inquiry | Tender, offer_id: int) -> RndTechnicalOffer:
+    # The offer's source is "inquiry" or "tender", the same words as the quotation's parent kind.
+    kind = qparent.TENDER if isinstance(inquiry, Tender) else qparent.INQUIRY
     offer = db.query(RndTechnicalOffer).filter(RndTechnicalOffer.id == offer_id).first()
-    if not offer or offer.source != "inquiry" or offer.record_id != inquiry.id:
-        raise HTTPException(status_code=422, detail="That Technical Offer doesn't belong to this inquiry — reopen the quotation form and pick one from the list.")
+    if not offer or offer.source != kind or offer.record_id != inquiry.id:
+        raise HTTPException(status_code=422, detail=f"That Technical Offer doesn't belong to this {kind} — reopen the quotation form and pick one from the list.")
     if offer.status not in ("released", "superseded"):
         waiting = ("waiting for the R&D head's release" if offer.status == "submitted"
                    else "returned by the R&D head — R&D has to upload a corrected file" if offer.returned_reason
@@ -403,22 +414,33 @@ async def download_tender_technical_offer(tender_id: int, offer_id: int, db: Ses
 
 # ── Quotations ───────────────────────────────────────────────────────────
 
-@router.get("/inquiries/{inquiry_id}/quotations", response_model=list[QuotationResponse])
-async def list_quotations(inquiry_id: int, db: Session = Depends(get_db), _user: User = Depends(require_feature_action("crm", "inquiries_tenders", "quotations", "view"))):
-    _load_live_inquiry(db, inquiry_id, _user)
+def _list_quotations(db: Session, user: User, kind: str, parent_id: int) -> list[QuotationResponse]:
+    qparent.load_live(db, kind, parent_id, user)
     if qstatus.expire_due(db):  # validity ended since the daily job last ran
         db.commit()
-    return [quotation_out(q, _user) for q in db.query(Quotation).filter(Quotation.inquiry_id == inquiry_id).order_by(Quotation.id.desc()).all()]
+    return [quotation_out(q, user) for q in db.query(Quotation).filter(qparent.parent_filter(kind, parent_id)).order_by(Quotation.id.desc()).all()]
+
+
+@router.get("/inquiries/{inquiry_id}/quotations", response_model=list[QuotationResponse])
+async def list_quotations(inquiry_id: int, db: Session = Depends(get_db), _user: User = Depends(require_feature_action("crm", "inquiries_tenders", "quotations", "view"))):
+    return _list_quotations(db, _user, INQUIRY, inquiry_id)
+
+
+@router.get("/tenders/{tender_id}/quotations", response_model=list[QuotationResponse])
+async def list_tender_quotations(tender_id: int, db: Session = Depends(get_db), _user: User = Depends(require_feature_action("crm", "inquiries_tenders", "quotations", "view"))):
+    return _list_quotations(db, _user, TENDER, tender_id)
 
 
 @router.get("/past-quotations", response_model=list[QuotationResponse])
 async def list_past_quotations(q: str | None = None, limit: int = 30, db: Session = Depends(get_db), _user: User = Depends(require_feature_action("crm", "inquiries_tenders", "quotations", "view"))):
-    """Recent quotations across every live inquiry in the user's CRM data scope —
+    """Recent quotations across every live inquiry and tender in the user's CRM data scope —
     the "Fill from a past quotation" picker on the quotation form copies one of
     these (items, prices, terms) into a new quotation. Optional search on the
     quotation number, client name or a line item's name / model number."""
     inquiries = apply_scope(db.query(Inquiry.id).filter(Inquiry.is_deleted == False), _user, Inquiry, db)  # noqa: E712
-    query = db.query(Quotation).options(selectinload(Quotation.items)).filter(Quotation.inquiry_id.in_(inquiries.statement))
+    tenders = qparent.in_scope_parent_ids(db, _user, TENDER)
+    query = db.query(Quotation).options(selectinload(Quotation.items)).filter(or_(
+        Quotation.inquiry_id.in_(inquiries.statement), Quotation.tender_id.in_(tenders.statement)))
     term = (q or "").strip()
     if term:
         like = f"%{term}%"
@@ -433,18 +455,18 @@ async def list_past_quotations(q: str | None = None, limit: int = 30, db: Sessio
 QUOT_SEQ_RE = re.compile(r"-(\d+)$")
 
 
-def _next_quot_number(db: Session, inquiry: Inquiry) -> str:
+def _next_quot_number(db: Session, inquiry: Inquiry | Tender) -> str:
     # Every quotation row is its own "quote lineage" — revisions mutate the row in place
     # (see update_quotation). The next number is max(existing or deleted sequence) + 1, never a
     # row count: a count re-issues a number after a delete, giving two legal documents (and two
-    # SharePoint folders) the same number. The caller locks the inquiry row so two concurrent
-    # saves on one inquiry serialise here.
-    suffix = inquiry.universal_id.split("INQ-")[-1] if inquiry.universal_id else str(inquiry.id)
-    prefix = f"QT-{suffix}-"
+    # SharePoint folders) the same number. The caller locks the inquiry / tender row so two concurrent
+    # saves on one record serialise here. A tender's numbers are QT-TND-<tender no.>-NN.
+    kind = qparent.TENDER if isinstance(inquiry, Tender) else qparent.INQUIRY
+    prefix = qparent.number_prefix(kind, inquiry)
     bases = [
         (base or (number or "").split("-r")[0])
         for base, number in db.query(Quotation.quot_number_base, Quotation.quot_number)
-        .filter(Quotation.inquiry_id == inquiry.id).all()
+        .filter(qparent.parent_filter(kind, inquiry.id)).all()
     ]
     # Numbers of deleted quotations stay burnt (recorded on delete, see delete_quotation).
     bases += [
@@ -477,14 +499,10 @@ def _write_quotation_revision(db: Session, quot_id: int, user: User, old_vals: d
     ))
 
 
-@router.post("/inquiries/{inquiry_id}/quotations", response_model=QuotationResponse, status_code=201)
-async def create_quotation(inquiry_id: int, payload: QuotationCreate, db: Session = Depends(get_db), user: User = Depends(require_feature_action("crm", "inquiries_tenders", "quotations", "create"))):
-    inquiry = _load_live_inquiry(db, inquiry_id, user, lock=True)
-    if user.role != "admin" and inquiry.created_by_id != user.id:
-        raise HTTPException(
-            status_code=403,
-            detail=f"Only the inquiry owner or an admin can create a quotation on this inquiry — ask {_user_label(db, inquiry.created_by_id)} or an admin.",
-        )
+def _create_quotation(db: Session, user: User, kind: str, parent_id: int, payload: QuotationCreate) -> QuotationResponse:
+    inquiry = qparent.load_live(db, kind, parent_id, user, lock=True)
+    # The Quotations › Create tick + the CRM Edit scope on the inquiry / tender decide (owner, 2026-11-03 / 11-14).
+    qparent.ensure_can_change(db, user, None, inquiry, "create")
     payload.items = prepare_quotation_lines(db, payload.items)
     quot_number = _next_quot_number(db, inquiry)
     data = payload.model_dump(exclude={"items"})
@@ -507,7 +525,8 @@ async def create_quotation(inquiry_id: int, payload: QuotationCreate, db: Sessio
     # status actions (routes/quotation_status.py), never created as "Accepted".
     data["customer_response"] = qstatus.AWAITING
     quot = Quotation(
-        **data, inquiry_id=inquiry_id, quot_number=quot_number, quot_number_base=quot_number, revision_number=0,
+        **data, **{"tender_id" if kind == TENDER else "inquiry_id": parent_id},
+        quot_number=quot_number, quot_number_base=quot_number, revision_number=0,
         created_by_id=user.id, created_at=datetime.now(timezone.utc), status="draft",
     )
     # subtotal/total are server-computed, never trusted from the client — this quote is a
@@ -523,6 +542,16 @@ async def create_quotation(inquiry_id: int, payload: QuotationCreate, db: Sessio
     db.commit()
     db.refresh(quot)
     return quotation_out(quot, user)
+
+
+@router.post("/inquiries/{inquiry_id}/quotations", response_model=QuotationResponse, status_code=201)
+async def create_quotation(inquiry_id: int, payload: QuotationCreate, db: Session = Depends(get_db), user: User = Depends(require_feature_action("crm", "inquiries_tenders", "quotations", "create"))):
+    return _create_quotation(db, user, INQUIRY, inquiry_id, payload)
+
+
+@router.post("/tenders/{tender_id}/quotations", response_model=QuotationResponse, status_code=201)
+async def create_tender_quotation(tender_id: int, payload: QuotationCreate, db: Session = Depends(get_db), user: User = Depends(require_feature_action("crm", "inquiries_tenders", "quotations", "create"))):
+    return _create_quotation(db, user, TENDER, tender_id, payload)
 
 
 def _line_summary(it) -> str:
@@ -557,12 +586,9 @@ def _ensure_not_ordered(db: Session, quot: Quotation, action: str) -> None:
             "make a new quotation instead."))
 
 
-@router.patch("/inquiries/{inquiry_id}/quotations/{quot_id}", response_model=QuotationResponse)
-async def update_quotation(inquiry_id: int, quot_id: int, payload: QuotationUpdate, db: Session = Depends(get_db), user: User = Depends(require_feature_action("crm", "inquiries_tenders", "quotations", "edit"))):
-    inquiry = _load_live_inquiry(db, inquiry_id, user)
-    quot = db.query(Quotation).filter(Quotation.id == quot_id, Quotation.inquiry_id == inquiry_id).first()
-    if not quot:
-        raise HTTPException(status_code=404, detail="Quotation not found — it may have been deleted. Refresh the inquiry.")
+def _update_quotation(db: Session, user: User, kind: str, parent_id: int, quot_id: int, payload: QuotationUpdate) -> QuotationResponse:
+    inquiry = qparent.load_live(db, kind, parent_id, user)
+    quot = qparent.find_quotation(db, kind, parent_id, quot_id)
 
     updates = payload.model_dump(exclude_unset=True, exclude={"items"})
     for f in QUOTATION_NON_NULL_FIELDS:
@@ -576,15 +602,9 @@ async def update_quotation(inquiry_id: int, quot_id: int, payload: QuotationUpda
     if not tracking_only and quot.status not in ("draft", "submitted"):
         raise HTTPException(status_code=409, detail=(
             f"Quotation {quot.quot_number} is finalised ({quot.status}) and can't be edited by anyone. "
-            "To offer different prices or terms, use 'Create revision from this quotation' (or + Create Quote) on this inquiry."))
-    if not _can_modify(quot, user) and not (tracking_only and inquiry.created_by_id == user.id):
-        if tracking_only:
-            detail = (f"Only the inquiry owner, the quotation's creator or an admin can record the customer response — "
-                      f"ask {_user_label(db, quot.created_by_id)} or an admin.")
-        else:
-            detail = (f"Only the quotation's creator or an admin can revise this quotation — "
-                      f"ask {_user_label(db, quot.created_by_id)} or an admin.")
-        raise HTTPException(status_code=403, detail=detail)
+            f"To offer different prices or terms, use 'Create revision from this quotation' (or + Create Quote) on this {kind}."))
+    qparent.ensure_can_change(db, user, quot, inquiry,
+                              "record the customer response on" if tracking_only else "revise")
 
     # The quotation as it will be after this revision — validated as a whole.
     after = {f: updates.get(f, getattr(quot, f)) for f in QuotationUpdate.model_fields if f != "items"}
@@ -679,12 +699,19 @@ async def update_quotation(inquiry_id: int, quot_id: int, payload: QuotationUpda
     return quotation_out(quot, user)
 
 
-@router.get("/inquiries/{inquiry_id}/quotations/{quot_id}/revisions")
-async def list_quotation_revisions(inquiry_id: int, quot_id: int, db: Session = Depends(get_db), _user: User = Depends(require_feature_action("crm", "inquiries_tenders", "quotations", "view"))):
-    _load_live_inquiry(db, inquiry_id, _user)
-    quot = db.query(Quotation).filter(Quotation.id == quot_id, Quotation.inquiry_id == inquiry_id).first()
-    if not quot:
-        raise HTTPException(status_code=404, detail="Quotation not found")
+@router.patch("/inquiries/{inquiry_id}/quotations/{quot_id}", response_model=QuotationResponse)
+async def update_quotation(inquiry_id: int, quot_id: int, payload: QuotationUpdate, db: Session = Depends(get_db), user: User = Depends(require_feature_action("crm", "inquiries_tenders", "quotations", "edit"))):
+    return _update_quotation(db, user, INQUIRY, inquiry_id, quot_id, payload)
+
+
+@router.patch("/tenders/{tender_id}/quotations/{quot_id}", response_model=QuotationResponse)
+async def update_tender_quotation(tender_id: int, quot_id: int, payload: QuotationUpdate, db: Session = Depends(get_db), user: User = Depends(require_feature_action("crm", "inquiries_tenders", "quotations", "edit"))):
+    return _update_quotation(db, user, TENDER, tender_id, quot_id, payload)
+
+
+def _quotation_revisions(db: Session, _user: User, kind: str, parent_id: int, quot_id: int) -> list[dict]:
+    qparent.load_live(db, kind, parent_id, _user)
+    qparent.find_quotation(db, kind, parent_id, quot_id)
     # Only "revision" rows — the same entity_type also holds "delete" rows (burnt quotation
     # numbers, plain text old_value) that must never be parsed or shown as a revision.
     logs = db.query(AuditLog).filter(
@@ -720,10 +747,20 @@ async def list_quotation_revisions(inquiry_id: int, quot_id: int, db: Session = 
     return result
 
 
+@router.get("/inquiries/{inquiry_id}/quotations/{quot_id}/revisions")
+async def list_quotation_revisions(inquiry_id: int, quot_id: int, db: Session = Depends(get_db), _user: User = Depends(require_feature_action("crm", "inquiries_tenders", "quotations", "view"))):
+    return _quotation_revisions(db, _user, INQUIRY, inquiry_id, quot_id)
+
+
+@router.get("/tenders/{tender_id}/quotations/{quot_id}/revisions")
+async def list_tender_quotation_revisions(tender_id: int, quot_id: int, db: Session = Depends(get_db), _user: User = Depends(require_feature_action("crm", "inquiries_tenders", "quotations", "view"))):
+    return _quotation_revisions(db, _user, TENDER, tender_id, quot_id)
+
+
 def quotation_document_context(db: Session, quot: Quotation) -> dict:
     """Data for the quotation PDF/Word builders — shared so both always print
-    the same client block, numbers and terms."""
-    inquiry = db.query(Inquiry).filter(Inquiry.id == quot.inquiry_id).first()
+    the same client block, numbers and terms. A tender's price bid also prints the tender number."""
+    kind, inquiry = qparent.parent_of(db, quot)
     org = db.query(OrgModel).filter(OrgModel.id == inquiry.org_id).first() if inquiry else None
     client_address_parts = [p for p in [org.address if org else None, org.city if org else None, org.state if org else None, org.pin_code if org else None] if p]
     return {
@@ -732,6 +769,8 @@ def quotation_document_context(db: Session, quot: Quotation) -> dict:
         "quotation_type": quot.quotation_type,
         "gst_type": quot.gst_type,
         "quote_date": quot.quote_date.isoformat() if quot.quote_date else None,
+        # The tender's own number (as printed on the tender notice), else our tender record number.
+        "tender_number": ((inquiry.tender_number or inquiry.universal_id) if kind == TENDER and inquiry is not None else None),
         "technical_offer_number": quot.technical_offer_number,
         "technical_offer_date": quot.technical_offer_date.isoformat() if quot.technical_offer_date else None,
         "client_name": quot.client_name,
@@ -767,13 +806,10 @@ def quotation_document_context(db: Session, quot: Quotation) -> dict:
     }
 
 
-@router.get("/inquiries/{inquiry_id}/quotations/{quot_id}/pdf")
-async def download_quotation_pdf(inquiry_id: int, quot_id: int, db: Session = Depends(get_db), _user: User = Depends(require_feature_action("crm", "inquiries_tenders", "quotations", "print"))):
-    _load_live_inquiry(db, inquiry_id, _user)
+async def _quotation_pdf(db: Session, _user: User, kind: str, parent_id: int, quot_id: int) -> Response:
+    qparent.load_live(db, kind, parent_id, _user)
     ensure_quotation_prices(_user)
-    quot = db.query(Quotation).filter(Quotation.id == quot_id, Quotation.inquiry_id == inquiry_id).first()
-    if not quot:
-        raise HTTPException(status_code=404, detail="Quotation not found")
+    quot = qparent.find_quotation(db, kind, parent_id, quot_id)
     filename = f"{quot.quot_number or f'Quotation-{quot.id}'}.pdf"
     # Once a Word document exists for this revision it is the document of
     # record: the PDF is its latest version (with any edits made in Word),
@@ -795,12 +831,19 @@ async def download_quotation_pdf(inquiry_id: int, quot_id: int, db: Session = De
     )
 
 
-@router.delete("/inquiries/{inquiry_id}/quotations/{quot_id}")
-async def delete_quotation(inquiry_id: int, quot_id: int, db: Session = Depends(get_db), user: User = Depends(require_feature_action("crm", "inquiries_tenders", "quotations", "delete"))):
-    _load_live_inquiry(db, inquiry_id, user)
-    quot = db.query(Quotation).filter(Quotation.id == quot_id, Quotation.inquiry_id == inquiry_id).first()
-    if not quot:
-        raise HTTPException(status_code=404, detail="Quotation not found")
+@router.get("/inquiries/{inquiry_id}/quotations/{quot_id}/pdf")
+async def download_quotation_pdf(inquiry_id: int, quot_id: int, db: Session = Depends(get_db), _user: User = Depends(require_feature_action("crm", "inquiries_tenders", "quotations", "print"))):
+    return await _quotation_pdf(db, _user, INQUIRY, inquiry_id, quot_id)
+
+
+@router.get("/tenders/{tender_id}/quotations/{quot_id}/pdf")
+async def download_tender_quotation_pdf(tender_id: int, quot_id: int, db: Session = Depends(get_db), _user: User = Depends(require_feature_action("crm", "inquiries_tenders", "quotations", "print"))):
+    return await _quotation_pdf(db, _user, TENDER, tender_id, quot_id)
+
+
+def _delete_quotation(db: Session, user: User, kind: str, parent_id: int, quot_id: int) -> dict:
+    qparent.load_live(db, kind, parent_id, user)
+    quot = qparent.find_quotation(db, kind, parent_id, quot_id)
     # Quotations are legal offers — only an admin deletes one (and never one an order was raised from).
     if user.role != "admin":
         raise HTTPException(status_code=403, detail="Only an admin can delete this quotation.")
@@ -812,9 +855,21 @@ async def delete_quotation(inquiry_id: int, quot_id: int, db: Session = Depends(
         field_name="quot_number_base", old_value=quot.quot_number_base or (quot.quot_number or "").split("-r")[0],
         summary=f"{user.name or user.email} deleted quotation {quot.quot_number}.", performed_by_id=user.id,
     ))
+    # A quotation waiting for approval leaves the approvers' inbox with it (their request is cancelled, not orphaned).
+    qstatus.cancel_pending_approval(db, quot, user, "the quotation was deleted")
     db.delete(quot)
     db.commit()
     return {"message": "Quotation deleted"}
+
+
+@router.delete("/inquiries/{inquiry_id}/quotations/{quot_id}")
+async def delete_quotation(inquiry_id: int, quot_id: int, db: Session = Depends(get_db), user: User = Depends(require_feature_action("crm", "inquiries_tenders", "quotations", "delete"))):
+    return _delete_quotation(db, user, INQUIRY, inquiry_id, quot_id)
+
+
+@router.delete("/tenders/{tender_id}/quotations/{quot_id}")
+async def delete_tender_quotation(tender_id: int, quot_id: int, db: Session = Depends(get_db), user: User = Depends(require_feature_action("crm", "inquiries_tenders", "quotations", "delete"))):
+    return _delete_quotation(db, user, TENDER, tender_id, quot_id)
 
 
 # ── Quotation as an editable Word document (generic routes: main/routes/documents.py) ──
@@ -822,10 +877,9 @@ async def delete_quotation(inquiry_id: int, quot_id: int, db: Session = Depends(
 def _quotation_document_target(db: Session, quot_id: int, user: User, modify: bool) -> managed_documents.DocumentTarget:
     quot = db.query(Quotation).filter(Quotation.id == quot_id).first()
     if not quot:
-        raise HTTPException(status_code=404, detail="Quotation not found — it may have been deleted. Refresh the inquiry.")
-    inquiry = db.query(Inquiry).filter(Inquiry.id == quot.inquiry_id).first()
-    if not inquiry or inquiry.is_deleted:
-        raise HTTPException(status_code=404, detail="Inquiry not found or deleted — restore it before working on its quotations.")
+        raise HTTPException(status_code=404, detail="Quotation not found — it may have been deleted. Refresh the inquiry or tender.")
+    kind, inquiry = qparent.parent_of(db, quot)
+    qparent.ensure_live(kind, inquiry)
     ensure_in_scope(db, user, inquiry)
     # Opening/downloading the Word document = View; creating/editing/uploading it = Edit
     # (Inquiries & Tenders › Quotations feature), and it shows the prices.
@@ -834,8 +888,8 @@ def _quotation_document_target(db: Session, quot_id: int, user: User, modify: bo
     else:
         ensure_feature_action(user, "crm", "inquiries_tenders", "quotations", "view")
     ensure_quotation_prices(user)
-    if modify and not _can_modify(quot, user):
-        raise HTTPException(status_code=403, detail="Only the quotation's creator or an admin can change its Word document.")
+    if modify:
+        qparent.ensure_can_change(db, user, quot, inquiry, "change the Word document of")
     # Finalised quotation: its Word document is locked like the quotation itself (view / download only).
     if modify and quot.status not in ("draft", "submitted"):
         raise HTTPException(status_code=409, detail=(
@@ -881,18 +935,25 @@ async def _technical_offer_pdf(db: Session, quot: Quotation) -> bytes | None:
     return content if filename.lower().endswith(".pdf") else None
 
 
-@router.get("/inquiries/{inquiry_id}/quotations/{quot_id}/technical-offer-file")
-async def download_quotation_technical_offer(inquiry_id: int, quot_id: int, db: Session = Depends(get_db), _user: User = Depends(require_feature_action("crm", "inquiries_tenders", "quotations", "print"))):
+async def _quotation_technical_offer_file(db: Session, _user: User, kind: str, parent_id: int, quot_id: int):
     """The Technical Offer file attached to this quotation, for an offer that can't be stacked into the
     quotation document (an uploaded PDF) — it goes to the customer as a separate attachment."""
-    _load_live_inquiry(db, inquiry_id, _user)
-    quot = db.query(Quotation).filter(Quotation.id == quot_id, Quotation.inquiry_id == inquiry_id).first()
-    if not quot:
-        raise HTTPException(status_code=404, detail="Quotation not found — it may have been deleted. Refresh the inquiry.")
+    qparent.load_live(db, kind, parent_id, _user)
+    quot = qparent.find_quotation(db, kind, parent_id, quot_id)
     offer = _quotation_offer(db, quot)
     if offer is None:
         raise HTTPException(status_code=404, detail=f"Quotation {quot.quot_number} doesn't quote a Technical Offer — pick one in the quotation first.")
     return await _offer_response(db, offer)
+
+
+@router.get("/inquiries/{inquiry_id}/quotations/{quot_id}/technical-offer-file")
+async def download_quotation_technical_offer(inquiry_id: int, quot_id: int, db: Session = Depends(get_db), _user: User = Depends(require_feature_action("crm", "inquiries_tenders", "quotations", "print"))):
+    return await _quotation_technical_offer_file(db, _user, INQUIRY, inquiry_id, quot_id)
+
+
+@router.get("/tenders/{tender_id}/quotations/{quot_id}/technical-offer-file")
+async def download_tender_quotation_technical_offer(tender_id: int, quot_id: int, db: Session = Depends(get_db), _user: User = Depends(require_feature_action("crm", "inquiries_tenders", "quotations", "print"))):
+    return await _quotation_technical_offer_file(db, _user, TENDER, tender_id, quot_id)
 
 
 async def _quotation_docx(db: Session, quot: Quotation) -> bytes:

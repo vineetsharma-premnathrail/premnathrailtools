@@ -127,7 +127,7 @@ def test_non_creator_cannot_update_sr(client, db):
     assert response.status_code == 403
 
 
-def test_creator_is_engineer_and_can_update_own_sr_without_sr_edit(client, db):
+def test_creator_is_engineer_and_updates_own_sr_with_the_edit_tick(client, db):
     creator = make_user(db, "erp4b@premnathrail.com", erp_permissions=["sr_create"])
     project = make_project(db, "SN-SR-004B")
     created = client.post(
@@ -141,8 +141,17 @@ def test_creator_is_engineer_and_can_update_own_sr_without_sr_edit(client, db):
         json={"status": "acknowledged"},
         headers=auth_header(creator),
     )
-    # The person who raises the SR is its engineer, so they work on it.
+    # The person who raises the SR is its engineer, so it is inside their Edit scope — but changing the
+    # SR's own fields / status still needs the Service Requests › Edit tick (owner, 2026-11-14: the tick decides).
     assert created["assigned_service_person_id"] == creator.id
+    assert response.status_code == 403 and "'Edit' permission" in response.json()["detail"]
+    creator.erp_permissions = ["sr_create", "sr_edit"]
+    db.commit()
+    response = client.patch(
+        f"/api/v1/erp/service-requests/{created['id']}",
+        json={"status": "acknowledged"},
+        headers=auth_header(creator),
+    )
     assert response.status_code == 200, response.text
 
 

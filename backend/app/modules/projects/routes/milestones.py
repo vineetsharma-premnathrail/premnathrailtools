@@ -143,7 +143,7 @@ async def create_milestone(project_id: int, payload: PmMilestoneCreate, db: Sess
                            user: User = Depends(require_tab_access("projects", "milestones"))):
     project = _project_or_404(db, project_id, user)
     _ensure_milestone_action(project, user, "create")
-    wf.require_manage(project, user, "add WBS elements")
+    wf.require_manage(project, user, "add WBS elements", grant=("milestones", "create"))
     _require_editable_project(project)
     if not payload.title.strip():
         raise HTTPException(status_code=422, detail="WBS name is required.")
@@ -191,7 +191,7 @@ async def update_milestone(project_id: int, milestone_id: int, payload: PmMilest
     project = _project_or_404(db, project_id, user)
     _ensure_milestone_action(project, user, "edit")
     m = _milestone_or_404(db, project_id, milestone_id)
-    wf.require_manage(project, user, "edit WBS elements")
+    wf.require_manage(project, user, "edit WBS elements", grant=("milestones", "edit"))
     _require_editable_project(project)
     if m.status in ("achieved", "cancelled"):
         raise HTTPException(status_code=409, detail=f"'{m.title}' is {wf.MILESTONE_STATUS_LABELS[m.status]} and can't be edited.")
@@ -274,7 +274,7 @@ async def delete_milestone(project_id: int, milestone_id: int, db: Session = Dep
     # limits it to management / the PM.
     if project.project_manager_id != user.id:
         ensure_can_delete(user, m, "projects", "milestones", what="milestone")
-    wf.require_manage(project, user, "delete WBS elements")
+    wf.require_manage(project, user, "delete WBS elements", grant=("milestones", "delete"))
     if m.status != "not_started" or db.query(PmProjectTask.id).filter(PmProjectTask.milestone_id == m.id).first():
         raise HTTPException(status_code=409, detail=f"'{m.title}' already has work recorded against it. Cancel it with a reason instead, so its history is kept.")
     # Like deleting a linked task in MS Project: WBS elements that waited for
@@ -302,7 +302,7 @@ async def move_milestone(project_id: int, milestone_id: int, payload: PmMileston
     project = _project_or_404(db, project_id, user)
     _ensure_milestone_action(project, user, "edit")
     m = _milestone_or_404(db, project_id, milestone_id)
-    wf.require_manage(project, user, "reorder WBS elements")
+    wf.require_manage(project, user, "reorder WBS elements", grant=("milestones", "edit"))
     _require_editable_project(project)
     if payload.direction not in ("up", "down"):
         raise HTTPException(status_code=422, detail="Direction must be 'up' or 'down'.")
@@ -402,7 +402,7 @@ async def cancel_milestone(project_id: int, milestone_id: int, payload: PmReason
     project = _project_or_404(db, project_id, user)
     _ensure_milestone_action(project, user, "edit")
     m = _milestone_or_404(db, project_id, milestone_id)
-    wf.require_manage(project, user, "cancel WBS elements")
+    wf.require_manage(project, user, "cancel WBS elements", grant=("milestones", "edit"))
     _require_editable_project(project)
     if m.status in ("achieved", "cancelled"):
         raise HTTPException(status_code=409, detail=f"'{m.title}' is already {wf.MILESTONE_STATUS_LABELS[m.status]}.")

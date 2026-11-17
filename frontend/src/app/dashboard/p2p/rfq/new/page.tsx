@@ -32,9 +32,11 @@ export default function NewRfqPage() {
   const initialPrId = searchParams.get('pr_id')
   const { id: linkedPrId, error: linkError } = useRecordId(initialPrId)
 
-  const { can } = useCan()
-  const isPurchaseTeam = !!user?.apps?.includes('purchase')
+  const { can, canFeature } = useCan()
+  // 'Create' on Procurement › R.F.Q decides (2026-11-14). The requisitions to quote come from My Lines,
+  // read only when that tab is held so a missing My Lines grant never breaks the page.
   const canCreateRfq = can('p2p', 'rfq', 'create')
+  const holdsMyLines = can('p2p', 'purchase_requisitions', 'view') && canFeature('p2p', 'purchase_requisitions', 'my_lines', 'view')
 
   // Requisitions the buyer has lines to quote on (My Lines), the picked requisition in full, and the
   // buyer's own lines of it. Each buyer raises their own RFQ for their own lines (2026-10-31).
@@ -81,7 +83,9 @@ export default function NewRfqPage() {
     if (!isAuthorized) return
     // Requisitions with at least one of the buyer's lines still to order (not "status = approved":
     // several buyers work one requisition, and it stays open while any line is open).
-    p2pApi.myLines({ limit: 500 }).then((res) => {
+    if (!holdsMyLines) {
+      Promise.resolve().then(() => setPrListError("The requisitions you can quote come from your My Lines, and your role has no 'View' on Procurement › Purchase Requisitions › My Lines. Ask an admin to add it in Organization › Role & Permissions."))
+    } else p2pApi.myLines({ limit: 500 }).then((res) => {
       const byPr = new Map<number, { id: number; p2p_number: string; purpose_label: string | null; lines: number }>()
       for (const r of res.rows) {
         if (!(r.open_to_order > 0) || r.state !== 'to_quote') continue
@@ -98,7 +102,7 @@ export default function NewRfqPage() {
       if (Number.isFinite(min) && min > 0) setMinVendors(min)
       if (Number.isFinite(days) && days >= 0 && !dueDateTouched.current) setQuoteDueDate(addDays(days))
     }).catch(() => {}).finally(() => setSettingsReady(true))
-  }, [isAuthorized])
+  }, [isAuthorized, holdsMyLines])
 
   // The picked requisition in full, and My Lines' view of it (open quantity and stage per line).
   useEffect(() => {
@@ -107,7 +111,7 @@ export default function NewRfqPage() {
     Promise.resolve().then(() => { if (!cancelled) { setLoadingPr(true); setPrLoadError('') } })
     Promise.all([
       p2pApi.get(Number(prId)),
-      p2pApi.myLines({ p2p_request_id: Number(prId), limit: 500 }).then((r) => r.rows).catch(() => null),
+      holdsMyLines ? p2pApi.myLines({ p2p_request_id: Number(prId), limit: 500 }).then((r) => r.rows).catch(() => null) : Promise.resolve(null),
     ]).then(([pr, rows]) => {
       if (cancelled) return
       setSelectedPr(pr); setLineRows(rows)
@@ -115,7 +119,7 @@ export default function NewRfqPage() {
       if (!cancelled) { setSelectedPr(null); setLineRows(null); setPrLoadError(extractErrorMessages(err, 'The requisition could not be opened. Check that it still exists and that you have access to it.').join(' ')) }
     }).finally(() => { if (!cancelled) setLoadingPr(false) })
     return () => { cancelled = true }
-  }, [isAuthorized, prId])
+  }, [isAuthorized, prId, holdsMyLines])
 
   // Vendors whose catalog lists this PR's items — most items, then cheapest total first.
   useEffect(() => {
@@ -145,7 +149,6 @@ export default function NewRfqPage() {
   }, [selectedPr, user?.id])
 
   if (isLoading || !isAuthorized) return null
-  if (!isPurchaseTeam) return <p style={{ fontSize: 13, color: '#b91c1c' }}>Only the Purchase team can raise an RFQ.</p>
   if (linkError) return (<div><P2PNav /><InvalidRecordLink message={linkError} listHref="/dashboard/p2p/rfq" listLabel="Back to RFQs" /></div>)
   if (!canCreateRfq) return <p style={{ fontSize: 13, color: '#b91c1c' }}>You don&apos;t have &apos;Create&apos; permission on Procurement › R.F.Q. Ask an admin to add it to one of your roles in Organization › Role &amp; Permissions.</p>
 

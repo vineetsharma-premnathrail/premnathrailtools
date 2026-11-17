@@ -177,7 +177,10 @@ async def list_requirements(
     ticks = {(a.source, a.record_id) for a in db.query(RndRequirementAccess).filter(
         RndRequirementAccess.user_id == user.id, RndRequirementAccess.can_respond == True).all()}  # noqa: E712
     for r in rows:
-        r["can_respond"] = bool(head or (r["source"], r["record_id"]) in ticks)
+        rr = r["rnd_request"]
+        # Same rule as ra.access_for: the head, a legacy respond tick, or the engineer named on the open request.
+        assigned_to_me = bool(rr and rr.get("status") == "open" and rr.get("assigned_to_id") == user.id)
+        r["can_respond"] = bool(head or (r["source"], r["record_id"]) in ticks or assigned_to_me)
     if needs_my_review:
         rows = [r for r in rows if r["needs_my_review"]]
     if status:
@@ -268,7 +271,6 @@ async def get_requirement(source: Source, record_id: int, db: Session = Depends(
         "my_access": my_access,
         "intake": intake.requirement_out(db, req, rev),
         "can_accept": my_access["view"] and ra.can_accept(db, user),
-        "can_return": my_access["view"] and ra.can_return(db, user),
     }
     _mask_sections(out, user, source)
     out["revisions"] = intake.revisions_out(db, req, out["movements"], mask=out.pop("_dropped_fields", None))

@@ -29,7 +29,7 @@ const config: TourConfig = {
         { value: 'Sent to customer', meaning: 'With the customer. Click "Customer accepted" (optional remarks) when they agree — the project is then started in Project Management — or "Customer rejected / lost" with the reason (price, delivery, competitor …).' },
         { value: 'Accepted / Lost', meaning: 'The recorded customer outcome. Only an admin can correct it with "Reopen" (reason required); it goes back to Sent. Not possible once the order has been taken forward.' },
       ],
-      why: 'Only the quotation creator, the inquiry owner / BD owner or an admin can mark it sent, accepted or lost (and they need Quotations › Edit). Edit works only while a quotation is Draft — withdraw it from approval first. Once approved it is locked for everyone, admins included; a new price or term is a new quotation (Create revision from this quotation).',
+      why: 'The quotation creator, or anyone whose CRM Edit scope covers the inquiry (by default its creator, BD owner and sales engineer), can submit it and mark it sent, accepted or lost — with Quotations › Submit / Edit. Edit works only while a quotation is Draft — withdraw it from approval first. Once approved it is locked for everyone, admins included; a new price or term is a new quotation (Create revision from this quotation).',
     },
     {
       target: 'quot-download-pdf-btn',

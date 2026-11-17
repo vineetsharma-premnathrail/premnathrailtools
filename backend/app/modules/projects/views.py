@@ -121,7 +121,7 @@ def project_response(db: Session, project: PmProject, user: User | None = None, 
         resp.units_total = db.query(func.count(PmProjectElement.id)).filter(
             PmProjectElement.project_id == project.id, PmProjectElement.status != "cancelled").scalar() or 0
     if user is not None:
-        resp.can_manage = wf.can_manage(project, user)
+        resp.can_manage = wf.may_change(project, user)
     return resp
 
 
@@ -289,7 +289,9 @@ def workspace_response(db: Session, m: PmProjectMilestone, viewer: User, role: s
         milestone=ms,
         tasks=task_list(db, shown, viewer, cache),
         evidence=documents_for(db, cache, milestone_id=m.id) if full else [],
-        can_manage=bool(project) and wf.can_manage(project, viewer),
+        # Who may accept / reject a submitted WBS on the old (pre-engine) path — the
+        # screen ANDs it with Milestones › Edit, as the accept / reject routes do.
+        can_manage=bool(project) and wf.can_decide(project, viewer),
         can_plan=wf.is_milestone_lead(db, viewer, m),
         role=role,
     )

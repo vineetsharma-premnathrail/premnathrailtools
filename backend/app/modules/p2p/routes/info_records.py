@@ -46,9 +46,10 @@ def _ensure_vendor_feature(user: User, feature: str, action: str) -> None:
 
 
 def _lookup(user: User = Depends(get_current_user)) -> User:
-    """Read access: Procurement › Vendors view, or the Purchase desk (PO
-    drafts and comparisons read prices from here)."""
-    if can_view_tab(user, "p2p", "vendors") or "purchase" in set(user.get_apps()):
+    """Read access: Procurement › Vendors view, or the Purchase desk / 'View' on
+    R.F.Q or Purchase Orders (PO drafts and comparisons read prices from here)."""
+    if (can_view_tab(user, "p2p", "vendors") or can_view_tab(user, "p2p", "rfq") or can_view_tab(user, "p2p", "purchase_orders")
+            or "purchase" in set(user.get_apps())):
         return user
     raise HTTPException(status_code=403, detail=f"You don't have 'View' permission on Procurement › Vendors. {GRANT_HINT}")
 

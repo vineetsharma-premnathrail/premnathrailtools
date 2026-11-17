@@ -1,7 +1,7 @@
 """History (Timeline) of an R&D (Prototype / Research) project.
 
 Milestones were removed from R&D projects on 2026-10-30 (R&D rework: tasks
-only). The milestone tables stay as read-only history (nothing is dropped);
+only). The milestone tables were dropped on 2026-11-17 (migration a8d3f5b7c9e1);
 what is left here is the project's Timeline: project changes logged in
 audit_logs (entity_type "rnd_project", including old milestone entries) merged
 with every task event, newest first.

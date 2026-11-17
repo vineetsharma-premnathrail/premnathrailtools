@@ -216,18 +216,23 @@ def test_return_raised_before_the_engine_finishes_on_its_old_steps(client, db, e
     assert _balance(db, env).on_hand_qty == 2
 
 
-def test_only_a_store_manager_other_than_self_can_approve_an_adjustment(client, db, env):
-    """C-09: the approver must be a Store Manager — the store's own manager or
-    a user with the Store Manager flag — and never the creator."""
+def test_only_an_approve_tick_holder_other_than_self_can_approve_an_adjustment(client, db, env):
+    """C-09: the approver must hold Store › Adjustments › Approve (2026-11-14: the
+    Role matrix tick decides, not the Store Manager flag) and is never the creator."""
+    from app.modules.main.models.user import User
     h = _h(env["keeper"])
     body = lambda approver: {"location_id": env["loc"].id, "approved_by_id": approver.id,  # noqa: E731
                              "items": [{"item_id": env["item"].id, "actual_quantity": 4}]}
-    plain = client.post(f"{API}/stock-adjustments", json=body(env["qc"]), headers=h)
-    assert plain.status_code == 400 and "Store Manager" in plain.json()["detail"]
-    assert client.post(f"{API}/stock-adjustments", json=body(env["manager"]), headers=h).status_code == 200  # store's manager
-    env["qc"].is_store_manager = True
+    no_tick = User(email="ra.notick@premnathrail.com", name="notick", role="user", is_active=True, is_store_manager=True,
+                   granular_permissions=["store:adjustments:view"])
+    tick = User(email="ra.tick@premnathrail.com", name="tick", role="user", is_active=True,
+                granular_permissions=["store:adjustments:view", "store:adjustments:approve"])
+    db.add_all([no_tick, tick])
     db.commit()
-    assert client.post(f"{API}/stock-adjustments", json=body(env["qc"]), headers=h).status_code == 200  # flagged manager
+    plain = client.post(f"{API}/stock-adjustments", json=body(no_tick), headers=h)  # the flag alone is not enough
+    assert plain.status_code == 400 and "Store › Adjustments › Approve" in plain.json()["detail"]
+    assert client.post(f"{API}/stock-adjustments", json=body(env["manager"]), headers=h).status_code == 200  # holds the tick
+    assert client.post(f"{API}/stock-adjustments", json=body(tick), headers=h).status_code == 200  # tick, no flag
     own = client.post(f"{API}/stock-adjustments", json=body(env["keeper"]), headers=h)
     assert own.status_code == 400 and "your own" in own.json()["detail"]
 
@@ -324,8 +329,9 @@ def test_issue_types_are_fixed_and_job_work_scrap_sample_rules_apply(client, db,
 
     scrap = issue(env["manager"], issue_type="scrap")
     assert scrap.status_code == 422 and "scrapping" in scrap.json()["detail"]
+    # 2026-11-14: Scrap needs only Store › Issues › Create (and the role's Issue Type list), no flag.
     plain = issue(issue_type="scrap", remarks="Corroded beyond use")
-    assert plain.status_code == 403 and "Store Manager" in plain.json()["detail"]
+    assert plain.status_code == 200, plain.text
     assert issue(env["manager"], issue_type="scrap", remarks="Corroded beyond use").status_code == 200
     sold = issue(env["manager"], issue_type="scrap", remarks="Sold as scrap", scrap_buyer="Kabadi & Co")
     assert sold.status_code == 422 and "Delivery challan no." in sold.json()["detail"]

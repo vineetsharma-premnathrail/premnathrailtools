@@ -79,9 +79,15 @@ export default function RoleDetailPage() {
   const [askDeactivate, setAskDeactivate] = useState(false)
   const [askEmptyMembers, setAskEmptyMembers] = useState(false)
 
-  const applyRole = (r: Role) => {
-    setRole(r); setName(r.name); setDescription(r.description || ''); setIsActive(r.is_active)
-    setIsDefault(r.is_default); setPermissions(r.permissions); setDataScopes(r.data_scopes || {}); setNotifyEvents(r.notification_events || {}); setAssigneeRules(r.assignee_rules || {}); setVisibilityRules(r.visibility_rules || {}); setMemberIds((r.users || []).map((u) => u.id))
+  // `part` = what was just saved: 'role' resets only the role's own fields (keeps
+  // unsaved Users-tab picks), 'members' only who holds it (keeps unsaved ticks).
+  const applyRole = (r: Role, part: 'all' | 'role' | 'members' = 'all') => {
+    setRole(r)
+    if (part !== 'members') {
+      setName(r.name); setDescription(r.description || ''); setIsActive(r.is_active)
+      setIsDefault(r.is_default); setPermissions(r.permissions); setDataScopes(r.data_scopes || {}); setNotifyEvents(r.notification_events || {}); setAssigneeRules(r.assignee_rules || {}); setVisibilityRules(r.visibility_rules || {})
+    }
+    if (part !== 'role') setMemberIds((r.users || []).map((u) => u.id))
   }
 
   useEffect(() => {
@@ -143,6 +149,15 @@ export default function RoleDetailPage() {
   const scopeLabels = catalog?.scope_labels || {}
   // What a module with no data access set falls back to (server setting).
   const defaultScope = catalog?.default_scope || 'assigned'
+  // Levels narrow → wide (server order); an Edit scope never set = "Own + assigned", clamped to View.
+  const levels = catalog?.scope_levels || []
+  const rank = (lv: string) => levels.indexOf(lv)
+  const DEFAULT_EDIT = 'assigned'
+  // Modules this role opens whose records fall back to the default scope (amber hint on Data access).
+  const defaultScoped = defaultScope === 'organization' ? [] : grantedModules.filter((mk) => !dataScopes[mk])
+  const defaultScopeWords = defaultScope === 'own' ? 'only see records they created or requested'
+    : defaultScope === 'assigned' ? 'only see their own and assigned records'
+      : `only see records at the “${scopeLabels[defaultScope] || defaultScope}” level`
 
   // Stages that name this role directly — they lose their approvers if the role goes.
   const roleStages = (approvesIn || []).filter((r) => r.kind === 'approver' && r.how.startsWith('Holders of this role'))
@@ -172,9 +187,12 @@ export default function RoleDetailPage() {
         router.replace(path)
         return
       }
-      const updated = await rolesApi.update(roleId!, payload())
-      applyRole(updated)
-      setNotice('Role saved. Users holding it get the new access on their next page load.')
+      const updated = await rolesApi.update(roleId!, payload()) as Role & { dropped_permissions?: string[] }
+      applyRole(updated, 'role')
+      const dropped = updated.dropped_permissions || []
+      setNotice('Role saved. Its holders are told by a bell notification, and their open pages pick up the new access within a minute (or on reload).'
+        + (dropped.length ? ` ${dropped.length} old permission(s) for screens that no longer exist were removed: ${dropped.map(grantWords).join('; ')}.` : '')
+        + (membersChanged ? ' Your changes on the Users tab are NOT saved yet — open Users and click Save Users.' : ''))
     } catch (err) {
       setError(extractErrorMessages(err, 'Could not save the role.').join(' '))
     } finally {
@@ -188,8 +206,9 @@ export default function RoleDetailPage() {
     setAskEmptyMembers(false)
     setSaving(true); setError('')
     try {
-      applyRole(await rolesApi.setUsers(roleId, memberIds))
-      setNotice('Users updated.')
+      applyRole(await rolesApi.setUsers(roleId, memberIds), 'members')
+      setNotice('Users updated — the people added or removed are told by a bell notification.'
+        + (roleDirty ? ' Your changes on the other tabs (permissions, data access, notifications, name) are NOT saved yet — open one of them and click Save Role.' : ''))
     } catch (err) {
       setError(extractErrorMessages(err, 'Could not update who holds this role.').join(' '))
     } finally {
@@ -217,7 +236,17 @@ export default function RoleDetailPage() {
     }
   }
 
-  const membersChanged = role && JSON.stringify([...memberIds].sort()) !== JSON.stringify((role.users || []).map((u) => u.id).sort())
+  const membersChanged = !!role && JSON.stringify([...memberIds].sort()) !== JSON.stringify((role.users || []).map((u) => u.id).sort())
+  // Unsaved changes on the Save Role tabs (compared with the role as saved).
+  const roleDirty = !!role && stableJson({ name: name.trim(), description: description.trim(), isActive, isDefault, permissions: [...permissions].sort(), dataScopes, notifyEvents, assigneeRules, visibilityRules })
+    !== stableJson({ name: role.name, description: (role.description || '').trim(), isActive: role.is_active, isDefault: role.is_default, permissions: [...role.permissions].sort(), dataScopes: role.data_scopes || {}, notifyEvents: role.notification_events || {}, assigneeRules: role.assignee_rules || {}, visibilityRules: role.visibility_rules || {} })
+  // An old permission id in plain words: "Module › tab › action" where the module is still known.
+  function grantWords(g: string) {
+    const [mk, tk, a] = g.split(':')
+    const mod = catalog?.modules[mk]
+    const tab = (tk || '').split('.')[0]
+    return [mod?.label || mk, mod?.subtabs[tab] || tk, catalog?.action_labels[a] || a].filter(Boolean).join(' › ')
+  }
   const members = memberIds.map((id) => directory.find((u) => u.id === id) || role?.users?.find((u) => u.id === id)).filter(Boolean) as { id: number; name: string; email: string; department?: string | null }[]
   const q = memberSearch.trim().toLowerCase()
   const candidates = q ? directory.filter((u) => !memberIds.includes(u.id) && (u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))).slice(0, 8) : []
@@ -325,11 +354,22 @@ export default function RoleDetailPage() {
               <button key={t} type="button" onClick={() => setTab(t)} data-tour={`org-role-tab-${t.toLowerCase()}`}
                 style={tabBtn(t)}>
                 {t === 'Users' && (role || isNew) ? `Users (${isDefault ? 'everyone' : memberIds.length})` : t === 'Approves in' && approvesIn ? `Approves in (${approvesIn.length})` : t}
+                {!isNew && ((t === 'Users' && membersChanged) || (t !== 'Users' && t !== 'Approves in' && roleDirty)) && (
+                  <span title="Unsaved changes" aria-label="unsaved changes" style={{ color: '#b45309', marginLeft: 4 }}>•</span>
+                )}
               </button>
             ))}
           </div>
           <TourButton variant="icon" />
         </div>
+
+        {!isNew && !picked && ((view === 'Users' && roleDirty) || (view !== 'Users' && membersChanged)) && (
+          <div role="status" data-tour="org-role-unsaved" style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(217,119,6,0.08)', border: '1px solid rgba(217,119,6,0.3)', color: '#92400e', fontSize: 12.5, marginBottom: 14 }}>
+            {view === 'Users'
+              ? <>You have unsaved changes on the Permissions / Data access / Notifications tabs (or the role details). <b>Save Users</b> saves only who holds the role — open one of those tabs and click <b>Save Role</b> too, or the changes are lost when you leave.</>
+              : <>You have unsaved changes on the <b>Users</b> tab. <b>Save Role</b> saves only the role&apos;s details and access — open Users and click <b>Save Users</b> too, or the changes are lost when you leave.</>}
+          </div>
+        )}
 
         {view !== 'Users' && !isNew && holders.length > 0 && (
           <div data-tour="org-role-for-user" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 16, padding: '10px 14px', borderRadius: 12, background: picked ? 'rgba(37,99,235,0.06)' : SHEET.SOFT, border: `1px solid ${picked ? 'rgba(37,99,235,0.25)' : SHEET.LINE}` }}>
@@ -355,6 +395,12 @@ export default function RoleDetailPage() {
                 Pick a preset per module, then fine-tune tabs and actions. A dash (—) means that action doesn&apos;t exist on that tab.
                 Ticking any action also ticks View; unticking View clears the row.
               </p>
+              {defaultScoped.length > 0 && (
+                <p data-tour="org-role-scope-default-summary" style={{ fontSize: 12, color: '#92400e', background: 'rgba(217,119,6,0.08)', border: '1px solid rgba(217,119,6,0.25)', borderRadius: 8, padding: '6px 10px', margin: '0 0 12px' }}>
+                  Records: {scopeLabels[defaultScope] || defaultScope} (default) in {defaultScoped.map((mk) => catalog.modules[mk].label).join(', ')} — holders will {defaultScopeWords} there.
+                  {seeRoleTab('Data access') ? <> Set <button type="button" onClick={() => setTab('Data access')} style={{ background: 'none', border: 'none', padding: 0, color: '#92400e', fontWeight: 700, textDecoration: 'underline', cursor: 'pointer', fontSize: 12 }}>Data access</button> to widen.</> : ' Ask someone with Data access rights to widen it.'}
+                </p>
+              )}
               <PermissionMatrixEditor registry={catalog} value={permissions} onChange={setPermissions} readOnly={locked}
                 assigneeRules={assigneeRules} onAssigneeRulesChange={locked ? undefined : setAssigneeRules}
                 visibilityRules={visibilityRules} onVisibilityRulesChange={locked ? undefined : setVisibilityRules} roleName={name.trim() || undefined}
@@ -372,25 +418,60 @@ export default function RoleDetailPage() {
                 people in their department (same plant) · Plant = their plant · Multiple plants = every plant assigned to them in
                 Branches · Entire organization = everything. Not set = {scopeLabels[defaultScope] || defaultScope}. Anyone always sees records they must approve. When a user holds several
                 roles, the widest access wins; a personal override on the user page beats all roles.
+                The second column says which of those records they may <b>change</b> (edit, upload, move a stage) — Default = {scopeLabels[DEFAULT_EDIT] || DEFAULT_EDIT}, and it is never wider than what they see.
               </p>
               {grantedModules.length === 0 ? (
                 <p style={{ fontSize: 13, color: SHEET.MUTED, margin: 0 }}>This role doesn&apos;t open any module yet — tick permissions first.</p>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 560 }}>
-                  {grantedModules.map((mk) => (
-                    <div key={mk} style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'space-between' }}>
-                      <span style={{ fontSize: 13, color: SHEET.INK, fontWeight: 600 }}>{catalog.modules[mk].label}</span>
-                      <Select value={dataScopes[mk] || defaultScope} disabled={locked || !canFeature('organization', 'roles', 'data_access', 'edit')} style={{ ...sheetInput, width: 220 }}
-                        onChange={(e) => setDataScopes((s) => {
-                          const next = { ...s }
-                          if (e.target.value === defaultScope) delete next[mk]
-                          else next[mk] = e.target.value
-                          return next
-                        })}>
-                        {(catalog.scope_levels || []).map((lv) => <option key={lv} value={lv}>{scopeLabels[lv] || lv}</option>)}
-                      </Select>
-                    </div>
-                  ))}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 820 }}>
+                  <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 11, fontWeight: 700, color: SHEET.MUTED, textTransform: 'uppercase', letterSpacing: 0.3 }}>
+                    <span style={{ flex: '1 1 160px' }}>Module</span>
+                    <span style={{ width: 220 }}>Which records they see</span>
+                    <span style={{ width: 260 }}>Which records may they change?</span>
+                  </div>
+                  {grantedModules.map((mk) => {
+                    const scopeOff = locked || !canFeature('organization', 'roles', 'data_access', 'edit')
+                    const viewLevel = dataScopes[mk] || defaultScope
+                    const editKey = `${mk}:edit`
+                    // Edit scope can never be wider than View (the server clamps too).
+                    const editChoices = levels.filter((lv) => rank(lv) <= rank(viewLevel))
+                    const editDefault = rank(DEFAULT_EDIT) <= rank(viewLevel) ? DEFAULT_EDIT : viewLevel
+                    return (
+                      <div key={mk} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                          <span style={{ flex: '1 1 160px', fontSize: 13, color: SHEET.INK, fontWeight: 600 }}>{catalog.modules[mk].label}</span>
+                          <Select value={viewLevel} disabled={scopeOff} style={{ ...sheetInput, width: 220 }} aria-label={`${catalog.modules[mk].label}: which records they see`}
+                            onChange={(e) => setDataScopes((s) => {
+                              const next = { ...s }
+                              const v = e.target.value
+                              if (v === defaultScope) delete next[mk]
+                              else next[mk] = v
+                              // Narrowing View narrows a wider Edit with it.
+                              if (next[editKey] && rank(next[editKey]) > rank(v)) next[editKey] = v
+                              return next
+                            })}>
+                            {levels.map((lv) => <option key={lv} value={lv}>{scopeLabels[lv] || lv}</option>)}
+                          </Select>
+                          <Select value={dataScopes[editKey] && rank(dataScopes[editKey]) <= rank(viewLevel) ? dataScopes[editKey] : ''} disabled={scopeOff}
+                            style={{ ...sheetInput, width: 260 }} aria-label={`${catalog.modules[mk].label}: which records may they change`}
+                            onChange={(e) => setDataScopes((s) => {
+                              const next = { ...s }
+                              if (e.target.value) next[editKey] = e.target.value
+                              else delete next[editKey]
+                              return next
+                            })}>
+                            <option value="">{`Default (${scopeLabels[editDefault] || editDefault})`}</option>
+                            {editChoices.map((lv) => <option key={lv} value={lv}>{scopeLabels[lv] || lv}</option>)}
+                          </Select>
+                        </div>
+                        {!dataScopes[mk] && defaultScope !== 'organization' && (
+                          <span data-tour="org-role-scope-default" style={{ fontSize: 11.5, color: '#92400e', background: 'rgba(217,119,6,0.08)', border: '1px solid rgba(217,119,6,0.25)', borderRadius: 8, padding: '4px 8px', alignSelf: 'flex-start' }}>
+                            Records: {scopeLabels[defaultScope] || defaultScope} (default) — users will {defaultScopeWords}. Set Data access to widen.
+                          </span>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </SheetSection>
@@ -467,4 +548,12 @@ export default function RoleDetailPage() {
       </div>
     </FormPage>
   )
+}
+
+/** JSON with object keys sorted, so two equal settings compare equal whatever order the keys were added in. */
+function stableJson(v: unknown): string {
+  const norm = (x: unknown): unknown => Array.isArray(x) ? x.map(norm)
+    : x && typeof x === 'object' ? Object.fromEntries(Object.keys(x as Record<string, unknown>).sort().map((k) => [k, norm((x as Record<string, unknown>)[k])]))
+      : x
+  return JSON.stringify(norm(v))
 }

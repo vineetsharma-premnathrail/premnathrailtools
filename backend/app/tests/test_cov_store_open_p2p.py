@@ -203,10 +203,16 @@ def test_c43_pr_with_po_awaiting_approval_cannot_be_cancelled(client, db, env):
 
 def test_c43_cancelling_pr_after_po_approval_does_not_leave_po_issued(client, db, env):
     pr, po, _ = _approved_po(db, env, pr_status="po_approved")
+    # 2026-11-14: the Purchase Orders tab's 'Cancel' grant decides (not the Purchase desk) — a requester
+    # holding only Purchase Requisitions grants can't call off the approved PO.
+    req = env["requester"]
+    req.assigned_apps = []
+    req.granular_permissions = [f"p2p:purchase_requisitions:{a}" for a in ("view", "create", "edit", "submit", "cancel")]
+    db.commit()
     r = client.post(f"{PR_BASE}/{pr.id}/cancel", json={"reason": "No longer needed"}, headers=_h(env["requester"]))
     db.expire_all()
     po_status = db.query(P2PPurchaseOrder).filter_by(id=po.id).one().status
-    # The requester can't call off an approved PO (only Purchase can) —
+    # The requester can't call off an approved PO (only Purchase Orders › Cancel can) —
     # refused outright, PR and PO both untouched.
     assert r.status_code == 403, r.text
     assert db.query(P2PRequest).filter_by(id=pr.id).one().status == "po_approved"

@@ -18,16 +18,6 @@ export const ENTRIES: TourEntry[] = [
   { pattern: /^\/dashboard\/rnd\/projects\/[A-Za-z0-9_-]{19}$/, load: () => import('../configs/rndProjectDetail') },
   { pattern: /^\/dashboard\/rnd\/projects$/, load: () => import('../configs/rndProjectsList') },
 
-  // Experiments
-  { pattern: /^\/dashboard\/rnd\/experiments\/new$/, load: () => import('../configs/rndExperimentForm') },
-  { pattern: /^\/dashboard\/rnd\/experiments\/[A-Za-z0-9_-]{19}$/, load: () => import('../configs/rndExperimentDetail') },
-  { pattern: /^\/dashboard\/rnd\/experiments$/, load: () => import('../configs/rndExperimentsList') },
-
-  // Prototypes
-  { pattern: /^\/dashboard\/rnd\/prototypes\/new$/, load: () => import('../configs/rndPrototypeForm') },
-  { pattern: /^\/dashboard\/rnd\/prototypes\/[A-Za-z0-9_-]{19}$/, load: () => import('../configs/rndPrototypeDetail') },
-  { pattern: /^\/dashboard\/rnd\/prototypes$/, load: () => import('../configs/rndPrototypesList') },
-
   { pattern: /^\/dashboard\/rnd\/documents$/, load: () => import('../configs/rndDocuments') },
   { pattern: /^\/dashboard\/rnd\/history$/, load: () => import('../configs/rndHistory') },
 

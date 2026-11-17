@@ -55,11 +55,11 @@ function Pill({ text, hex }: { text: string; hex: string }) {
 }
 
 export default function ItemRatesPage() {
-  const { isAuthorized, isLoading } = useRequireApp('purchase')
+  const { isAuthorized: inP2p, isLoading } = useRequireApp('p2p')
   const { can, canFeature } = useCan()
-  // Vendors › Info records & source list (role editor); the Purchase desk without
-  // Vendors › View reads them as a lookup and isn't governed by it.
-  const seeInfoRecords = !can('p2p', 'vendors', 'view') || canFeature('p2p', 'vendors', 'info_records', 'view')
+  // Vendors › Item Rates tab › View decides the page (2026-11-14, not the Purchase desk).
+  const seeInfoRecords = canFeature('p2p', 'vendors', 'info_records', 'view')
+  const isAuthorized = inP2p && seeInfoRecords
   const canEdit = can('p2p', 'vendors', 'edit') && canFeature('p2p', 'vendors', 'info_records', 'edit')
   const [items, setItems] = useState<StoreItem[]>([])
   const [vendors, setVendors] = useState<Opt[]>([])
@@ -109,7 +109,8 @@ export default function ItemRatesPage() {
     return { po: po.length ? Math.min(...po) : null, quote: q.length ? Math.min(...q) : null }
   }, [ov])
 
-  if (isLoading || !isAuthorized) return null
+  if (isLoading || !inP2p) return null
+  if (!seeInfoRecords) return (<div><P2PNav /><p style={{ fontSize: 13, color: TEXT.muted }}>You can&apos;t open Item Rates: your role has no &apos;View&apos; on Procurement › Vendors › Item Rates tab. Ask an admin to add it in Organization › Role &amp; Permissions.</p></div>)
 
   const run = async (fn: () => Promise<unknown>, fallback: string) => {
     setBusy(true); setError('')

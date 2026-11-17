@@ -188,6 +188,8 @@ class PmProjectResponse(BaseModel):
     forecast_date: date | None = None
     # on_track | at_risk | delayed (None when not Active)
     health: str | None = None
+    # Management / the project manager, or the project is inside the viewer's Edit
+    # scope (workflow.may_change). Screens AND it with the button's tab tick.
     can_manage: bool = False
     # The machine registered with this project (first live one); None for projects without one.
     machine_id: int | None = None

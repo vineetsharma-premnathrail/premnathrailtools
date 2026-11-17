@@ -11,6 +11,7 @@ import { REVISION_STATUS_LABEL, type RndRequirementRow } from '@/types/rndIntake
 import { priorityLabel } from '@/lib/priority'
 import { TEXT, GLASS, SHADOWS, BORDER, BRAND, CONTROL } from '@/lib/theme'
 import RndNav from '@/components/rnd/RndNav'
+import ScopeNote from '@/components/shared/ScopeNote'
 import type { RndRequest } from '@/types'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
@@ -161,6 +162,7 @@ export default function RndRequirementsPage() {
         />
       </div>
 
+      {!vis.preview && <ScopeNote module="rnd" empty={!loading && rows.length === 0} />}
       <div style={{
         borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
         border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)',
@@ -179,7 +181,7 @@ export default function RndRequirementsPage() {
               <tr><td colSpan={columns.length} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : rows.length === 0 ? (
               <tr><td colSpan={columns.length} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
-                {search || source || mine ? 'No requirements match your filters.' : 'No requirements yet — they arrive here when the business team sends a Technical Offer Request from CRM.'}
+                {search || source || mine ? 'No requirements match your filters.' : 'No requirements to show. Requirements arrive here when the business team sends a Technical Offer Request from CRM; you see the ones your data access covers (see the note above).'}
               </td></tr>
             ) : (
               rows.map((r) => {

@@ -45,7 +45,7 @@ from demo._common import Demo, guard_local_database  # noqa: E402
 SEEDERS = [
     "foundation",    # organization, demo people, products, store masters/items/stock, vendors, customers
     "crm",           # organizations, contacts, inquiries, tender, activities, TOR to R&D
-    "rnd",           # R&D team, requirement work, technical offer, projects, experiments, prototypes
+    "rnd",           # R&D team, requirement work, technical offer, projects
     "quotation",     # CRM quotation against the technical offer
     "design",        # design requests, BOM revisions, ECR/ECN, library
     "electrical",    # electrical jobs, panels, cables, drawings, tests

@@ -117,6 +117,7 @@ String _sourceLabel(Json t) => switch ('${t['source']}') {
       'inquiry' => 'Inquiry requirement',
       'tender' => 'Tender requirement',
       'pm_project' => 'Project (PEW)',
+      'machine' => 'Machine (PEW)',
       _ => 'R&D project',
     };
 

@@ -538,7 +538,7 @@ class _BudgetCard extends StatelessWidget {
         final sm = obj(d['summary']);
         if (b(d['hidden'])) {
           children.add(const Text(
-              'Costs are hidden for your role (R&D › Prototypes › BOM costs). Ask an admin if you need to see the budget.',
+              'Costs are hidden for your role (R&D › Prototype / Research › Budget & costs). Ask an admin if you need to see the budget.',
               style: TextStyle(color: Brand.muted)));
         } else if (sm == null) {
           children.add(const Text(

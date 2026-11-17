@@ -19,7 +19,7 @@ from app.modules.accounts.schemas.asset_accounting import (
 )
 from app.modules.accounts.schemas.fixed_asset import FixedAssetResponse
 from app.modules.accounts.services import asset_accounting, tax_depreciation
-from app.modules.accounts.routes._common import write_audit, who, service_errors, require_finance_manager
+from app.modules.accounts.routes._common import write_audit, who, service_errors
 from app.modules.accounts.routes.fixed_assets import _to_response as _asset_response
 
 router = APIRouter(prefix="/accounts/asset-accounting", tags=["Accounts"])
@@ -67,7 +67,6 @@ async def capitalise_invoice_line_route(payload: AssetFromInvoiceLineCreate, db:
 @router.post("/capitalise/internal-order", response_model=FixedAssetResponse, status_code=201)
 async def capitalise_order_route(payload: AssetFromOrderCreate, db: Session = Depends(get_db),
                                  user: User = Depends(require_feature_action("accounts", "fixed_assets", "capitalisation", "create"))):
-    require_finance_manager(user, "settle a capital order into a fixed asset")
     with service_errors(db):
         a = asset_accounting.settle_internal_order(db, internal_order_id=payload.internal_order_id, settlement_date=payload.settlement_date,
                                                    data=_master(payload), amount=payload.amount, user_id=user.id)
@@ -98,7 +97,6 @@ async def list_retirements(fixed_asset_id: int | None = Query(None), db: Session
 @router.post("/assets/{asset_id}/retire", response_model=AssetRetirementResponse, status_code=201)
 async def retire_route(asset_id: int, payload: AssetRetirementCreate, db: Session = Depends(get_db),
                        user: User = Depends(require_feature_action("accounts", "fixed_assets", "retirements", "create"))):
-    require_finance_manager(user, "retire or sell a fixed asset")
     with service_errors(db):
         r = asset_accounting.retire_asset(db, asset_id=asset_id, user_id=user.id, **payload.model_dump())
     write_audit(db, "fixed_asset", asset_id, "retired", user,

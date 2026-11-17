@@ -68,8 +68,7 @@ async def update_product(
     product = db.query(Product).filter(Product.id == product_id, Product.is_deleted == False).first()  # noqa: E712
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
-    if not _can_modify(product, user):
-        raise HTTPException(status_code=403, detail="Only the creator or an admin can edit this product.")
+    # CRM settings master: the Settings › Edit tick decides who edits it (owner, 2026-11-14).
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(product, field, value)
     db.commit()

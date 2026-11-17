@@ -16,6 +16,7 @@ import StoreNav from '@/components/store/StoreNav'
 import BeforePOReceiptForm from '@/components/store/BeforePOReceiptForm'
 import BeforePOReceiptDetail from '@/components/store/BeforePOReceiptDetail'
 import { primaryBtnStyle, RowCount, Pill, StatChip, inputStyle } from '@/components/shared/ui'
+import ScopeNote from '@/components/shared/ScopeNote'
 
 const thStyle: React.CSSProperties = {
   position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', padding: '10px 14px', fontSize: 11.5,
@@ -97,6 +98,7 @@ export default function StoreBeforePoPage() {
           style={{ ...inputStyle, width: 300, maxWidth: '100%' }} />
       </div>
 
+      <ScopeNote module="store" empty={!loading && rows.length === 0} />
       <div data-tour="store-bpo-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 400px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
           <thead>

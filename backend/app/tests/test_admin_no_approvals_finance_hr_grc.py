@@ -75,8 +75,11 @@ def test_admin_cannot_decide_a_pending_journal_in_the_engine(client, books):
 
 def test_hr_can_decide_engine_flag_is_false_for_unnamed_admin(books):
     db, admin = books["db"], _admin(books["db"], "nap.admin4@premnathrail.com")
+    # Requested by another unnamed admin: since 2026-11-14 every holder of Period Close ›
+    # Approve (the clerk too) is an approver and would close it in one click.
+    other = _admin(db, "nap.admin5@premnathrail.com")
     req = access.submit_process(db, access.KEY_PERIOD_CLOSE, entity_id=access.period_entity_id("2026-02"),
-                                actor=books["clerk"], title="Close 2026-02", reference="2026-02", context={"period": "2026-02"})
+                                actor=other, title="Close 2026-02", reference="2026-02", context={"period": "2026-02"})
     db.commit()
     assert req.status == "pending"
     assert hr_approvals.can_decide_engine(db, admin, req) is False

@@ -44,9 +44,9 @@ const config: TourConfig = {
       options: [
         { value: 'Match: Matched', meaning: 'Bill agrees with PO and goods received within tolerance.' },
         { value: 'Match: Variance', meaning: 'Bill differs from PO/GRN beyond tolerance — cannot be posted until approved.' },
-        { value: 'Match: Variance approved', meaning: 'A Finance Manager accepted the difference with a note.' },
+        { value: 'Match: Variance approved', meaning: 'A variance approver accepted the difference with a note.' },
         { value: 'Match: No PO', meaning: 'Direct bill — no match applies.' },
-        { value: 'Approve variance (row)', meaning: 'Finance Manager / admin only, and not the person who recorded the bill.' },
+        { value: 'Approve variance (row)', meaning: 'Needs Purchase Invoices › Approve 3-way-match variance, and not the person who recorded the bill.' },
         { value: 'Post (row)', meaning: 'Puts the bill in the books. Only a different finance user than the one who recorded it (maker-checker).' },
         { value: 'Cancel (row)', meaning: 'Cancels a pending bill; asks for a reason.' },
         { value: 'Pay (row)', meaning: 'Opens Payments for this vendor to pay the balance due.' },

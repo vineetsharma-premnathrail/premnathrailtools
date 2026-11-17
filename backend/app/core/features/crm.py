@@ -6,7 +6,7 @@ access they had.
 
 Tenders have no tab of their own — they share Inquiries & Tenders — so every
 Inquiries & Tenders feature below applies to an inquiry AND to a tender
-(Quotations exist only on inquiries)."""
+(Quotations exist on inquiries and tenders)."""
 from app.core.assignee_rules import register_pickers
 from app.core.permission_registry import _feature, register_features
 from app.core.reporting.features import management_feature
@@ -32,7 +32,7 @@ register_features(
     _feature("quotations", "Quotations", "subtab", {
         "view": "view", "create": "edit", "edit": "edit", "delete": "delete",
         "submit": "edit", "approve": "approve", "reject": "reject", "print": "print",
-    }, "The Quotations sub-tab of an inquiry: see, create / revise (and send / record the customer's answer), "
+    }, "The Quotations sub-tab of an inquiry or tender: see, create / revise (and send / record the customer's answer), "
        "submit for approval, approve / return / reject, delete and print quotations. Until customised, Approve / Reject / "
        "Print follow the Inquiries & Tenders row's Approve / Reject / Print (those row ticks only feed this and Follow-ups)."),
     _feature("documents", "Documents", "subtab", {
@@ -183,6 +183,7 @@ register_visibility(
         ("tnd_detail_customer", "Customer", "Customer organization, zone / division and contact person on the Info tab. "
          "Access is still set by the 'Customer Organization & contact person' feature.", False, "tender_detail"),
         ("tnd_detail_dates", "Dates tab", "Access is still set by the Dates feature; this only hides the tab on screen.", False, "tender_detail"),
+        ("tnd_detail_quotations", "Quotations tab", "Access is still set by the Quotations feature; this only hides the tab on screen.", False, "tender_detail"),
         ("tnd_detail_technical_offers", "Technical Offers tab", "Access is still set by the Technical Offers feature.", False, "tender_detail"),
         ("tnd_detail_documents", "Documents tab", "Access is still set by the Documents feature.", False, "tender_detail"),
         ("tnd_detail_followups", "Follow Ups tab", "Access is still set by the Follow-ups feature.", False, "tender_detail"),

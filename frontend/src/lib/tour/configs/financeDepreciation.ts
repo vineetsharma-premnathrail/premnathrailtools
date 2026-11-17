@@ -25,7 +25,7 @@ const config: TourConfig = {
     {
       target: 'fin-dep-run-btn',
       title: 'Run depreciation',
-      purpose: 'Finance Manager only; enabled when the preview total is above zero. Asks for confirmation.',
+      purpose: 'Needs Approve on Depreciation; enabled when the preview total is above zero. Asks for confirmation.',
       after: 'Posts one journal: Dr Depreciation expense / Cr Accumulated depreciation for every asset with a charge due. A success message shows the total and number of assets.',
     },
     {
@@ -40,7 +40,7 @@ const config: TourConfig = {
       options: [
         { value: 'Posted', meaning: 'In the books.' },
         { value: 'Reversed', meaning: 'Undone by a reversal journal; assets put back to their earlier book value.' },
-        { value: 'Reverse (row)', meaning: 'Finance Manager — only on the newest posted run (reverse newest first). Asks for a reason.' },
+        { value: 'Reverse (row)', meaning: 'Needs Depreciation › Reverse depreciation runs — only on the newest posted run (reverse newest first). Asks for a reason.' },
       ],
     },
   ],

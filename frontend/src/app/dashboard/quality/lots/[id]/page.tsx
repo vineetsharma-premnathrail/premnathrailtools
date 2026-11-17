@@ -77,18 +77,21 @@ export default function LotDetailPage() {
   const [decision, setDecision] = useState({ decision: 'accept', accepted_qty: '', rejected_qty: '', deviation_reference: '', remarks: '' })
   // Which action popup is open (usage decision / test certificate).
   const [sheet, setSheet] = useState<'' | 'decision' | 'cert'>('')
-  const { can, canFeature } = useCan()
-  // Mirrors the backend: working a lot needs quality:inspection_lots:edit; the usage decision needs
-  // quality:inspection_lots:approve, and accept-with-deviation a Quality head (quality:ncr:approve).
+  const { can, canFeature, user } = useCan()
+  // Mirrors the backend (routes/inspection_lots.py, services/lots.py — the matrix tick decides, 2026-11-14):
+  // working a lot needs Inspection Lots › Edit, or My Inspections › Edit for a lot assigned to you or not yet
+  // assigned; the usage decision — accept-with-deviation included — needs Inspection Lots › Usage decision › Approve;
+  // assigning the inspector needs Inspection Lots › Assign inspector › Edit.
   // The preview offers no action at all (nothing can be saved there).
   const canEdit = !preview && can('quality', 'inspection_lots', 'edit')
   // Inspection Lots features (core/features/quality.py) on top of the tab actions.
-  const canDecide = !preview && can('quality', 'inspection_lots', 'approve') && canFeature('quality', 'inspection_lots', 'usage_decision', 'approve')
-  const canRecord = !preview && canFeature('quality', 'inspection_lots', 'results', 'edit')
-  const canSubmitResults = !preview && canFeature('quality', 'inspection_lots', 'results', 'submit')
+  const canDecide = !preview && canFeature('quality', 'inspection_lots', 'usage_decision', 'approve')
+  const canRecordByTab = !preview && canFeature('quality', 'inspection_lots', 'results', 'edit')
+  const canSubmitByTab = !preview && canFeature('quality', 'inspection_lots', 'results', 'submit')
+  const canAssign = !preview && canFeature('quality', 'inspection_lots', 'assign', 'edit')
+  const myInspectionsEdit = !preview && can('quality', 'my_inspections', 'edit')
   // A lot opens for every Quality user in scope; the photos switch binds roles holding the tab.
   const seePhotos = !can('quality', 'inspection_lots', 'view') || canFeature('quality', 'inspection_lots', 'photos', 'view')
-  const isHead = can('quality', 'ncr', 'approve')
   // Print Inspection Report (Excel): Quality › Inspection Lots › Print.
   const canPrint = !preview && can('quality', 'inspection_lots', 'print')
   const [printing, setPrinting] = useState(false)
@@ -147,8 +150,14 @@ export default function LotDetailPage() {
     )
   }
 
-  const editable = (lot.status === 'created' || lot.status === 'in_inspection') && canEdit
-  // The results grid follows Inspection Lots › Inspection results › Edit.
+  const lotOpen = lot.status === 'created' || lot.status === 'in_inspection'
+  // My Inspections › Edit works a lot assigned to you, or one nobody is assigned to yet (pickup).
+  const myLot = myInspectionsEdit && (lot.assigned_to_id === user?.id || (!lot.assigned_to_id && ['created', 'in_inspection', 'results_recorded'].includes(lot.status)))
+  const canWork = canEdit || myLot
+  const canRecord = canRecordByTab || myLot
+  const canSubmitResults = canSubmitByTab || myLot
+  const editable = lotOpen && canWork
+  // The results grid follows Inspection Lots › Inspection results › Edit (or My Inspections › Edit on your lot).
   const resultsEditable = editable && canRecord
   const setDraft = (id: number, patch: Partial<Draft>) => setDrafts((d) => ({ ...d, [id]: { ...d[id], ...patch } }))
 
@@ -276,7 +285,7 @@ export default function LotDetailPage() {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
           <div style={{ flex: '0 1 200px', minWidth: 170 }}>
             <Field label="Sampling state">
-              <Select style={inputStyle} value={lot.sampling_severity} disabled={lot.status !== 'created' || busy || !canEdit}
+              <Select style={inputStyle} value={lot.sampling_severity} disabled={lot.status !== 'created' || busy || !canWork}
                 onChange={(e) => run(() => qualityApi.setLotSampling(lot.id, e.target.value), 'Failed to change sampling.')}>
                 <option value="normal">Normal</option><option value="tightened">Tightened</option><option value="reduced">Reduced</option>
               </Select>
@@ -284,7 +293,8 @@ export default function LotDetailPage() {
           </div>
           <div style={{ flex: '0 1 240px', minWidth: 200 }}>
             <Field label="Inspector">
-              <Select style={inputStyle} value={lot.assigned_to_id ? String(lot.assigned_to_id) : ''} disabled={!editable || busy}
+              <Select style={inputStyle} value={lot.assigned_to_id ? String(lot.assigned_to_id) : ''} disabled={!lotOpen || !canAssign || busy}
+                title={!canAssign && !preview ? 'Assigning the inspector needs Quality › Inspection Lots › Assign inspector › Edit — ask an admin.' : undefined}
                 onChange={(e) => e.target.value && run(() => qualityApi.assignLot(lot.id, Number(e.target.value)), 'Failed to assign the lot.')}>
                 <option value="">Unassigned</option>
                 {users.filter((u) => allowInspector(u.id) || u.id === lot.assigned_to_id).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
@@ -294,7 +304,7 @@ export default function LotDetailPage() {
           {lot.test_certificate_required && (
             <div style={{ flex: '1 1 320px', maxWidth: 460 }}>
               <InfoRow label={`Test certificate / MTC — ${lot.test_certificate_received ? 'received' : 'REQUIRED, not received'}`} value={lot.test_certificate_reference || '—'} />
-              {canEdit && ['created', 'in_inspection', 'results_recorded'].includes(lot.status) && (
+              {canWork && ['created', 'in_inspection', 'results_recorded'].includes(lot.status) && (
                 <button type="button" disabled={busy} style={{ ...secondaryBtnStyle, marginTop: 6 }} onClick={() => { setCert(lot.test_certificate_reference || ''); openSheet('cert') }}>
                   {lot.test_certificate_received ? 'Change certificate' : 'Record certificate'}
                 </button>
@@ -303,10 +313,10 @@ export default function LotDetailPage() {
           )}
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          {canEdit && lot.status === 'created' && !lot.plan_id && (
+          {canWork && lot.status === 'created' && !lot.plan_id && (
             <button type="button" disabled={busy} style={secondaryBtnStyle} onClick={() => run(() => qualityApi.lotAction(lot.id, 'refresh-plan'), 'The standard checklist could not be attached to this lot — check the lot type and try again; if it keeps failing, tell a Quality head.')}>Attach checklist</button>
           )}
-          {canEdit && lot.status === 'created' && (
+          {canWork && lot.status === 'created' && (
             <button type="button" disabled={busy} style={primaryBtnStyle} onClick={() => run(() => qualityApi.lotAction(lot.id, 'start'), 'Failed to start the inspection.')}>Start inspection</button>
           )}
           {lot.source_type === 'manual' && !lot.stock_in_quality && editable && (
@@ -492,7 +502,7 @@ export default function LotDetailPage() {
           )}
           <label style={sheetLabel}>Decision <Req /></label>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
-            {Object.entries(DECISION_LABELS).filter(([v]) => v !== 'accept_with_deviation' || isHead || decision.decision === v).map(([v, l]) => (
+            {Object.entries(DECISION_LABELS).filter(([v]) => v !== 'accept_with_deviation' || canDecide || decision.decision === v).map(([v, l]) => (
               <label key={v} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
                 <input type="radio" name="decision" checked={decision.decision === v} onChange={() => setDecision({ ...decision, decision: v })} /> {l}
               </label>

@@ -6,7 +6,7 @@ masters, payments, purchase, sales and reports live in accounts.py.)
 
 `inherit` names the tab action that guarded each feature action before
 features existed, so roles that were never customised keep exactly the
-access they had. Record-level rules stay on top: Finance Manager for GST
+access they had. Record-level rules stay on top: the role matrix (2026-11-14) for GST
 set-off / closing stock / FX revaluation / depreciation, the approval
 engine (guarantees, credit releases), creator-only deletes and data scope.
 
@@ -64,7 +64,7 @@ register_features(
     "accounts", "depreciation",
     _feature("reversal", "Reverse depreciation runs", "action", {
         "view": "view", "cancel": "approve",
-    }, "Reverse a posted monthly depreciation run (its journal is reversed). The user must also be a Finance Manager."),
+    }, "Reverse a posted monthly depreciation run (its journal is reversed)."),
 )
 
 # ── GST, currencies, inventory ───────────────────────────────────────────
@@ -77,7 +77,7 @@ register_features(
              "The GSTR-3B sub-tab: summary return working figures for a return period."),
     _feature("itc_setoff", "ITC set-off", "subtab", {
         "view": "view", "approve": "edit",
-    }, "The ITC Set-off sub-tab: preview the monthly input-credit set-off and post it (posting also needs Finance Manager)."),
+    }, "The ITC Set-off sub-tab: preview the monthly input-credit set-off and post it."),
 )
 
 register_features(
@@ -87,7 +87,7 @@ register_features(
     }, "Record a new exchange rate for a currency (used to convert foreign-currency invoices and payments)."),
     _feature("revaluation", "FX revaluation", "subtab", {
         "view": "view", "approve": "approve", "cancel": "approve",
-    }, "The Revaluation sub-tab: preview, post and cancel month-end revaluation of open foreign-currency items (posting also needs Finance Manager)."),
+    }, "The Revaluation sub-tab: preview, post and cancel month-end revaluation of open foreign-currency items."),
 )
 
 register_features(
@@ -96,7 +96,7 @@ register_features(
              "The Purchase / Sales Impact sub-tab: how purchases and sales moved the stock value in a period."),
     _feature("closing_stock", "Closing stock", "subtab", {
         "view": "view", "create": "edit", "edit": "edit", "approve": "edit", "cancel": "edit",
-    }, "The Closing Stock sub-tab: create a month-end valuation, adjust its lines, post and cancel it (posting also needs Finance Manager)."),
+    }, "The Closing Stock sub-tab: create a month-end valuation, adjust its lines, post and cancel it."),
 )
 
 # ── Outstanding ──────────────────────────────────────────────────────────

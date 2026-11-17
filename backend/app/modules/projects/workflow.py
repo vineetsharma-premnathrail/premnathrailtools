@@ -36,7 +36,7 @@ tasks, project = achieved WBS elements ÷ WBS elements.
 from datetime import date, datetime, timezone
 
 from fastapi import HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from app.modules.hr.models.employee_profile import HrEmployeeProfile
 from app.modules.main.models.audit_log import AuditLog
@@ -91,7 +91,39 @@ def is_management(user: User) -> bool:
 
 
 def can_manage(project: PmProject, user: User) -> bool:
+    """Authority on a project: management or its own project manager."""
     return is_management(user) or project.project_manager_id == user.id
+
+
+# Tab whose tick lets a user change a project (owner decision 2026-11-14:
+# "the role tick decides" — being PM / management is no longer an extra gate
+# on top of a ticked grant; the record must still be inside the role's Edit scope).
+EDIT_GRANT = ("overview", "edit")
+
+
+def ticked_on(project: PmProject, user: User, tab: str, action: str) -> bool:
+    """True when the user holds Project Management › <tab> › <action> AND the
+    project is inside their Edit scope (Role › Data access › Edit; default
+    own + assigned)."""
+    from app.core.data_scope import can_change
+    from app.core.permission_registry import can_perform
+
+    if not can_perform(user, "projects", tab, action):
+        return False
+    db = object_session(project)
+    return db is not None and can_change(db, user, project)
+
+
+def may_change(project: PmProject, user: User) -> bool:
+    """The project page's `can_manage` flag: authority, or the record is inside
+    the user's Edit scope. Screens AND it with the tab tick of the button
+    (can('projects', 'overview', 'edit') …), so the tick decides."""
+    from app.core.data_scope import can_change
+
+    if can_manage(project, user):
+        return True
+    db = object_session(project)
+    return db is not None and can_change(db, user, project)
 
 
 def can_decide(project: PmProject, user: User) -> bool:
@@ -123,12 +155,36 @@ def require_management(user: User, action: str) -> None:
         )
 
 
-def require_manage(project: PmProject, user: User, action: str) -> None:
-    if not can_manage(project, user):
+_TAB_WORDS = {"overview": "Overview", "milestones": "Milestone accept / reject (WBS)", "documents": "Documents", "overview.milestones": "Overview › Milestones",
+              "all_projects": "All Projects"}
+
+
+def require_manage(project: PmProject, user: User, action: str, grant: tuple[str, str] | None = EDIT_GRANT) -> None:
+    """Management / the project manager, OR the role tick `grant` (tab, action)
+    on a project inside the user's Edit scope."""
+    if can_manage(project, user) or (grant is not None and ticked_on(project, user, *grant)):
+        return
+    if grant is None:
         raise HTTPException(
             status_code=403,
             detail=f"Only management or the project manager of {project.project_code} can {action}.",
         )
+    from app.core.permission_registry import can_perform
+
+    tab, act = grant
+    if not can_perform(user, "projects", tab, act):
+        raise HTTPException(
+            status_code=403,
+            detail=f"You can't {action} on {project.project_code}: none of your roles ticks '{act.capitalize()}' on "
+                   f"Project Management › {_TAB_WORDS.get(tab, tab)}. Ask an admin to tick it in Organization › Role & Permissions.",
+        )
+    raise HTTPException(
+        status_code=403,
+        detail=f"You can't {action} on {project.project_code}: it is outside the Edit scope of your role (Data access › Edit; "
+               f"by default 'Own + assigned' — you are not its project manager, creator or on its team). Ask an admin to widen "
+               f"the Edit scope of your role for Project Management in Organization › Role & Permissions, or ask the project "
+               f"manager to add you to the project.",
+    )
 
 
 def management_ids(db: Session) -> list[int]:

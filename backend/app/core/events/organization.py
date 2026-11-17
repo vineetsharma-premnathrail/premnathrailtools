@@ -7,7 +7,7 @@ workflow saved / reset), app/modules/main/routes/roles.py (role changed,
 role holders changed) and users.py (a user's roles changed, user
 deactivated / reactivated). Organization records are not data-scoped, so
 the permission on each event is the whole check. The actor is never told."""
-from app.core.notification_events import register_event
+from app.core.notification_events import register_direct, register_event
 
 # ── Company Info ─────────────────────────────────────────────────────────────
 register_event(
@@ -36,6 +36,15 @@ register_event(
     "organization", "role_members_changed", "Role holders changed",
     "people are given or removed from a role (from the role's Users tab or a user's Roles)",
     ("roles", "members", "view"), default_channels=("bell",), kind="info",
+)
+# Direct: the person whose access changed is told (bell), so "I was given the
+# permission but don't see it" is answered on their own screen. Sent by
+# main/routes/roles.py (role saved, role holders changed) and users.py (their
+# roles, extra permissions or data access changed). Never to the actor.
+register_direct(
+    "organization", "access_changed", "Your access changed", "The person whose access changed",
+    "a role they hold is changed, they are given or removed from a role, or their extra permissions or data access change",
+    default_channels=("bell",), kind="info",
 )
 register_event(
     "organization", "user_deactivated", "User deactivated / reactivated",

@@ -21,9 +21,9 @@ All through the real API, acting as the right person:
     lt_metro_cw R0 released
     crw_hre     R0 draft (R&D still working; its TOR is overdue)
   R&D projects (Prototype / Research):
-    rail_guide   Lightweight hydraulic rail guide gear — Feasibility stage, study Go, prototype in testing,
-                 experiments completed (pass) + in progress, project tasks (one awaiting approval), linked to the DMRC requirement
-    battery_rrv  Battery-electric drive for RRV — Research stage, experiment planned
+    rail_guide   Lightweight hydraulic rail guide gear — Feasibility stage, study Go, test report,
+                 project tasks (one awaiting approval), linked to the DMRC requirement
+    battery_rrv  Battery-electric drive for RRV — Research stage, vendor survey
     stone_wear   RGM stone-wear monitoring — handed over and Closed (checklist complete)
     mag_brake    Magnetic track brake retrofit — feasibility No-Go, project cancelled
 
@@ -355,30 +355,8 @@ def _project_children(demo, key: str, project: dict, tors: dict) -> None:
     head, eng = _p(demo, "rnd_head"), _p(demo, "rnd_engineer")
     pid = project["id"]
     if key == "rail_guide":
-        bom = [{"store_item_id": i["id"], "item_code": i["code"], "item_name": i["name"], "quantity": q, "uom": i.get("unit"),
-                "unit_cost": i.get("rate")} for i, q in zip(_item(demo, "DEMO-MEC-WHEEL-430", "DEMO-HYD-DCV-43", "DEMO-MEC-BRG-22216"), (4, 2, 4))]
-        proto = demo.call("POST", "/rnd/prototypes", eng, json={
-            "project_id": pid, "name": f"{LABEL} Rail guide gear proto", "version": "v1",
-            "description": "Welded box arm with 80 mm cylinders.", "build_date": (demo.today - timedelta(days=20)).isoformat(),
-            "bom_items": bom})
-        demo.call("PATCH", f"/rnd/prototypes/{proto['id']}", eng, json={"status": "building"})
-        demo.call("PATCH", f"/rnd/prototypes/{proto['id']}", eng, json={"status": "testing", "findings": "DEMO: Deployment 5 min 40 s on test track."})
-        done = demo.call("POST", "/rnd/experiments", eng, json={
-            "project_id": pid, "prototype_id": proto["id"], "title": f"{LABEL} Deployment time test on test track",
-            "experiment_type": "field_trial", "objective": "Deployment under 6 minutes with engine running.",
-            "method": "10 deploy/stow cycles, stop-watch timing.", "experiment_date": (demo.today - timedelta(days=10)).isoformat(),
-            "parameters": [{"parameter": "Deployment time", "specification": "≤ 360", "measured": "340", "unit": "s", "result": "pass"},
-                           {"parameter": "Hydraulic pressure", "specification": "≤ 210", "measured": "195", "unit": "bar", "result": "pass"}]})
-        demo.call("PATCH", f"/rnd/experiments/{done['id']}", eng, json={
-            "status": "completed", "result": "pass", "observations": "DEMO: All 10 cycles within limit.",
-            "conclusion": "DEMO: Meets the DMRC night-block requirement."})
-        running = demo.call("POST", "/rnd/experiments", eng, json={
-            "project_id": pid, "prototype_id": proto["id"], "title": f"{LABEL} Fatigue test of guide arm (2 lakh cycles)",
-            "experiment_type": "lab_test", "objective": "No crack at 2 lakh cycles.", "experiment_date": demo.today.isoformat()})
-        demo.call("PATCH", f"/rnd/experiments/{running['id']}", eng, json={"status": "in_progress"})
         demo.call("POST", "/rnd/documents", eng, data={"project_id": str(pid), "doc_type": "test_report",
-                                                       "title": f"{LABEL} Deployment test report", "version": "1.0",
-                                                       "experiment_id": str(done["id"])},
+                                                       "title": f"{LABEL} Deployment test report", "version": "1.0"},
                   files=[("files", demo.pdf("DEMO-deployment-test-report.pdf"))])
         # Project tasks: one done, one awaiting approval.
         t1 = demo.call("POST", f"/rnd/projects/{pid}/tasks", head, data={
@@ -394,9 +372,6 @@ def _project_children(demo, key: str, project: dict, tors: dict) -> None:
         if dmrc:
             demo.call("POST", f"/rnd/requirement-work/inquiry/{dmrc['record_id']}/projects", head, json={"project_id": pid})
     elif key == "battery_rrv":
-        demo.call("POST", "/rnd/experiments", eng, json={
-            "project_id": pid, "title": f"{LABEL} Duty-cycle simulation (3 h tunnel block)", "experiment_type": "simulation",
-            "objective": "Battery state of charge > 20% at block end.", "experiment_date": (demo.today + timedelta(days=14)).isoformat()})
         demo.call("POST", "/rnd/documents", eng, data={"project_id": str(pid), "doc_type": "research_note",
                                                        "title": f"{LABEL} LFP battery vendor survey"},
                   files=[("files", demo.pdf("DEMO-battery-survey.pdf"))])

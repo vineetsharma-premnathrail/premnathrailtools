@@ -78,13 +78,15 @@ export function ProjectBudgetSection({ value, onChange, projectId }: { value: st
   )
 }
 
-export default function ProjectForm({ value, onChange, codeLocked, isEdit = false, projectId }: {
+export default function ProjectForm({ value, onChange, codeLocked, isEdit = false, projectId, showBudget = true }: {
   value: ProjectFormValues
   onChange: (v: ProjectFormValues) => void
   codeLocked?: boolean
   isEdit?: boolean
   /** The project being edited (its own budget stays in the list). */
   projectId?: number
+  /** False hides the Finance budget picker (only management links budgets). */
+  showBudget?: boolean
 }) {
   const [users, setUsers] = useState<DirectoryUser[]>([])
   const [more, setMore] = useState(isEdit)
@@ -126,7 +128,7 @@ export default function ProjectForm({ value, onChange, codeLocked, isEdit = fals
           </div>
         </div>
       </SheetSection>
-      <ProjectBudgetSection value={value.internal_order_id} onChange={(v) => set('internal_order_id', v)} projectId={projectId} />
+      {showBudget && <ProjectBudgetSection value={value.internal_order_id} onChange={(v) => set('internal_order_id', v)} projectId={projectId} />}
 
       {!isEdit && (
         <button type="button" onClick={() => setMore(!more)} style={{ background: 'none', border: 'none', padding: 0, margin: '0 0 14px', color: SHEET.BLUE, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>

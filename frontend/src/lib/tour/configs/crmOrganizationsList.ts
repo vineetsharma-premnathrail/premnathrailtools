@@ -23,12 +23,12 @@ const config: TourConfig = {
     {
       target: 'orgs-import-btn',
       title: 'Import',
-      purpose: 'Admins only: upload the CRM CSV to add or update customer organizations, contacts, inquiries and follow-ups in one go. Download the template from the same window.',
+      purpose: 'Shown when your role has CRM › Customer Organizations › Import: upload the CRM CSV to add or update customer organizations, contacts, inquiries and follow-ups in one go. Download the template from the same window.',
     },
     {
       target: 'orgs-duplicate-btn',
       title: 'Duplicate customer organizations warning',
-      purpose: 'Admin-only, and shown only when two or more customer organizations have the same name. Click it to see each group of duplicates with their code, city, GST number and how many inquiries/tenders each one has.',
+      purpose: 'Shown to roles with CRM › Customer Organizations › Edit, and only when two or more customer organizations have the same name. Click it to see each group of duplicates with their code, city, GST number and how many inquiries/tenders each one has.',
       why: 'Duplicates split one customer\'s history across two records, so reports undercount them and people quote against the wrong one. Nothing is merged automatically: open each customer organization, decide which one to keep, and move or delete the other.',
     },
     {

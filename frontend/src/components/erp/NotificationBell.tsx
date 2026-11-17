@@ -129,7 +129,7 @@ const ENTITY_LINK: Record<string, (ref: string) => string> = {
   rnd_project: (ref) => `/dashboard/rnd/projects/${ref}`,
   // An R&D task on a Project Management project: its R&D work page, not the PM project page.
   rnd_pm_project: (ref) => `/dashboard/rnd/project-tasks/${ref}`,
-  rnd_prototype: (ref) => `/dashboard/rnd/prototypes/${ref}`,
+  rnd_machine: (ref) => `/dashboard/rnd/machine-tasks/${ref}`,
   role: (ref) => `/dashboard/organization/roles/${ref}`,
   user: () => '/dashboard/organization/users',
   company: () => '/dashboard/organization/info',

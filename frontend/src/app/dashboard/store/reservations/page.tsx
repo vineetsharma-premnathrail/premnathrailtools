@@ -22,6 +22,8 @@ import { recordPath } from '@/lib/recordRef'
 import Select from '@/components/shared/Select'
 import { formatDate } from '@/lib/format'
 import { itemOptionDetail } from '@/lib/itemOptions'
+import StorePlantNote from '@/components/store/StorePlantNote'
+import ScopeNote from '@/components/shared/ScopeNote'
 
 const STATUS_LABELS: Record<string, string> = { active: 'Active', fulfilled: 'Fulfilled', cancelled: 'Cancelled' }
 const STATUS_COLORS: Record<string, string> = { active: INFO.primary, fulfilled: SUCCESS.primary, cancelled: TEXT.muted }
@@ -282,6 +284,7 @@ export default function StoreStockReservationsPage() {
                   <option value="">— Select —</option>
                   {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
                 </Select>
+                <StorePlantNote count={locations.length} loading={loading} />
                 <p style={sheetHint}>Every line is held in this store.</p>
               </div>
             </SheetSection>
@@ -410,6 +413,7 @@ export default function StoreStockReservationsPage() {
         )}
       </div>
 
+      <ScopeNote module="store" empty={!loading && reservations.length === 0} />
       <div data-tour="res-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>

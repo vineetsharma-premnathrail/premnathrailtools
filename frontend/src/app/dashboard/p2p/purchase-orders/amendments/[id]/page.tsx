@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
 import { POAmendment, poAmendmentsApi } from '@/lib/mmPurchasingApi'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import { secondaryBtnStyle, RowCount, Pill, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
@@ -35,7 +36,11 @@ const rupees = (v: number | null | undefined) => (v == null ? '—' : `₹${v.to
 const fmtField = (field: string | null | undefined, v: unknown) => (field === 'unit_price' && typeof v === 'number' ? rupees(v) : fmt(v))
 
 export default function POAmendmentPage() {
-  const { isAuthorized, isLoading } = useRequireApp('purchase')
+  // Procurement module; Purchase Orders › View + its Amendments feature decide the page (2026-11-14).
+  const { isAuthorized: inP2p, isLoading } = useRequireApp('p2p')
+  const { can, canFeature } = useCan()
+  const allowed = can('p2p', 'purchase_orders', 'view') && canFeature('p2p', 'purchase_orders', 'amendments', 'view')
+  const isAuthorized = inP2p && allowed
   const router = useRouter()
   const params = useParams()
   const { id, error: linkError } = useRecordId(params?.id as string)
@@ -51,7 +56,8 @@ export default function POAmendmentPage() {
   useEffect(() => { if (isAuthorized) Promise.resolve().then(load) }, [isAuthorized, load])
 
   if (linkError) return (<div><P2PNav /><InvalidRecordLink message={linkError} listHref="/dashboard/p2p/purchase-orders" listLabel="Back to purchase orders" /></div>)
-  if (isLoading || !isAuthorized) return null
+  if (isLoading || !inP2p) return null
+  if (!allowed) return (<div><P2PNav /><p style={{ fontSize: 13, color: TEXT.muted }}>You can&apos;t open PO amendments: your role needs &apos;View&apos; on Procurement › Purchase Orders and its Amendments &amp; versions feature. Ask an admin to add them in Organization › Role &amp; Permissions.</p></div>)
 
   const nameOf = (pid?: number) => am?.before.lines?.find((l) => l.po_item_id === pid)?.item_name || `Line #${pid}`
 

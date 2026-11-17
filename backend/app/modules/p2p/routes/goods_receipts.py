@@ -1,6 +1,5 @@
 from datetime import date, datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.data_scope import apply_scope, ensure_in_scope
@@ -12,7 +11,7 @@ from app.modules.main.models.audit_log import AuditLog
 from app.modules.p2p.models.p2p_request import P2PRequest, P2P_PURPOSES, P2P_ROLE_LABELS
 from app.modules.p2p.models.p2p_request_item import P2PRequestItem
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder, P2PPurchaseOrderItem
-from app.modules.p2p.models.goods_receipt import P2PGoodsReceipt, P2PGoodsReceiptItem, P2P_GRN_QUALITY_STATUSES
+from app.modules.p2p.models.goods_receipt import P2PGoodsReceipt, P2PGoodsReceiptItem
 from app.modules.p2p.schemas.goods_receipt import (
     P2PGoodsReceiptCreate,
     P2PGoodsReceiptInspectPayload,
@@ -1041,8 +1040,6 @@ async def reverse_goods_receipt(
     from app.modules.accounts.models.vendor_invoice import VendorInvoice
     from app.modules.quality.models.inspection_lot import QualityInspectionLot
 
-    if "purchase" not in user.get_apps():
-        raise HTTPException(status_code=403, detail="Only the Purchase team can reverse a GRN — ask them, or ask an admin to give you the Purchase module.")
     reason = (payload.reason or "").strip()
     if not reason:
         raise HTTPException(status_code=422, detail="Say why this GRN is being reversed (e.g. 'entered against the wrong PO') — it is kept on the GRN and the PO history.")

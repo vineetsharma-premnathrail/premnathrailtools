@@ -17,6 +17,7 @@ import { useCan } from '@/lib/permissions'
 import { useVisibility } from '@/lib/visibility'
 import { VisTd, VisTh } from '@/lib/visibilityComponents'
 import { sampleIssues } from '@/lib/storePreviewSamples'
+import ScopeNote from '@/components/shared/ScopeNote'
 
 // Columns a role may hide (Store › Issues › Visibility); Issue # is always shown.
 const HIDEABLE: Record<string, string> = {
@@ -79,6 +80,7 @@ export default function StoreMaterialIssuesPage() {
 
       <MessageDialog open={!!error} variant="error" title="Failed to Load Material Issues" message={error} onClose={() => setError('')} actionLabel="Reload" onAction={() => window.location.reload()} />
 
+      <ScopeNote module="store" empty={!loading && issues.length === 0} />
       <div data-tour="issues-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
           <thead>

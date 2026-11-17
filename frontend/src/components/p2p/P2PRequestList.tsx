@@ -20,6 +20,7 @@ import { priorityLabel } from '@/lib/priority'
 import { useVisibility } from '@/lib/visibility'
 import { VisTd, VisTh } from '@/lib/visibilityComponents'
 import { sampleRows } from '@/lib/p2pPreviewSamples'
+import ScopeNote from '@/components/shared/ScopeNote'
 
 // One-row text longer than 25 characters is cut with "…" (full text in the title); two-row columns cut at 50.
 const clip = (v?: string | null, max = 25) => (!v ? '—' : v.length > max ? `${v.slice(0, max).trimEnd()}…` : v)
@@ -330,6 +331,7 @@ export default function P2PRequestList({ statuses, emptyLabel, context, queue, o
           </div>
         </div>
       )}
+      {!loading && !vis.preview && <ScopeNote module="p2p" empty={visiblePrs.length === 0} />}
       <div data-tour="p2p-list-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'hidden' }}>
         <div style={{ overflow: 'auto', maxHeight: vis.preview ? undefined : 'calc(100vh - 320px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>

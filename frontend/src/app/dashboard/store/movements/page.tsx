@@ -13,6 +13,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import StockEntryDialog from '@/components/store/StockEntryDialog'
 import { useCan } from '@/lib/permissions'
 import FilterMenu from '@/components/shared/FilterMenu'
+import ScopeNote from '@/components/shared/ScopeNote'
 
 // The stock ledger — every posting from Record Stock Entry, issues, returns,
 // transfers, adjustments, GRNs and quarantine clears. Read-only.
@@ -245,6 +246,7 @@ export default function StoreMovementsPage() {
         )}
       </div>
 
+      <ScopeNote module="store" empty={!loading && transactions.length === 0} />
       <div data-tour="movements-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)', minHeight: 200 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>

@@ -1,4 +1,5 @@
-"""One-CSV bulk import for CRM data — lets an admin add large volumes of
+"""One-CSV bulk import for CRM data — lets whoever holds CRM › Customer
+Organizations › Import (the role matrix decides; owner, 2026-11-14) add large volumes of
 Organizations, Contacts, Inquiries, Products and Follow-ups in a SINGLE
 upload. Handles the real shape this data comes in: one organization has
 several contacts, each contact can raise several inquiries, each inquiry can
@@ -65,15 +66,11 @@ from app.modules.crm.services.org_scope import ORG_SCOPES, check_foreign_id, wro
 from app.modules.crm.models.inquiry import Inquiry, InquiryLineItem
 from app.modules.crm.models.activity import Activity
 from app.modules.crm.services.org_code import generate_org_code
+from app.modules.crm.schemas.organization import normalize_org_type
 
 router = APIRouter(prefix="/crm/bulk-import", tags=["CRM"])
 
 MAX_ERRORS_RETURNED = 300
-
-
-def _require_admin(user: User) -> None:
-    if user.role != "admin":
-        raise HTTPException(status_code=403, detail="Bulk import is restricted to admins.")
 
 
 def _read_csv_rows(raw: bytes) -> list[dict]:
@@ -231,7 +228,6 @@ async def bulk_import(
             f"Your role limits {' and '.join(limited)}, and the import file sets {'them' if many else 'it'} row by row — "
             "add the customer organizations and inquiries from their forms, or ask an admin to widen "
             f"{'them' if many else 'it'} for your role in Organization › Role & Permissions › CRM › Visibility."))
-    _require_admin(user)
     rows = _read_csv_rows(await file.read())
     if not rows:
         raise HTTPException(status_code=422, detail="The CSV file has no data rows.")
@@ -299,7 +295,7 @@ async def bulk_import(
                 raise ValueError("org_name is required on every row")
             org = org_by_name.get(org_name.strip().lower())
             if not org:
-                org_type = _get(row, "org_type")
+                org_type = normalize_org_type(_get(row, "org_type"))
                 if not org_type:
                     raise ValueError(f"org_type is required the first time '{org_name}' appears")
                 scope = (_get(row, "scope") or _get(row, "org_scope") or "domestic").lower()

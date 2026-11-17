@@ -8,8 +8,6 @@ class RndDocumentResponse(BaseModel):
     id: int
     project_id: int | None = None
     pm_project_id: int | None = None
-    experiment_id: int | None = None
-    prototype_id: int | None = None
     doc_type: str
     title: str
     version: str | None = None
@@ -24,5 +22,3 @@ class RndDocumentResponse(BaseModel):
 
     # Denormalized display fields, filled in by the route.
     project_number: str | None = None
-    experiment_number: str | None = None
-    prototype_number: str | None = None

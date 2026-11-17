@@ -47,8 +47,7 @@ async def update_payment_term(
     term = db.query(PaymentTerm).filter(PaymentTerm.id == term_id, PaymentTerm.is_deleted == False).first()  # noqa: E712
     if not term:
         raise HTTPException(status_code=404, detail="Payment term not found")
-    if not _can_modify(term, user):
-        raise HTTPException(status_code=403, detail="Only the creator or an admin can edit this payment term.")
+    # CRM settings master: the Settings › Edit tick decides who edits it (owner, 2026-11-14).
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(term, field, value)
     db.commit()

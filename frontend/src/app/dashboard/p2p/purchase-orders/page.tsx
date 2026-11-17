@@ -19,13 +19,14 @@ type View = 'before_po' | 'approvals' | 'tracking'
 export default function PurchaseOrdersPage() {
   const { user, isLoading } = useAuth()
   const { can } = useCan()
-  const isPurchase = !!user?.apps?.includes('purchase') || user?.role === 'admin'
-  const canCreatePo = isPurchase && can('p2p', 'purchase_orders', 'create')
+  // Each view follows its own Purchase Orders tick (2026-11-14): Tracking = View, Before PO = Create.
+  const canViewPo = can('p2p', 'purchase_orders', 'view')
+  const canCreatePo = can('p2p', 'purchase_orders', 'create')
   const isApprover = useP2PApproverFlags().is_po_approver
   const views: { key: View; label: string }[] = [
     ...(canCreatePo ? [{ key: 'before_po' as const, label: 'Before PO' }] : []),
     ...(isApprover ? [{ key: 'approvals' as const, label: 'Approvals' }] : []),
-    ...(isPurchase ? [{ key: 'tracking' as const, label: 'Tracking' }] : []),
+    ...(canViewPo ? [{ key: 'tracking' as const, label: 'Tracking' }] : []),
   ]
   const [picked, setPicked] = useState<View | null>(() => {
     if (typeof window === 'undefined') return null
@@ -38,7 +39,7 @@ export default function PurchaseOrdersPage() {
     return (
       <div>
         <P2PNav />
-        <p style={{ fontSize: 13, color: TEXT.muted }}>Purchase Orders are for the purchase team and the PO approvers.</p>
+        <p style={{ fontSize: 13, color: TEXT.muted }}>You can&apos;t open Purchase Orders: your role has no &apos;View&apos; on Procurement › Purchase Orders and you are not a PO approver. Ask an admin to add it in Organization › Role &amp; Permissions.</p>
       </div>
     )
   }

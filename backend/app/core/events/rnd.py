@@ -1,6 +1,6 @@
 """R&D notifiable events (see core/notification_events.py). Fired from
-app/modules/rnd (requirement intake and work, technical offers, project tasks,
-prototypes) through app/modules/rnd/services/events.py.
+app/modules/rnd (requirement intake and work, technical offers, project tasks)
+through app/modules/rnd/services/events.py.
 Requirement events also check the requirement access
 (services/requirement_access.access_for(...)["view"]), so a member hears only
 about requirements they can open. Teams carries only approvals and reminders:
@@ -43,8 +43,4 @@ register_event(
 register_event(
     "rnd", "technical_offer_released", "Technical Offer sent to the BD team",
     "the R&D head releases an uploaded Technical Offer to the BD team", ("requirements", "technical_offers", "view"),
-)
-register_event(
-    "rnd", "prototype_released", "Prototype released to Production",
-    "a prototype's BOM is frozen and handed to Production as a draft BOM", ("prototypes", "release_production", "view"),
 )

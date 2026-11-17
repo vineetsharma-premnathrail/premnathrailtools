@@ -16,6 +16,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { itemOptionDetail } from '@/lib/itemOptions'
 import Select from '@/components/shared/Select'
 import { CONTROL } from '@/lib/theme'
+import StorePlantNote from '@/components/store/StorePlantNote'
 
 interface Line { itemId: string; quantity: string; batchNumber: string }
 
@@ -25,6 +26,7 @@ export default function NewStockTransferPage() {
 
   const [items, setItems] = useState<StoreItem[]>([])
   const [locations, setLocations] = useState<StoreLocation[]>([])
+  const [locsLoaded, setLocsLoaded] = useState(false)
   // Destination may be another plant's store (inter-unit transfer), so it
   // lists every plant; the source stays limited to the user's own plant.
   const [toLocations, setToLocations] = useState<StoreLocation[]>([])
@@ -51,7 +53,7 @@ export default function NewStockTransferPage() {
   useEffect(() => {
     if (!isAuthorized) return
     storeApi.listItems().then(setItems).catch(loadFailed('items'))
-    storeApi.listLocations().then(setLocations).catch(loadFailed('your stores'))
+    storeApi.listLocations().then((l) => { setLocations(l); setLocsLoaded(true) }).catch(loadFailed('your stores'))
     storeApi.listLocations(undefined, { allPlants: true }).then(setToLocations).catch(loadFailed('destination stores'))
   }, [isAuthorized])
 
@@ -119,6 +121,7 @@ export default function NewStockTransferPage() {
                   <option value="">— Select —</option>
                   {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
                 </Select>
+                <StorePlantNote count={locations.length} loading={!locsLoaded} />
               </div>
               <div style={{ flex: '1 1 200px' }}>
                 <label style={sheetLabel}>To Store <Req /></label>

@@ -16,6 +16,7 @@ import PrintRegisterSheet from '@/components/store/PrintRegisterSheet'
 import { useVisibility } from '@/lib/visibility'
 import { VisTd, VisTh } from '@/lib/visibilityComponents'
 import { sampleGrns, sampleReceivablePos } from '@/lib/storePreviewSamples'
+import ScopeNote from '@/components/shared/ScopeNote'
 
 // Columns a role may hide (Store › GRN & Inspection › Visibility); GRN / PO number and Status are always shown.
 const RECEIPT_HIDEABLE: Record<string, string> = { 'PO Number': 'purchase_order', 'PO Date': 'po_date', Vendor: 'vendor', 'Received Date': 'received_date' }
@@ -127,6 +128,7 @@ export default function StoreGrnPage() {
 
       {error && <p style={{ fontSize: 13, color: '#b91c1c', marginBottom: 16 }}>{Array.isArray(error) ? error.join(' ') : error}</p>}
 
+      <ScopeNote module="store" empty={!loading && grns.length === 0} />
       <div data-tour="store-grn-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 360px)' }}>
         {bucket === 'upcoming' ? (
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>

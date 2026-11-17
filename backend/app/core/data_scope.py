@@ -102,11 +102,37 @@ def wider(a: str, b: str) -> str:
 
 def user_scope(user, module_key: str) -> str:
     """The user's effective scope for one module (see module docstring)."""
+    return _scope_for(user, module_key, module_key, None)
+
+
+def edit_key(module_key: str) -> str:
+    """Role.data_scopes key of a module's Edit scope ("crm:edit")."""
+    return f"{module_key}:edit"
+
+
+def user_edit_scope(user, module_key: str, default: str = "assigned") -> str:
+    """Which records of a module the user may CHANGE (edit / stage / upload
+    on someone else's record) — the role's Edit scope ("<module>:edit" in
+    Role.data_scopes, Organization › Role & Permissions), owner decision
+    2026-11-03: "see others' data, change only your own" is set per role,
+    never coded. A role with no Edit scope gets `default` (each caller passes
+    the level that matched the old behaviour). Never wider than the View scope."""
+    if _is_admin(user):
+        return "organization"
+    level = _scope_for(user, module_key, edit_key(module_key), default if default in _RANK else "assigned")
+    view = user_scope(user, module_key)
+    return level if _RANK[level] <= _RANK[view] else view
+
+
+def _scope_for(user, module_key: str, key: str, fallback: str | None) -> str:
+    """Widest level stored under `key` among the user's roles that open
+    `module_key` (personal override first); `fallback` (or default_scope())
+    for a role that stores none."""
     if user is None:
         return "own"
     if _is_admin(user):
         return "organization"
-    override = (getattr(user, "data_access_scopes", None) or {}).get(module_key)
+    override = (getattr(user, "data_access_scopes", None) or {}).get(key)
     if override in _RANK:
         return override
     from app.core.permission_registry import expand_grants
@@ -121,9 +147,11 @@ def user_scope(user, module_key: str) -> str:
     for role in roles:
         if not any(g.startswith(prefix) for g in expand_grants(role.permissions or [])):
             continue
-        level = (role.data_scopes or {}).get(module_key) or default_scope()
+        level = (role.data_scopes or {}).get(key) or fallback or default_scope()
+        if level not in _RANK:
+            level = fallback or default_scope()
         best = level if best is None else wider(best, level)
-    return best or default_scope()
+    return best or fallback or default_scope()
 
 
 def user_branch_ids(db: Session, user, level: str) -> set[int]:
@@ -175,14 +203,15 @@ def _approver_expr(spec: ScopedModel, user):
     return spec.model.id.in_(sub)
 
 
-def scope_filter(db: Session, user, model: type):
-    """SQL filter limiting `model` to the user's scope; None = no restriction."""
+def scope_filter(db: Session, user, model: type, level: str | None = None):
+    """SQL filter limiting `model` to the user's scope (or to `level`, e.g.
+    their Edit scope); None = no restriction."""
     spec = _REGISTRY.get(model)
     if spec is None:
         raise RuntimeError(f"{model.__name__} is not registered with core.data_scope.register_scoped")
-    if spec.shared:
+    if spec.shared and level is None:
         return None
-    level = user_scope(user, spec.module_key)
+    level = level or user_scope(user, spec.module_key)
     if level == "organization":
         return None
     from app.modules.main.models.user import User
@@ -240,6 +269,45 @@ def in_scope(db: Session, user, record) -> bool:
 
         return can_act_on_entity(db, user, spec.entity_type, record.id)
     return False
+
+
+def can_change(db: Session, user, record, default: str = "assigned") -> bool:
+    """True if `record` is inside the user's Edit scope for its module (see
+    user_edit_scope). The tab's Edit/feature grant is checked separately."""
+    if record is None:
+        return False
+    spec = _REGISTRY[type(record)]
+    level = user_edit_scope(user, spec.module_key, default)
+    if level == "organization":
+        return True
+    expr = scope_filter(db, user, type(record), level=level)
+    model = type(record)
+    return expr is None or db.query(model.id).filter(model.id == record.id, expr).first() is not None
+
+
+def ensure_can_change(db: Session, user, record, default: str = "assigned", action: str = "change") -> None:
+    """403 with the reason when `record` is outside the user's Edit scope."""
+    if record is None or can_change(db, user, record, default):
+        return
+    spec = _REGISTRY[type(record)]
+    level = user_edit_scope(user, spec.module_key, default)
+    raise HTTPException(
+        status_code=403,
+        detail=f"You can see this {spec.label} but can't {action} it — your Edit scope for this module is "
+               f"'{SCOPE_LABELS[level]}'. Ask an admin to widen "
+               "the Edit scope of your role in Organization › Role & Permissions (Data access › Edit).",
+    )
+
+
+def effective_scopes(user, module_keys) -> dict[str, str]:
+    """{module: view level, "module:edit": edit level} for /auth/me, so
+    screens can say why a list is narrowed and hide Edit on records outside
+    the Edit scope. Edit levels use the generic default ("assigned")."""
+    out: dict[str, str] = {}
+    for mk in module_keys:
+        out[mk] = user_scope(user, mk)
+        out[edit_key(mk)] = user_edit_scope(user, mk)
+    return out
 
 
 def ensure_in_scope(db: Session, user, record) -> None:

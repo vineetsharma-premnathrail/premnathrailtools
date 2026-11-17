@@ -6,6 +6,7 @@
  *  the bank application; margin, commission, release and invocation post
  *  through vouchers. Expiry reminders go out 30/15/7/1 days before. */
 import { useEffect, useState } from 'react'
+import ScopeNote from '@/components/shared/ScopeNote'
 import { accountsApi, crmApi } from '@/lib/api'
 import { useCan } from '@/lib/permissions'
 import { BankGuarantee, financeTreasuryApi } from '@/lib/financeTreasuryApi'
@@ -111,6 +112,7 @@ export default function GuaranteesTab({ initialId }: { initialId?: number | null
         {canCreate && <button type="button" style={{ ...primaryBtnStyle }} onClick={() => setShowNew(true)}>+ New Instrument</button>}
       </div>
 
+      <ScopeNote module="accounts" empty={!loading && rows.length === 0} />
       <TableWrap minWidth={1180}>
         <thead>
           <tr>

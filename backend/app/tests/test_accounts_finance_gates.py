@@ -1,5 +1,5 @@
-"""Finance control gates: journal reversal (Finance Manager only, no
-document/system/reversal entries), maker-checker on advance-then-allocate,
+"""Finance control gates: journal reversal (the Reverse posted journals grant
+only — no Finance Manager flag since 2026-11-14; no document/system/reversal entries), maker-checker on advance-then-allocate,
 derived 'overdue' sales status, period-close guards, and the audit trail
 on finance masters."""
 from datetime import date
@@ -16,8 +16,10 @@ from app.tests.test_accounts_finance import books, _jv, _capital, _bill, _sale, 
 
 @pytest.fixture
 def clerk(books):
+    """A Finance user who can see journals but holds no reversal grant."""
     db = books["db"]
-    u = User(email="clerk@premnathrail.com", name="Clerk", role="user", is_active=True, assigned_apps=["accounts"], is_finance_manager=False)
+    u = User(email="clerk@premnathrail.com", name="Clerk", role="user", is_active=True, assigned_apps=[],
+             granular_permissions=["accounts:journal_vouchers:view"], is_finance_manager=False)
     db.add(u)
     db.commit()
     return u
@@ -28,12 +30,12 @@ def _reverse(client, user, je_id):
                        json={"reason": "wrong ledger", "reversal_date": date.today().isoformat()})
 
 
-def test_reversal_is_finance_manager_only_and_a_reversal_cannot_be_reversed(client, books, clerk):
+def test_reversal_needs_the_reversal_grant_and_a_reversal_cannot_be_reversed(client, books, clerk):
     _capital(books)
     je = _jv(books, date(2026, 8, 1), "5500", "1121", 1000)
     books["db"].commit()
     denied = _reverse(client, clerk, je.id)
-    assert denied.status_code == 403 and "Finance Manager" in denied.json()["detail"]
+    assert denied.status_code == 403 and "Reverse posted journals" in denied.json()["detail"]
     ok = _reverse(client, books["checker"], je.id)
     assert ok.status_code == 200, ok.text
     again = _reverse(client, books["checker"], ok.json()["id"])

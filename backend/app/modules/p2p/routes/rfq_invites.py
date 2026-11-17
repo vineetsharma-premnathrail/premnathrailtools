@@ -30,7 +30,7 @@ from app.modules.p2p.models.rfq_invite import RFQVendorInvite
 from app.modules.p2p.models.vendor_quotation import VendorQuotation
 from app.modules.p2p.rfq_mail import send_invite
 from app.modules.p2p.routes.rfq import (
-    _assert_editable, _get_rfq_or_404, _purchase_tab, _write_audit, ensure_rfq_owner, ensure_rfq_readable,
+    _assert_editable, _get_rfq_or_404, _p2p_tab, _write_audit, ensure_rfq_owner, ensure_rfq_readable,
 )
 from app.modules.p2p.schemas.rfq import RFQAttachmentResponse
 from app.utils.sharepoint import build_sharepoint_folder_path, upload_file_to_sharepoint
@@ -125,14 +125,14 @@ async def send_invites(db: Session, rfq: RFQ, invites: list[RFQVendorInvite], us
 
 
 @router.get("/{rfq_id}/invites")
-def list_invites(rfq_id: int, db: Session = Depends(get_db), user: User = Depends(_purchase_tab("rfq", "view"))):
+def list_invites(rfq_id: int, db: Session = Depends(get_db), user: User = Depends(_p2p_tab("rfq", "view"))):
     rfq = _get_rfq_or_404(db, rfq_id, user)
     ensure_rfq_readable(db, rfq, user)
     return {"quote_due_date": rfq.quote_due_date, "invite_message": rfq.invite_message, "invites": _rows(db, rfq)}
 
 
 @router.put("/{rfq_id}/invites")
-def set_invites(rfq_id: int, payload: InviteSetPayload, db: Session = Depends(get_db), user: User = Depends(_purchase_tab("rfq", "edit"))):
+def set_invites(rfq_id: int, payload: InviteSetPayload, db: Session = Depends(get_db), user: User = Depends(_p2p_tab("rfq", "edit"))):
     """While the RFQ is a draft: who gets it, the quote-by date and the note."""
     rfq = _get_rfq_or_404(db, rfq_id, user)
     _assert_editable(rfq, user)
@@ -154,7 +154,7 @@ def set_invites(rfq_id: int, payload: InviteSetPayload, db: Session = Depends(ge
 
 
 @router.post("/{rfq_id}/invites/add")
-async def add_invites(rfq_id: int, payload: InviteAddPayload, db: Session = Depends(get_db), user: User = Depends(_purchase_tab("rfq", "edit"))):
+async def add_invites(rfq_id: int, payload: InviteAddPayload, db: Session = Depends(get_db), user: User = Depends(_p2p_tab("rfq", "edit"))):
     """After the RFQ went out: ask more vendors (they are emailed at once)."""
     rfq = _get_rfq_or_404(db, rfq_id, user)
     ensure_rfq_owner(db, rfq, user, "invite vendors to")
@@ -173,7 +173,7 @@ async def add_invites(rfq_id: int, payload: InviteAddPayload, db: Session = Depe
 
 
 @router.post("/{rfq_id}/invites/send")
-async def send_pending(rfq_id: int, db: Session = Depends(get_db), user: User = Depends(_purchase_tab("rfq", "edit"))):
+async def send_pending(rfq_id: int, db: Session = Depends(get_db), user: User = Depends(_p2p_tab("rfq", "edit"))):
     rfq = _get_rfq_or_404(db, rfq_id, user)
     ensure_rfq_owner(db, rfq, user, "email the vendors of")
     if rfq.status != "locked":
@@ -186,7 +186,7 @@ async def send_pending(rfq_id: int, db: Session = Depends(get_db), user: User = 
 
 
 @router.post("/{rfq_id}/invites/{invite_id}/resend")
-async def resend_invite(rfq_id: int, invite_id: int, db: Session = Depends(get_db), user: User = Depends(_purchase_tab("rfq", "edit"))):
+async def resend_invite(rfq_id: int, invite_id: int, db: Session = Depends(get_db), user: User = Depends(_p2p_tab("rfq", "edit"))):
     rfq = _get_rfq_or_404(db, rfq_id, user)
     ensure_rfq_owner(db, rfq, user, "email the vendors of")
     if rfq.status != "locked":
@@ -199,7 +199,7 @@ async def resend_invite(rfq_id: int, invite_id: int, db: Session = Depends(get_d
 
 
 @router.post("/{rfq_id}/invites/remind")
-async def remind_invites(rfq_id: int, db: Session = Depends(get_db), user: User = Depends(_purchase_tab("rfq", "edit"))):
+async def remind_invites(rfq_id: int, db: Session = Depends(get_db), user: User = Depends(_p2p_tab("rfq", "edit"))):
     rfq = _get_rfq_or_404(db, rfq_id, user)
     ensure_rfq_owner(db, rfq, user, "remind the vendors of")
     quoted = _quoted(db, rfq.id)
@@ -218,7 +218,7 @@ def _vq_or_404(db: Session, rfq: RFQ, vq_id: int) -> VendorQuotation:
 
 
 @router.get("/{rfq_id}/line-quotations/{vq_id}/files", response_model=list[RFQAttachmentResponse])
-def list_quote_files(rfq_id: int, vq_id: int, db: Session = Depends(get_db), user: User = Depends(_purchase_tab("rfq", "view"))):
+def list_quote_files(rfq_id: int, vq_id: int, db: Session = Depends(get_db), user: User = Depends(_p2p_tab("rfq", "view"))):
     rfq = _get_rfq_or_404(db, rfq_id, user)
     ensure_rfq_readable(db, rfq, user)
     _vq_or_404(db, rfq, vq_id)
@@ -227,7 +227,7 @@ def list_quote_files(rfq_id: int, vq_id: int, db: Session = Depends(get_db), use
 
 @router.post("/{rfq_id}/line-quotations/{vq_id}/files", response_model=list[RFQAttachmentResponse])
 async def upload_quote_files(rfq_id: int, vq_id: int, files: list[UploadFile] = File(...), db: Session = Depends(get_db),
-                             user: User = Depends(_purchase_tab("rfq", "edit"))):
+                             user: User = Depends(_p2p_tab("rfq", "edit"))):
     """The vendor's quotation (PDF from their email) on their recorded quote."""
     ensure_feature_action(user, "p2p", "rfq", "vendor_quotes", "create")
     rfq = _get_rfq_or_404(db, rfq_id, user)

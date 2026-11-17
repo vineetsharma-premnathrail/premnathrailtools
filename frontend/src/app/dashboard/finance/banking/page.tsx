@@ -3,6 +3,7 @@
 /** Bank & Cash — account balances from the GL, bank/cash book, bank
  *  reconciliation statement (BRS) and the liquidity forecast. */
 import { useEffect, useState } from 'react'
+import ScopeNote from '@/components/shared/ScopeNote'
 import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
 import { accountsApi } from '@/lib/api'
@@ -505,6 +506,7 @@ function ReconciliationTab({ accounts }: { accounts: BankAccount[] }) {
         </div>
       )}
 
+      <ScopeNote module="accounts" empty={recons.length === 0} />
       <TableWrap minWidth={900} tour="fin-bk-brs-history">
         <thead>
           <tr>

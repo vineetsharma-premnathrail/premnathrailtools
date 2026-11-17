@@ -3,11 +3,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.data_scope import apply_scope, ensure_in_scope
-from app.core.permissions import ensure_feature_action, require_app_access, require_tab_access, require_tab_action
+from app.core.permissions import ensure_feature_action, require_tab_access, require_tab_action
 from app.modules.p2p.pricing import mask_for
 import app.modules.p2p.access  # noqa: F401 — registers the Procurement data scopes
 from app.db.session import get_db
 from app.modules.main.models.user import User
+from app.modules.main.routes.auth import get_current_user
 from app.modules.p2p.models.p2p_request import P2PRequest
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder, P2PPurchaseOrderItem
@@ -47,7 +48,7 @@ async def list_purchase_orders(
     skip: int = Query(0, ge=0),
     limit: int = Query(200, ge=1, le=1000),
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
+    user: User = Depends(get_current_user),
 ):
     query = apply_scope(db.query(P2PPurchaseOrder).options(selectinload(P2PPurchaseOrder.items)), user, P2PPurchaseOrder)
     if status:
@@ -69,7 +70,7 @@ async def list_purchase_orders(
 async def get_purchase_order(
     po_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
+    user: User = Depends(get_current_user),
 ):
     po = db.query(P2PPurchaseOrder).options(selectinload(P2PPurchaseOrder.items)).filter(P2PPurchaseOrder.id == po_id).first()
     if not po:
@@ -83,7 +84,7 @@ async def update_purchase_order(
     po_id: int,
     payload: P2PPurchaseOrderUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
+    user: User = Depends(get_current_user),
 ):
     po = db.query(P2PPurchaseOrder).options(selectinload(P2PPurchaseOrder.items)).filter(P2PPurchaseOrder.id == po_id).first()
     if not po:
@@ -132,7 +133,7 @@ async def link_po_item_to_master(
     item_id: int,
     payload: P2PPurchaseOrderItemLinkPayload,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
+    user: User = Depends(get_current_user),
 ):
     """One-time link of an older PO line (raised before lines carried the
     Item Master id) to its item, so goods can be received into stock. A line

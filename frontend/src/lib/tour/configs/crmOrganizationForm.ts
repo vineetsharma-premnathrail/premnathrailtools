@@ -23,9 +23,9 @@ const config: TourConfig = {
       required: true,
       options: [
         { value: 'Domestic: PSU', meaning: 'Public Sector Undertaking, a government-owned company (e.g. BHEL, RITES).' },
-        { value: 'Domestic: Govt Department', meaning: 'A government department/ministry, not the Railways itself. Shows Railway Zone + Division/Workshop.' },
+        { value: 'Domestic: Government Department', meaning: 'A government department/ministry, not the Railways itself. Shows Railway Zone + Division/Workshop.' },
         { value: 'Domestic: Railway', meaning: 'A Railway zone, division, or workshop. Shows Railway Zone + Division/Workshop.' },
-        { value: 'Domestic: Private', meaning: 'A private company.' },
+        { value: 'Domestic: Private Company', meaning: 'A private company.' },
         { value: 'Domestic: Joint Venture', meaning: 'A JV between two or more entities.' },
         { value: 'International: Government Department, Railway, Private Company, Joint Venture, Public Enterprise', meaning: 'The list for overseas customers. Government Department and Railway show the zone and division fields.' },
         { value: 'Other', meaning: 'Anything not listed (either scope): a text box appears to specify it.' },

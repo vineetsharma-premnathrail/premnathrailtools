@@ -102,10 +102,11 @@ MODULES: dict[str, dict] = {
         ("rfq", "R.F.Q", _with(CRUD, "export")),
         ("purchase_orders", "Purchase Orders", _with(WORKFLOW, "submit", "cancel")),
         ("mis", "M.I.S Report", ["view", "export"]),
-        # The buyer desk: works every PR (RFQs, POs, vendors). Granting it
-        # gives the user the internal "purchase" app (User.get_apps) — there
-        # is no separate Purchase Team module. Never granted by a wildcard.
-        ("purchase_desk", "Purchase Desk (buyer — handles RFQs, POs and vendors for every PR)", V),
+        # The buyer desk = PR reach only: sees and works every requisition, not
+        # just own / assigned ones (owner, 2026-11-14). It no longer opens any
+        # tab — Vendors, R.F.Q, Purchase Orders, M.I.S follow their own ticks.
+        # Still gives the internal "purchase" app (User.get_apps). Never granted by a wildcard.
+        ("purchase_desk", "Purchase Desk (buyer — sees and works every requisition, not only own / assigned)", V),
         ("settings", "Settings", SETTINGS),
     ),
     "rnd": _module(
@@ -114,8 +115,6 @@ MODULES: dict[str, dict] = {
         ("requirements", "Requirements", V),  # requirements come from CRM; work on them is per record
         ("tasks", "R&D Tasks", ["view", "create"]),  # task board + Create Task (2026-10-30)
         ("projects", "Prototype / Research", _with(CRUD, "approve")),
-        ("experiments", "Experiments & Tests", CRUD),
-        ("prototypes", "Prototypes", _with(CRUD, "approve")),
         ("documents", "Documents", ["view", "create", "delete"]),  # no edit route
         # "all" was the old calculator landing page — kept as the key for the
         # Engineering Tools tab so existing grants still apply.

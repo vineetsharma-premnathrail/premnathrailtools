@@ -59,7 +59,6 @@ UNANSWERED = ("submitted", "accepted")
 # Work (tasks, offers) may start once the latest revision was accepted — and
 # continues after R&D has responded to CRM.
 WORK_OPEN = ("accepted", "responded")
-MIN_RETURN_REASON = 10
 REMINDER_AFTER_WORKING_DAYS = 2
 REMINDER_EVERY_DAYS = 3
 
@@ -222,7 +221,7 @@ def require_closable(db: Session, crm_request: CrmRndRequest, user: User) -> Rnd
     rev = revision_for_request(db, crm_request.id)
     if rev is None or rev.status != "submitted":
         return rev
-    if not (ra.can_accept(db, user) or ra.can_return(db, user)):
+    if not ra.can_accept(db, user):
         raise HTTPException(
             status_code=403,
             detail=f"{rev.revision_code} is still waiting for R&D review, so only the R&D head ({ra._head_names(db)}) or someone with "
@@ -343,36 +342,6 @@ def accept(db: Session, *, source: str, record, user: User, remarks: str | None,
     ref = getattr(record, "universal_id", None) or f"{source} #{record.id}"
     _tell_bd(db, record, source, rev, user, event="accepted", title=f"R&D accepted {rev.revision_code} ({ref})",
              message=f"{_name(user)} accepted the requirement as {rev.revision_code}.{note}")
-    db.flush()
-    return rev
-
-
-def return_to_bd(db: Session, *, source: str, record, user: User, reason: str | None, revision_no: int | None) -> RndRequirementRevision:
-    ra.ensure_can_review(db, user, "return")
-    req, rev = _locked_latest(db, source, record.id, revision_no)
-    if rev.status == "responded":
-        raise HTTPException(status_code=409, detail="Already answered — ask BD to re-send if it must change.")
-    if rev.status == "closed":
-        raise HTTPException(status_code=409, detail=f"R&D closed {rev.revision_code} without a response, so it can't be returned. Ask BD to send it again if R&D work is needed now.")
-    if rev.status == "returned":
-        raise HTTPException(status_code=409, detail=f"{rev.revision_code} was already returned to BD — BD must fix it and send it again.")
-    if rev.status not in UNANSWERED:
-        raise HTTPException(status_code=409, detail=f"{rev.revision_code} is {rev.status}, so it can't be returned.")
-    reason = (reason or "").strip()
-    if len(reason) < MIN_RETURN_REASON:
-        raise HTTPException(status_code=422, detail=f"Enter the reason BD must fix (at least {MIN_RETURN_REASON} characters).")
-    rev.status = "returned"
-    rev.reviewed_by_id, rev.reviewed_at = user.id, _now()
-    rev.return_reason = reason
-    req.status = "returned"
-    crm_req = db.get(CrmRndRequest, rev.crm_rnd_request_id) if rev.crm_rnd_request_id else None
-    if crm_req and crm_req.status in ("open",):
-        crm_req.status = "returned"
-    db.add(AuditLog(entity_type=f"rnd_req_{source}", entity_id=record.id, action="requirement_returned", module_key="rnd",
-                    summary=f"{_name(user)} returned {rev.revision_code} to BD: {reason}", performed_by_id=user.id))
-    ref = getattr(record, "universal_id", None) or f"{source} #{record.id}"
-    _tell_bd(db, record, source, rev, user, event="returned", title=f"R&D returned {rev.revision_code} ({ref})",
-             message=f"{_name(user)} returned the requirement: {reason} Fix it and use 'Re-send to R&D'.")
     db.flush()
     return rev
 

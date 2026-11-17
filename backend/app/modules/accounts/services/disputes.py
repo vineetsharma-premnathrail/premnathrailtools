@@ -14,7 +14,7 @@ Rules
       write_off   — the disputed amount (up to what is due) is written off
                     through the standard write-off (Dr deduction ledger /
                     Cr Debtors); above Finance › Settings small-difference
-                    tolerance only a Finance Manager may do it
+                    tolerance it needs Payments & Receipts › Approve
       paid        — the claim was withdrawn; the customer pays in full
 """
 from __future__ import annotations
@@ -168,9 +168,11 @@ def resolve_dispute(db: Session, d: AccountsDispute, *, resolution: str, note: s
         if amount <= 0.005:
             raise ValueError(f"Invoice {inv.invoice_number} has nothing left due — resolve the dispute as 'paid' or by credit note instead.")
         tolerance = float(get_setting(db, "small_difference_tolerance") or 0)
-        if amount > tolerance + 1e-9 and not (getattr(user, "is_finance_manager", False) or getattr(user, "role", None) == "admin"):
+        from app.core.permission_registry import can_perform
+        if amount > tolerance + 1e-9 and not can_perform(user, "accounts", "payments", "approve"):
             raise PermissionError(f"Writing off {amount:,.2f} is above the small-difference tolerance ({tolerance:,.2f}, "
-                                  "Finance › Settings) — only a Finance Manager can do it. Ask one to resolve this dispute.")
+                                  "Finance › Settings) — it needs 'Approve' permission on Finance & Accounting › Payments & "
+                                  "Receipts. Ask an admin to tick it on your role, or ask someone who has it to resolve this dispute.")
         adj = write_off(db, target_type="ar_transaction", target_id=inv.id, amount=amount,
                         reason=write_off_reason or _WRITE_OFF_REASON.get(d.reason, "short_payment"),
                         write_off_date=resolved_on, created_by_id=user.id,

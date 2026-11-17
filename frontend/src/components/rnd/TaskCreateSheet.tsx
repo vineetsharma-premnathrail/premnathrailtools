@@ -34,7 +34,13 @@ const todayIso = () => {
 
 type ReqPick = { source: RndReqSource; record_id: number }
 type ProjOption = { id: number; project_number: string; title: string }
-type PmProjOption = { id: number; project_code: string; name: string; label: string }
+// kind: a Project Management project or a past machine (PEW-1.. serial) — both live in All Projects.
+type PmProjOption = { kind?: 'pm_project' | 'machine'; id: number; project_code: string; name: string; label: string }
+/** The picker value carries the kind: "pm:<id>" or "machine:<id>" (a bare number = an old draft, a Project Management project). */
+const splitProjectKey = (v: string): { kind: 'pm' | 'machine'; id: number } => {
+  const [k, rest] = v.includes(':') ? v.split(':') : ['pm', v]
+  return { kind: k === 'machine' ? 'machine' : 'pm', id: Number(rest) }
+}
 
 export default function TaskCreateSheet({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const [type, setType] = useState<RndTaskType | ''>('requirement')
@@ -95,7 +101,7 @@ export default function TaskCreateSheet({ onClose, onCreated }: { onClose: () =>
     .slice().sort((a, b) => (a.rd_number || '').localeCompare(b.rd_number || '', undefined, { numeric: true }))
     .map((r) => ({ value: `${r.source}:${r.record_id}`, label: `${r.rd_number || r.universal_id} — ${[r.org_name, r.product].filter(Boolean).join(' · ') || r.universal_id}` })), [requirements])
   const projOptions = useMemo(() => (projects || []).map((p) => ({ value: String(p.id), label: `${p.project_number} — ${p.title}` })), [projects])
-  const pmOptions = useMemo(() => (pmProjects || []).map((p) => ({ value: String(p.id), label: p.label || `${p.project_code} — ${p.name}` })), [pmProjects])
+  const pmOptions = useMemo(() => (pmProjects || []).map((p) => ({ value: `${p.kind === 'machine' ? 'machine' : 'pm'}:${p.id}`, label: p.label || `${p.project_code} — ${p.name}` })), [pmProjects])
 
   const picked: ReqPick | null = useMemo(() => {
     if (type !== 'requirement' || !reqKey) return null
@@ -111,11 +117,12 @@ export default function TaskCreateSheet({ onClose, onCreated }: { onClose: () =>
       rndApi.requirementAssignees(picked.source, picked.record_id).then((l) => done(l)).catch((err) => done([], [extractErrorMessages(err, 'Could not load who can be assigned.')].flat().join(' ')))
     } else if (type === 'prototype' && projectId) {
       rndApi.projectTaskAccess(Number(projectId))
-        .then((a) => done(a.people, a.can_manage ? '' : 'Only the project lead can give tasks on this project — pick another project or ask the lead.'))
+        .then((a) => done(a.people, a.can_manage ? '' : "You can't give tasks on this project: its leads can, and so can team members whose role ticks task Create. Pick another project, or ask a lead."))
         .catch((err) => done([], [extractErrorMessages(err, 'Could not load the project team.')].flat().join(' ')))
     } else if (type === 'project' && pmProjectId) {
-      rndApi.pmProjectTaskAccess(Number(pmProjectId))
-        .then((a) => done(a.people, a.can_manage ? '' : 'Only R&D heads or the project manager can give R&D tasks on this project — pick another project or ask them.'))
+      const pk = splitProjectKey(pmProjectId)
+      ;(pk.kind === 'machine' ? rndApi.machineTaskAccess(pk.id) : rndApi.pmProjectTaskAccess(pk.id))
+        .then((a) => done(a.people, a.can_manage ? '' : (pk.kind === 'machine' ? 'Only R&D heads or management can give R&D tasks on a past machine — pick another project or ask them.' : 'Only R&D heads or the project manager can give R&D tasks on this project — pick another project or ask them.')))
         .catch((err) => done([], [extractErrorMessages(err, 'Could not load who can be assigned on this project.')].flat().join(' ')))
     } else done([])
     return () => { alive = false }
@@ -142,7 +149,7 @@ export default function TaskCreateSheet({ onClose, onCreated }: { onClose: () =>
     setError('')
     try {
       await rndApi.createRndTask({
-        type, ...(picked ? { source: picked.source, record_id: picked.record_id } : {}), ...(type === 'prototype' ? { rnd_project_id: Number(projectId) } : {}), ...(type === 'project' ? { pm_project_id: Number(pmProjectId) } : {}),
+        type, ...(picked ? { source: picked.source, record_id: picked.record_id } : {}), ...(type === 'prototype' ? { rnd_project_id: Number(projectId) } : {}), ...(type === 'project' ? (splitProjectKey(pmProjectId).kind === 'machine' ? { machine_id: splitProjectKey(pmProjectId).id } : { pm_project_id: splitProjectKey(pmProjectId).id }) : {}),
         title: title.trim(), remarks: remarks.trim() || undefined, assigned_to_id: Number(assignee), start_date: start || undefined, due_date: due,
         priority, checklist, files,
       })
@@ -188,6 +195,9 @@ export default function TaskCreateSheet({ onClose, onCreated }: { onClose: () =>
                 <SearchableSelect value={reqKey} onChange={(v) => { setReqKey(v); setAssignee('') }} options={reqOptions}
                   placeholder={requirements === null ? 'Loading requirements…' : reqOptions.length ? 'Pick a requirement by R&D ID…' : 'No accepted requirement you can open'} />
                 <p style={sheetHint}>Only requirements whose latest revision R&amp;D has accepted are listed, by R&amp;D ID.</p>
+                {requirements !== null && reqOptions.length === 0 && (
+                  <p style={{ ...sheetHint, color: '#b45309' }}>Why is this empty? None of the requirements you can open has an accepted latest revision yet. You see the requirements of your CRM data access (and the ones R&amp;D gave you work on); the R&amp;D head accepts a requirement in R&amp;D › Requirements before tasks can be given on it.</p>
+                )}
               </div>
             )}
             {type === 'prototype' && (
@@ -195,6 +205,9 @@ export default function TaskCreateSheet({ onClose, onCreated }: { onClose: () =>
                 <label style={sheetLabel}>Prototype / Research project <Req /></label>
                 <SearchableSelect value={projectId} onChange={(v) => { setProjectId(v); setAssignee('') }} options={projOptions}
                   placeholder={projects === null ? 'Loading projects…' : projOptions.length ? 'Pick a project by RND number…' : 'No active project you can open'} />
+                {projects !== null && projOptions.length === 0 && (
+                  <p style={{ ...sheetHint, color: '#b45309' }}>Why is this empty? Only active Prototype / Research projects inside your R&amp;D data access are listed — by default the ones you created, lead or are a team member of. Ask a project lead to add you to the team, or an admin to widen the Data access of your role (Organization › Role &amp; Permissions).</p>
+                )}
               </div>
             )}
             {type === 'project' && (
@@ -202,7 +215,10 @@ export default function TaskCreateSheet({ onClose, onCreated }: { onClose: () =>
                 <label style={sheetLabel}>Project (All Projects) <Req /></label>
                 <SearchableSelect value={pmProjectId} onChange={(v) => { setPmProjectId(v); setAssignee('') }} options={pmOptions}
                   placeholder={pmProjects === null ? 'Loading projects…' : pmOptions.length ? 'Pick a project by PEW code…' : 'No project you can give tasks on'} />
-                <p style={sheetHint}>Projects from Project Management › All Projects, by PEW code. The task stays R&amp;D work — the assignee tracks it in R&amp;D › R&amp;D Tasks.</p>
+                <p style={sheetHint}>Every project in Project Management › All Projects — running projects and past machines — by PEW code. The task stays R&amp;D work — the assignee tracks it in R&amp;D › R&amp;D Tasks.</p>
+                {pmProjects !== null && pmOptions.length === 0 && (
+                  <p style={{ ...sheetHint, color: '#b45309' }}>Why is this empty? R&amp;D tasks on All Projects are given by the R&amp;D head(s) (Organization › Departments), the project&apos;s project manager, or management (Partners, Directors, All Projects › Create) for projects inside their Project Management data access. Ask one of them to give the task.</p>
+                )}
               </div>
             )}
           </SheetSection>

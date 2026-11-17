@@ -27,10 +27,10 @@ function monthStartIso(): string {
 }
 
 export default function FinanceGstPage() {
-  const { isAuthorized, isLoading, user } = useRequireApp('accounts')
+  const { isAuthorized, isLoading } = useRequireApp('accounts')
   const [tab, setTab] = useState<Tab>('Registers')
   const { canFeature } = useCan()
-  const canPost = (!!user?.is_finance_manager || user?.role === 'admin') && canFeature('accounts', 'gst', 'itc_setoff', 'approve')
+  const canPost = canFeature('accounts', 'gst', 'itc_setoff', 'approve')
   // Registers is the tab's base view; the returns and set-off are features of it.
   const visibleTabs = TABS.filter((t) => (t !== 'GSTR-1' || canFeature('accounts', 'gst', 'gstr1', 'view'))
     && (t !== 'GSTR-3B' || canFeature('accounts', 'gst', 'gstr3b', 'view'))
@@ -493,7 +493,7 @@ function SetoffTab({ canPost }: { canPost: boolean }) {
               disabled={data.already_posted || data.utilisation.length === 0 || posting} onClick={() => setConfirm(true)}>
               {posting ? 'Posting…' : data.already_posted ? 'Set-off already posted' : 'Post set-off'}
             </button>
-          ) : <span style={{ fontSize: 12, color: TEXT.muted }}>Only a Finance Manager can post the set-off.</span>
+          ) : <span style={{ fontSize: 12, color: TEXT.muted }}>Posting the set-off needs &apos;Approve&apos; on Finance &amp; Accounting › GST › ITC set-off — ask an admin to tick it on your role.</span>
         )}
       </div>
       <ErrorBanner error={error} />

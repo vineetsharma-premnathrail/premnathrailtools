@@ -120,7 +120,7 @@ async def upload_documents(
     user: User = Depends(require_tab_action("projects", "documents", "create")),
 ):
     project = _project_or_404(db, project_id, user)
-    wf.require_manage(project, user, "upload project documents")
+    wf.require_manage(project, user, "upload project documents", grant=("documents", "create"))
     docs = await store_files(db, project, files, user, doc_type=doc_type, title=title, description=description)
     db.commit()
     cache = views.names(db)

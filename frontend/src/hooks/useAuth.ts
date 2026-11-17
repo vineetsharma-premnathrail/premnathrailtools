@@ -29,6 +29,19 @@ export function useAuth() {
     }
   }, [hasChecked, isLoading, fetchUser])
 
+  // Permissions change while a tab stays open (Teams tabs are almost never
+  // reloaded): re-read /auth/me when the person comes back to the tab.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const onBack = () => { if (document.visibilityState !== 'hidden') useAuthStore.getState().refreshUser() }
+    window.addEventListener('focus', onBack)
+    document.addEventListener('visibilitychange', onBack)
+    return () => {
+      window.removeEventListener('focus', onBack)
+      document.removeEventListener('visibilitychange', onBack)
+    }
+  }, [])
+
   useEffect(() => {
     if (hasChecked && !isLoading && !user) {
       router.push('/login')

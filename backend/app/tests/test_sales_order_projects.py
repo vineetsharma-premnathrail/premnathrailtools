@@ -32,7 +32,9 @@ def test_pm_created_project_has_vehicle_and_lot_elements(db):
     assert p is not None
     assert p.project_code == "PEW-1"  # one series with PM projects; no past projects in the test DB
     assert p.status == "active" and p.lifecycle_stage == "planned"
-    assert p.client_name == "Central Railway" and "CR/PO/2026/771" in p.name
+    # Name = customer only; the PO stays in its own field, never in the name (owner, 2026-11-17).
+    assert p.client_name == "Central Railway" and p.name == "Central Railway" and "CR/PO/2026/771" not in p.name
+    assert p.customer_po_ref == "CR/PO/2026/771"
     els = sorted(p.elements, key=lambda e: e.element_no)
     assert [e.kind for e in els] == ["vehicle", "vehicle", "lot"]
     assert [e.element_no for e in els] == [f"{p.project_code}/01", f"{p.project_code}/02", f"{p.project_code}/03"]

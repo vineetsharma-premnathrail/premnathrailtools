@@ -21,7 +21,7 @@ export const sampleOrganizations = [
     division_workshop: 'Sample Division', address: '12 Sample Road', city: 'New Delhi', state: 'Delhi', pin_code: '110001',
     gst_number: '07AAAAA0000A1Z5', pan: 'AAAAA0000A', gst_state_code: '07', official_phone: '+91 11 2345 6789',
     official_email: 'office@sample.example', website: 'https://sample.example' },
-  { ...orgBase, id: -2, org_code: 'C-0002', name: 'Sample Private Company', org_type: 'Private', city: 'Pune', state: 'Maharashtra' },
+  { ...orgBase, id: -2, org_code: 'C-0002', name: 'Sample Private Company', org_type: 'Private Company', city: 'Pune', state: 'Maharashtra' },
   { ...orgBase, id: -3, org_code: 'C-0003', name: 'Sample Overseas Operator', org_type: 'Private Company', org_scope: 'international',
     country: 'Germany', city: 'Munich', state: 'Bavaria', tax_vat_id: 'DE123456789', company_registration_no: 'HRB 12345' },
 ] as unknown as Organization[]

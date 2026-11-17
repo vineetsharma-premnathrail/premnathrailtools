@@ -20,6 +20,11 @@ project — R&D work on a customer project, given from R&D › R&D Tasks. Every
 route works on a TaskParent (R&D project or PM project): on a PM project the
 R&D heads, admins and the project's manager / management give and review
 tasks, and any active person with R&D access can be assigned.
+
+Since 2026-11-17 a task can also hang on a PAST MACHINE of All Projects (an erp_projects
+row not linked to a project — PEW-1..77 style serials; owner: "saare project show hona
+chaiye"). Same flow; the R&D heads and management give and review tasks on it
+(`machine_manages`), a portal admin manages without deciding, like on a PM project.
 """
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -32,10 +37,11 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.data_scope import in_scope as pm_in_scope
-from app.core.permission_registry import can_view_tab, is_admin_user
-from app.core.permissions import ensure_feature_action, require_app_access, require_tab_access
+from app.core.permission_registry import can_perform, can_view_tab, is_admin_user
+from app.core.permissions import ensure_feature_action, require_app_access
 from app.db.session import get_db
 from app.modules.crm.services.requirement_movement import today_ist
+from app.modules.erp.models.project import Project as ErpMachine
 from app.modules.main.models.user import User
 from app.modules.main.routes.auth import get_current_user
 from app.modules.rnd.models.document import RndDocument
@@ -55,10 +61,33 @@ from app.utils.sharepoint import build_sharepoint_folder_path, upload_file_to_sh
 from app.core import assignee_rules
 
 RULE_KEY = "rnd:projects.tasks"  # core/assignee_rules.PICKERS
+
+
+def _task_screen_access(user: User = Depends(get_current_user)) -> User:
+    """R&D › R&D Tasks › View OR Prototype / Research › View (owner 2026-11-14:
+    the tick decides — an R&D Tasks user must open the project-type tasks the
+    board lists). The record rules below still decide which tasks."""
+    if not (can_view_tab(user, "rnd", "tasks") or can_view_tab(user, "rnd", "projects")):
+        raise HTTPException(
+            status_code=403,
+            detail="You can't open R&D project tasks: none of your roles ticks 'View' on R&D › R&D Tasks or R&D › Prototype / "
+                   "Research. Ask an admin to tick one of them in Organization › Role & Permissions.",
+        )
+    return user
+
+
 router = APIRouter(
     tags=["RnD Project Tasks"],
-    dependencies=[Depends(require_app_access("rnd")), Depends(require_tab_access("rnd", "projects"))],
+    dependencies=[Depends(require_app_access("rnd")), Depends(_task_screen_access)],
 )
+
+
+def _ensure_task_tick(user: User, action: str) -> None:
+    """Prototype / Research › Project tasks › <action>; view / create are also
+    given by R&D › R&D Tasks (the board shows and creates the same tasks)."""
+    if action in ("view", "create") and can_perform(user, "rnd", "tasks", action):
+        return
+    ensure_feature_action(user, "rnd", "projects", "tasks", action)
 
 MAX_FILES = 10
 BRIEF, WORK, APPROVAL = "brief", "work", "approval"   # task_doc_role: lead's files / assignee's files / approval-request files
@@ -75,7 +104,7 @@ def _name(u: User | None) -> str:
 class TaskParent:
     """What a task hangs on: a Prototype / Research project (`rnd`) or a Project
     Management project (`pm`). Routes read only this — never the models directly."""
-    kind: str                     # "rnd" | "pm"
+    kind: str                     # "rnd" | "pm" | "machine"
     id: int
     project_number: str           # RND number or PEW code
     title: str
@@ -84,6 +113,7 @@ class TaskParent:
     manager_label: str            # for messages: "a project lead" / "an R&D head or the project manager"
     rnd: RndProject | None = None
     pm: PmProject | None = None
+    machine: ErpMachine | None = None
     managers: set[int] = field(default_factory=set)
     _members: list[int] | None = None
 
@@ -97,7 +127,7 @@ class TaskParent:
     def entity_type(self) -> str:
         """Notification entity: the bell opens the R&D page for both (NotificationBell maps
         rnd_pm_project → /dashboard/rnd/project-tasks/<ref>), never the PM project page."""
-        return "rnd_project" if self.kind == "rnd" else "rnd_pm_project"
+        return {"rnd": "rnd_project", "pm": "rnd_pm_project", "machine": "rnd_machine"}[self.kind]
 
     def can_manage(self, user: User) -> bool:
         return is_admin_user(user) or user.id in self.managers
@@ -110,10 +140,17 @@ class TaskParent:
 
     def fk(self) -> dict:
         """Keyword for RndProjectTask / RndDocument: which parent column to set."""
-        return {"project_id": self.id} if self.kind == "rnd" else {"pm_project_id": self.id}
+        return {"project_id": self.id} if self.kind == "rnd" else {"machine_id": self.id} if self.kind == "machine" else {"pm_project_id": self.id}
 
     def task_filter(self):
-        return RndProjectTask.project_id == self.id if self.kind == "rnd" else RndProjectTask.pm_project_id == self.id
+        if self.kind == "rnd":
+            return RndProjectTask.project_id == self.id
+        return RndProjectTask.machine_id == self.id if self.kind == "machine" else RndProjectTask.pm_project_id == self.id
+
+    @property
+    def source(self) -> str:
+        """`source` of a serialized task: "project" (R&D project), "pm_project" or "machine"."""
+        return {"rnd": "project", "pm": "pm_project", "machine": "machine"}[self.kind]
 
 
 def _rnd_parent(db: Session, project_id: int, user: User) -> TaskParent:
@@ -172,7 +209,53 @@ def _pm_parent(db: Session, pm_project_id: int, user: User) -> TaskParent:
                       manager_label="an R&D head or the project manager", pm=p, managers=managers)
 
 
+def machine_manages(db: Session, user: User, *, decision: bool = False) -> bool:
+    """Who gives / reviews R&D tasks on a past machine: the R&D head(s), management
+    (Partners / Directors / All Projects › Create) and admins. A machine has no project
+    manager and no Project Management data scope. `decision=True` leaves the admin
+    shortcut out. Shared with the picker (routes/tasks.py)."""
+    if user.id in ra.org_head_ids(db):
+        return True
+    if is_admin_user(user):   # pm_wf.is_management counts every admin, so decide admins before it
+        return not decision
+    return pm_wf.is_management(user)
+
+
+def machine_pickable(db: Session, machine_id: int) -> ErpMachine | None:
+    """A past machine: not deleted and not linked to a Project Management project (those are
+    given tasks through the project itself)."""
+    return db.query(ErpMachine).filter(ErpMachine.id == machine_id, ErpMachine.is_deleted == False,  # noqa: E712
+                                       ErpMachine.pm_project_id.is_(None)).first()
+
+
+def machine_title(m: ErpMachine) -> str:
+    return (m.client_company or m.model_name or "").strip()
+
+
+def _machine_parent(db: Session, machine_id: int, user: User) -> TaskParent:
+    """The past machine behind an R&D task. Opens for whoever manages R&D tasks on it
+    (machine_manages) and for anyone who holds or gave a task on it; everyone else gets 404
+    (not 403) so serials / customer names can't be enumerated."""
+    m = db.query(ErpMachine).filter(ErpMachine.id == machine_id, ErpMachine.is_deleted == False).first()  # noqa: E712
+    not_found = HTTPException(status_code=404, detail="Project not found, or you have no R&D task on it — open it from R&D › R&D Tasks, or ask an R&D head to give you a task on it.")
+    if not m:
+        raise not_found
+    managers = set(ra.org_head_ids(db))
+    if machine_manages(db, user, decision=True):
+        managers.add(user.id)
+    elif machine_manages(db, user):
+        pass  # a portal admin: manages through can_manage, never counted as a lead / decider
+    elif db.query(RndProjectTask.id).filter(RndProjectTask.machine_id == m.id,
+                                            or_(RndProjectTask.assigned_to_id == user.id, RndProjectTask.created_by_id == user.id)).first() is None:
+        raise not_found
+    return TaskParent(kind="machine", id=m.id, project_number=m.serial_number, title=machine_title(m),
+                      lead_ids=sorted(managers), members_fn=lambda: _rnd_people_ids(db),
+                      manager_label="an R&D head or management", machine=m, managers=managers)
+
+
 def _parent_of(db: Session, task: RndProjectTask, user: User) -> TaskParent:
+    if task.machine_id:
+        return _machine_parent(db, task.machine_id, user)
     if task.pm_project_id:
         return _pm_parent(db, task.pm_project_id, user)
     return _rnd_parent(db, task.project_id, user)
@@ -185,9 +268,33 @@ def _task(db: Session, task_id: int) -> RndProjectTask:
     return t
 
 
+def _may_give_tasks(db: Session, user: User, project: TaskParent) -> bool:
+    """Top-level task givers: the parent's managers (leads / R&D heads / project
+    manager / admins) and, on a Prototype / Research project, anyone whose role
+    ticks a task Create with the project inside their R&D Edit scope
+    (project_roles.can_give_tasks — owner 2026-11-14, the tick decides)."""
+    if project.can_manage(user):
+        return True
+    return project.rnd is not None and roles.can_give_tasks(db, user, project.rnd)
+
+
+def _ensure_giver(db: Session, user: User, project: TaskParent) -> None:
+    if _may_give_tasks(db, user, project):
+        return
+    if project.kind == "rnd":
+        raise HTTPException(status_code=403, detail=(
+            f"You can't give tasks on {project.project_number}: you need 'Create' on R&D › Prototype / Research › Project tasks "
+            "(or R&D › R&D Tasks) in your role AND the project inside your R&D Edit scope (by default: projects you created, "
+            "lead or are a team member of). Ask an admin to tick it / widen the Edit scope in Organization › Role & Permissions, "
+            "or ask a project lead to add you to the team."))
+    _ensure_manager(user, project, "create tasks")
+
+
 def _ensure_manager(user: User, project: TaskParent, what: str) -> None:
     if not project.can_manage(user):
-        hint = " Ask a lead, or have them add you as a lead." if project.kind == "rnd" else " Ask them to give the task, or to make you the project manager."
+        hint = (" Ask a lead, or have them add you as a lead." if project.kind == "rnd"
+                else " Ask an R&D head to give the task, or to make you the R&D head in Organization › Department." if project.kind == "machine"
+                else " Ask them to give the task, or to make you the project manager.")
         raise HTTPException(status_code=403, detail=f"Only {project.manager_label} of {project.project_number} can {what}.{hint}")
 
 
@@ -222,7 +329,7 @@ def _check_assignee(db: Session, project: TaskParent, assignee_id: int, allowed:
         raise HTTPException(status_code=400, detail="The selected person was not found or is deactivated — pick someone else.")
     if "rnd" not in assignee.get_apps():
         raise HTTPException(status_code=400, detail=f"{_name(assignee)} has no access to the R&D module, so they couldn't see this task. Grant it in User Management, then assign again.")
-    if project.kind == "pm" and not can_view_tab(assignee, "rnd", "projects"):
+    if project.kind != "rnd" and not can_view_tab(assignee, "rnd", "projects"):
         # Task actions live under the R&D › Prototype / Research tab (this router's gate).
         raise HTTPException(status_code=400, detail=f"{_name(assignee)} can't open R&D › Prototype / Research, so they couldn't work this task. Give their role 'View' on that tab in Organization › Role & Permissions, then assign again.")
     # The role's assign-to rule (Role & Permissions › R&D › Prototype / Research › Project tasks).
@@ -304,7 +411,8 @@ def _serialize(db: Session, tasks: list[RndProjectTask]) -> list[dict]:
     approvals = task_approvals.serialize(db, KIND, ids, doc_dicts)
     return [
         {
-            "id": t.id, "source": "project" if t.project_id else "pm_project", "record_id": t.project_id or t.pm_project_id, "parent_task_id": t.parent_task_id,
+            "id": t.id, "source": "project" if t.project_id else "machine" if t.machine_id else "pm_project",
+            "record_id": t.project_id or t.machine_id or t.pm_project_id, "parent_task_id": t.parent_task_id,
             "department": (users.get(t.assigned_to_id).department if users.get(t.assigned_to_id) else None) or "R&D",
             "title": t.title, "remarks": t.remarks,
             "assigned_to_id": t.assigned_to_id, "assigned_to": _name(users.get(t.assigned_to_id)),
@@ -346,10 +454,16 @@ def _access(db: Session, project: TaskParent, user: User) -> dict:
 
     team = assignee_rules.filter_people(db, user, RULE_KEY, [row(u) for i in ids if (u := found.get(i)) and u.is_active])
     members = set(project.member_ids)
-    out = {"can_manage": project.can_manage(user), "people": [r for r in team if r["id"] in members], "team": team}
+    out = {"can_manage": _may_give_tasks(db, user, project), "people": [r for r in team if r["id"] in members], "team": team}
     if project.pm is not None:
         out["project"] = {"id": project.pm.id, "project_code": project.pm.project_code, "name": project.pm.name,
                           "client_name": project.pm.client_name, "status": project.pm.status}
+    if project.machine is not None:
+        m = project.machine
+        header = {"kind": "machine", "id": m.id, "project_code": m.serial_number, "name": machine_title(m),
+                  "project_number": m.serial_number, "title": machine_title(m), "client_name": m.client_company, "status": m.status}
+        out["project"] = header     # same key as the PM project's task-access
+        out["machine"] = header
     return out
 
 
@@ -369,6 +483,14 @@ async def pm_task_access(pm_project_id: int, db: Session = Depends(get_db), user
     return _access(db, _pm_parent(db, pm_project_id, user), user)
 
 
+@router.get("/machines/{machine_id}/task-access")
+async def machine_task_access(machine_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Same for a past machine of All Projects (R&D heads, management, admins give tasks):
+    `can_manage`, `people` = active people with R&D access (after the role's "Assign to"
+    rule), plus the machine header (`project`: serial as project_code, customer as name)."""
+    return _access(db, _machine_parent(db, machine_id, user), user)
+
+
 @router.get("/project-tasks/mine")
 async def my_project_tasks(include_done: bool = False, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Tasks assigned to me on any R&D project (open by default) — for R&D › My Tasks."""
@@ -380,10 +502,15 @@ async def my_project_tasks(include_done: bool = False, db: Session = Depends(get
         RndProject.id.in_({t.project_id for t in tasks if t.project_id}), RndProject.is_deleted == False).all()} if tasks else {}  # noqa: E712
     pm_projects = {p.id: p for p in db.query(PmProject).filter(
         PmProject.id.in_({t.pm_project_id for t in tasks if t.pm_project_id})).all()} if tasks else {}
-    tasks = [t for t in tasks if (t.project_id in projects) or (t.pm_project_id in pm_projects)]
+    machines = {m.id: m for m in db.query(ErpMachine).filter(
+        ErpMachine.id.in_({t.machine_id for t in tasks if t.machine_id}), ErpMachine.is_deleted == False).all()} if tasks else {}  # noqa: E712
+    tasks = [t for t in tasks if (t.project_id in projects) or (t.pm_project_id in pm_projects) or (t.machine_id in machines)]
     out = _serialize(db, tasks)
     for row, t in zip(out, tasks):
-        if t.pm_project_id:
+        if t.machine_id:
+            m = machines[t.machine_id]
+            row["requirement_ref"], row["requirement_title"] = m.serial_number, machine_title(m)
+        elif t.pm_project_id:
             p = pm_projects[t.pm_project_id]
             row["requirement_ref"], row["requirement_title"] = p.project_code, p.name
         else:
@@ -393,7 +520,7 @@ async def my_project_tasks(include_done: bool = False, db: Session = Depends(get
 
 
 def _visible(db: Session, project: TaskParent, user: User) -> list[RndProjectTask]:
-    ensure_feature_action(user, "rnd", "projects", "tasks", "view")
+    _ensure_task_tick(user, "view")
     tasks = db.query(RndProjectTask).filter(project.task_filter()).order_by(RndProjectTask.id.desc()).all()
     if not project.can_manage(user):
         mine = {t.id for t in tasks if user.id in (t.assigned_to_id, t.created_by_id)}
@@ -419,11 +546,12 @@ async def project_task_detail(task_id: int, db: Session = Depends(get_db), user:
     family = [t for t in tasks if t.id in (task.id, task.parent_task_id) or t.parent_task_id == task.id]
     return {
         "tasks": _serialize(db, family),
-        "parent": {"kind": "project" if project.kind == "rnd" else "pm_project", "id": project.id,
-                   "ref": project.project_number, "title": project.title},
+        "parent": {"kind": "project" if project.kind == "rnd" else project.source, "id": project.id,
+                   "ref": project.project_number, "project_number": project.project_number, "title": project.title},
         "can_manage": project.can_manage(user),
-        # _parent_of already checked the user may open the project (R&D data scope / a task on the PM project).
-        "can_open_parent": True,
+        # _parent_of already checked the record (R&D data scope / a task on the PM project); the
+        # Prototype / Research page also needs its tab — an R&D Tasks-only user stays on the task.
+        "can_open_parent": project.kind != "rnd" or can_view_tab(user, "rnd", "projects"),
     }
 
 
@@ -440,8 +568,14 @@ async def list_pm_tasks(pm_project_id: int, db: Session = Depends(get_db), user:
     return _list(db, _pm_parent(db, pm_project_id, user), user)
 
 
+@router.get("/machines/{machine_id}/tasks")
+async def list_machine_tasks(machine_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """R&D tasks on a past machine of All Projects — same visibility rule."""
+    return _list(db, _machine_parent(db, machine_id, user), user)
+
+
 async def create_project_task(
-    db: Session, user: User, *, project_id: int | None = None, pm_project_id: int | None = None,
+    db: Session, user: User, *, project_id: int | None = None, pm_project_id: int | None = None, machine_id: int | None = None,
     title: str, assigned_to_id: int, due_date: str,
     remarks: str | None = None, files: list[UploadFile] | None = None, priority: str | None = None,
     start_date: str | None = None, work_status: str | None = None, checklist: str | None = None,
@@ -450,9 +584,16 @@ async def create_project_task(
     """Create a task on a Prototype / Research project (`project_id`) or on a Project
     Management project (`pm_project_id`) — shared by this router and POST /rnd/tasks.
     Project leads (R&D heads / the project manager on a PM project) and admins give
-    tasks; `check_feature` also asks for the role's Project tasks > Create feature
+    tasks; a past machine (`machine_id`) is managed by R&D heads, management and admins;
+    `check_feature` also asks for the role's Project tasks > Create feature
     (the R&D Tasks board checks rnd:tasks:create instead)."""
-    if pm_project_id:
+    if sum(1 for x in (project_id, pm_project_id, machine_id) if x) > 1:
+        raise HTTPException(status_code=422, detail="Give the task on one project only — send either the Prototype / Research project, the Project Management project or the past machine, not several.")
+    if machine_id:
+        project = _machine_parent(db, machine_id, user)
+        if project.machine.pm_project_id:
+            raise HTTPException(status_code=422, detail=f"{project.project_number} is linked to a Project Management project — give the task on that project instead (it is listed under the same code in All Projects).")
+    elif pm_project_id:
         project = _pm_parent(db, pm_project_id, user)
         if project.pm.status in ("closed", "cancelled"):
             raise HTTPException(status_code=422, detail=f"{project.project_number} is {project.pm.status} — R&D tasks can only be given on a running project. Pick another project, or ask management to reopen this one.")
@@ -460,9 +601,9 @@ async def create_project_task(
         project = _rnd_parent(db, project_id, user)
     else:
         raise HTTPException(status_code=422, detail="Pick the project this task is for.")
-    _ensure_manager(user, project, "create tasks")
+    _ensure_giver(db, user, project)
     if check_feature:
-        ensure_feature_action(user, "rnd", "projects", "tasks", "create")
+        _ensure_task_tick(user, "create")
     title = (title or "").strip()
     if not title:
         raise HTTPException(status_code=422, detail="Give the task a title — what should be done.")
@@ -473,7 +614,7 @@ async def create_project_task(
         raise HTTPException(status_code=422, detail=f"Due date {due.strftime('%d %b %Y')} is in the past — pick today or a later date.")
     assignee = _check_assignee(db, project, assigned_to_id, project.member_ids, "a team member" if project.kind == "rnd" else "an R&D person", user)
 
-    task = RndProjectTask(
+    task = RndProjectTask(  # exactly one parent column is set by project.fk()
         **project.fk(), title=title, remarks=(remarks or "").strip() or None,
         assigned_to_id=assignee.id, created_by_id=user.id, original_due_date=due, due_date=due, status="open",
     )
@@ -530,6 +671,24 @@ async def create_pm_task(
     )
 
 
+@router.post("/machines/{machine_id}/tasks")
+async def create_machine_task(
+    machine_id: int,
+    title: str = Form(...), assigned_to_id: int = Form(...), due_date: str = Form(...),
+    remarks: str | None = Form(None), files: list[UploadFile] | None = File(None),
+    priority: str | None = Form(None), start_date: str | None = Form(None),
+    work_status: str | None = Form(None), checklist: str | None = Form(None),
+    background_tasks: BackgroundTasks = None,
+    db: Session = Depends(get_db), user: User = Depends(get_current_user),
+):
+    """An R&D task on a past machine of All Projects."""
+    return await create_project_task(
+        db, user, machine_id=machine_id, title=title, assigned_to_id=assigned_to_id, due_date=due_date, remarks=remarks,
+        files=files, priority=priority, start_date=start_date, work_status=work_status, checklist=checklist,
+        background_tasks=background_tasks,
+    )
+
+
 @router.post("/project-tasks/{task_id}/subtasks")
 async def create_subtask(
     task_id: int,
@@ -544,7 +703,7 @@ async def create_subtask(
     parent = _task(db, task_id)
     project = _parent_of(db, parent, user)
     _ensure_assignee(parent, user, "split it into sub-tasks")
-    ensure_feature_action(user, "rnd", "projects", "tasks", "create")
+    _ensure_task_tick(user, "create")
     if parent.parent_task_id:
         raise HTTPException(status_code=409, detail="This is already a sub-task — sub-tasks can't be split further. Ask the person who gave it to you to create another task instead.")
     if parent.status != "open":
@@ -689,7 +848,7 @@ async def extend_task(task_id: int, reason: str = Form(...), new_due_date: str =
     task = _task(db, task_id)
     project = _parent_of(db, task, user)
     _ensure_assignee(task, user, "give a new completion date")
-    ensure_feature_action(user, "rnd", "projects", "tasks", "view")
+    _ensure_task_tick(user, "view")
     if task.status != "open":
         raise HTTPException(status_code=409, detail=f"This task is {task.status}, so its due date can't be changed.")
     reason = (reason or "").strip()
@@ -718,7 +877,7 @@ async def complete_task(task_id: int, remarks: str = Form(...), delay_reason: st
     task = _task(db, task_id)
     project = _parent_of(db, task, user)
     _ensure_assignee(task, user, "complete it")
-    ensure_feature_action(user, "rnd", "projects", "tasks", "view")
+    _ensure_task_tick(user, "view")
     if task.status != "open":
         raise HTTPException(status_code=409, detail=f"This task is already {task.status}.")
     remarks = (remarks or "").strip()
@@ -773,7 +932,7 @@ async def request_approval(task_id: int, request: str = Form(...), files: list[U
     task = _task(db, task_id)
     project = _parent_of(db, task, user)
     _ensure_assignee(task, user, "ask for approval on it")
-    ensure_feature_action(user, "rnd", "projects", "tasks", "view")
+    _ensure_task_tick(user, "view")
     if task.status != "open":
         raise HTTPException(status_code=409, detail=f"This task is {task.status} — approvals can be asked only while it is open.")
     row = task_approvals.create(db, KIND, task.id, user, request)
@@ -830,7 +989,7 @@ async def add_task_update(task_id: int, remarks: str = Form(...), files: list[Up
     task = _task(db, task_id)
     project = _parent_of(db, task, user)
     _ensure_assignee(task, user, "post an update on it")
-    ensure_feature_action(user, "rnd", "projects", "tasks", "view")
+    _ensure_task_tick(user, "view")
     if task.status != "open":
         raise HTTPException(status_code=409, detail=f"This task is {task.status} — updates can be added only while it is open.")
     remarks = (remarks or "").strip()

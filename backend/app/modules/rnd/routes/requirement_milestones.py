@@ -1,7 +1,8 @@
 """Timeline of an R&D requirement (a CRM Inquiry / Tender sent to R&D).
 
 Milestones, Share Department and the Access tab were removed on 2026-10-30
-(R&D rework: tasks only). Their tables stay as history; what is left in this
+(R&D rework: tasks only); their tables were dropped on 2026-11-17 (migration
+a8d3f5b7c9e1), old events stay in audit_logs. What is left in this
 module is the requirement's Timeline (the old "History" tab, same endpoint and
 the same `history` feature key so existing role grants keep working).
 
@@ -10,6 +11,7 @@ new), accept / return with the reason, the response, task events, offers,
 documents and project links. Source: the revision table, audit_logs
 (entity_type "rnd_req_<source>") and the task events.
 """
+import json
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -50,15 +52,29 @@ async def requirement_history(source: Source, record_id: int, db: Session = Depe
     ensure_feature_action(user, "rnd", "requirements", "history", "view")
     logs = db.query(AuditLog).filter(AuditLog.entity_type == f"rnd_req_{source}", AuditLog.entity_id == record_id).order_by(AuditLog.id.desc()).limit(500).all()
     logs = [lg for lg in logs if not (lg.action or "").startswith(_HIDDEN_ACTIONS)]
+    # R&D's "Ask BD for more details" questions are logged on the CRM record itself (BD's Timeline
+    # shows them there); R&D's Timeline shows them too, so the question stays visible after BD re-sends.
+    queries = db.query(AuditLog).filter(
+        AuditLog.entity_type == source, AuditLog.entity_id == record_id,
+        AuditLog.action == requirement_movement.ASK_DETAILS_ACTION,
+    ).order_by(AuditLog.id.desc()).limit(200).all()
     tasks = {t.id: t for t in db.query(RndRequirementTask).filter(RndRequirementTask.source == source, RndRequirementTask.record_id == record_id).all()}
     events = db.query(RndTaskEvent).filter(RndTaskEvent.task_id.in_(list(tasks))).order_by(RndTaskEvent.id.desc()).limit(500).all() if tasks else []
-    uids = {lg.performed_by_id for lg in logs if lg.performed_by_id} | {e.user_id for e in events if e.user_id} | {t.assigned_to_id for t in tasks.values()}
+    uids = {lg.performed_by_id for lg in [*logs, *queries] if lg.performed_by_id} | {e.user_id for e in events if e.user_id} | {t.assigned_to_id for t in tasks.values()}
     users = {u.id: u for u in db.query(User).filter(User.id.in_(uids)).all()} if uids else {}
     rows = [{
         "id": f"a{lg.id}", "kind": "requirement", "action": lg.action, "summary": lg.summary or lg.action,
         "performed_by": _name(users.get(lg.performed_by_id)) if lg.performed_by_id else "System",
         "performed_at": lg.performed_at.isoformat() if lg.performed_at else None,
     } for lg in logs]
+    for lg in queries:
+        data = json.loads(lg.new_value) if lg.new_value else {}
+        rows.append({
+            "id": f"q{lg.id}", "kind": "query", "action": lg.action,
+            "summary": f"Asked BD for more details: {data.get('remarks') or lg.summary or ''}".strip(),
+            "performed_by": _name(users.get(lg.performed_by_id)) if lg.performed_by_id else "System",
+            "performed_at": lg.performed_at.isoformat() if lg.performed_at else None,
+        })
     for e in events:
         t = tasks[e.task_id]
         rows.append({

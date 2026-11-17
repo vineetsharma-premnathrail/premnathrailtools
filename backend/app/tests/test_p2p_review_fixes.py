@@ -150,6 +150,9 @@ def test_manager_flag_holder_who_is_not_an_approver_cannot_reject_the_po(client,
 def test_store_manager_flag_alone_does_not_expose_other_prs(client, db):
     pr, _, _, _ = _po_raised(client, db)
     sm = _user(db, f"rf.sm.{pr['id']}@premnathrail.com", apps=("p2p",), is_store_manager=True)
+    # 2026-11-14: the role-matrix tick decides; the suite's org-wide default data scope is narrowed to the production default here.
+    sm.data_access_scopes = {"p2p": "assigned"}
+    db.commit()
     assert client.get(f"{BASE}/{pr['id']}", headers=_h(sm)).status_code == 403
     assert pr["id"] not in [p["id"] for p in client.get(BASE, headers=_h(sm)).json()]
 

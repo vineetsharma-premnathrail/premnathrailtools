@@ -32,7 +32,7 @@ from app.modules.p2p.models.p2p_request_approval import P2PRequestApproval
 from app.modules.p2p.access import scope_prs
 from app.modules.p2p.approvals import engine_party_pr_ids
 from app.modules.p2p.routes.p2p_requests import (
-    _is_po_approver, _is_purchase_team, _requester_or_purchase, create_p2p_request,
+    _is_po_approver, _requester_or_purchase, _sees_every_pr, create_p2p_request,
 )
 from app.modules.p2p.schemas.p2p_request import P2PRequestCreate, P2PRequestItemPayload
 
@@ -41,7 +41,7 @@ router = APIRouter(prefix="/p2p/requests", tags=["P2P"])
 
 def _visible(db: Session, user: User):
     q = db.query(P2PRequest).options(selectinload(P2PRequest.items))
-    if not (user.role == "admin" or _is_purchase_team(user) or _is_po_approver(user)):
+    if not (user.role == "admin" or _sees_every_pr(user) or _is_po_approver(user)):
         mine = db.query(P2PRequestApproval.p2p_request_id).filter(P2PRequestApproval.approver_id == user.id)
         q = q.filter(or_(P2PRequest.requested_by_id == user.id, P2PRequest.id.in_(mine),
                          P2PRequest.id.in_(engine_party_pr_ids(user))))

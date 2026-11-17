@@ -1,6 +1,6 @@
 'use client'
 
-import { CaretDoubleRight, ClipboardText, ClockCounterClockwise, Disc, Drop, Flask, Gear, GearFine, Lightning, ListChecks, Pulse, Scales, SquaresFour, Wrench } from '@phosphor-icons/react'
+import { CaretDoubleRight, ClipboardText, ClockCounterClockwise, Disc, Drop, Files, Flask, Gear, GearFine, Lightning, ListChecks, Pulse, Scales, SquaresFour, Wrench } from '@phosphor-icons/react'
 import type { Icon } from '@phosphor-icons/react'
 import Link from 'next/link'
 import { navScrollRef } from '@/components/shared/navScroll'
@@ -17,6 +17,9 @@ const TABS = [
   // Requirement and Prototype / Research tasks: create, track, analytics (R&D › R&D Tasks).
   { href: '/dashboard/rnd/tasks', label: 'R&D Tasks', icon: 'tasks', subtabKey: 'tasks' },
   { href: '/dashboard/rnd/projects', label: 'Prototype / Research', icon: 'projects', subtabKey: 'projects' },
+  // Documents has its own Permission Matrix tab: a role that ticks only it
+  // must still reach it from the nav ("the tick decides").
+  { href: '/dashboard/rnd/documents', label: 'Documents', icon: 'documents', subtabKey: 'documents' },
   // "all" is the old calculator-landing key — kept so existing Permission
   // Matrix grants for the calculators still cover this tab.
   { href: '/dashboard/rnd/tools', label: 'Engineering Tools', icon: 'tools', subtabKey: 'all' },
@@ -42,6 +45,7 @@ const TAB_ICONS: Record<string, Icon> = {
   requirements: ClipboardText,
   tasks: ListChecks,
   projects: Flask,
+  documents: Files,
   tools: Wrench,
   braking: Disc,
   hydraulic: Drop,

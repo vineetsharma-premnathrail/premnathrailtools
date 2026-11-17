@@ -10,6 +10,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    date: '2026-11-17',
+    title: 'R&D: Experiments & Tests and Prototypes removed',
+    items: [
+      'R&D no longer has Experiments & Tests or Prototypes (prototype BOM and "Release to Production"). Prototype / Research projects stay as they are.',
+      'R&D documents now belong to a project only.',
+      'A project can now be deleted as soon as its attachments are removed; nothing else blocks it.',
+      'The old "BOM costs" switch is now R&D › Prototype / Research › Budget & costs in Organization › Role & Permissions. It shows or hides the project budget card; roles that had the old switch keep it.',
+    ],
+  },
+  {
     date: '2026-11-02',
     title: 'Organization: choose what each role sees',
     items: [

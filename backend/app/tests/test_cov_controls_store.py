@@ -98,9 +98,15 @@ def test_c09_admin_creator_cannot_approve_own_adjustment(client, db, env):
     assert r.status_code == 403
 
 
-def test_c09_adjustment_approver_must_be_a_store_manager(client, db, env):
-    r = _adjust(client, env, env["keeper"], env["clerk"])
+def test_c09_adjustment_approver_must_hold_the_approve_tick(client, db, env):
+    # Since 2026-11-14 the Role matrix tick (Store › Adjustments › Approve) decides, not the user flag.
+    no_tick = User(email="c09.notick@premnathrail.com", name="notick", role="user", is_active=True,
+                   granular_permissions=["store:adjustments:view", "store:adjustments:create"])
+    db.add(no_tick)
+    db.commit()
+    r = _adjust(client, env, env["keeper"], no_tick)
     assert r.status_code in (400, 403)
+    assert "Store › Adjustments › Approve" in r.json()["detail"]
 
 
 # ── Manual stock entry (removed 2026-10-12, SAP standard) ──────────────────

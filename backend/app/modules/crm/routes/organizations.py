@@ -12,7 +12,7 @@ from app.core.permissions import (
     ensure_can_delete, require_any_app_access, require_app_access, require_feature_action, require_tab_access, require_tab_action,
 )
 from app.modules.crm.access import INQ, ensure_parent_in_scope, require_view_any
-from app.core.data_scope import apply_scope, ensure_in_scope
+from app.core.data_scope import apply_scope, can_change, ensure_can_change, ensure_in_scope
 from app.core.permission_registry import can_feature, can_perform
 from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
@@ -39,8 +39,18 @@ def _write_audit(db: Session, org_id: int, action: str, user: User, summary: str
     db.add(AuditLog(entity_type="organization", entity_id=org_id, action=action, performed_by_id=user.id, summary=summary))
 
 
-def _can_modify(record, user: User) -> bool:
+def _is_creator_or_admin(record, user: User) -> bool:
+    """Delete rule for a contact (company rule: only its creator or an admin deletes)."""
     return user.role == "admin" or record.created_by_id == user.id
+
+
+def _ensure_can_change_contact(db: Session, user: User, org: Organization | None, contact: OrgContact) -> None:
+    """A contact may be edited by whoever added it, or by anyone whose CRM Edit
+    scope (Role › Data access › Edit) covers its organization — never a
+    hardcoded creator-only rule (owner, 2026-11-03)."""
+    if contact.created_by_id == user.id:
+        return
+    ensure_can_change(db, user, org, action="edit the contacts of")
 
 
 def _check_contact_duplicates(
@@ -122,13 +132,12 @@ async def list_organizations(
 @router.get("/duplicates")
 async def list_duplicate_organizations(
     db: Session = Depends(get_db),
-    user: User = Depends(require_tab_access("crm", "organizations")),
+    # Whoever may edit organizations reviews duplicates (owner, 2026-11-14: the tick decides).
+    user: User = Depends(require_tab_action("crm", "organizations", "edit")),
 ):
     """Read-only report of organizations that share the same name (case-insensitive)
     among non-deleted rows — surfaces existing duplicates for manual review/merge
     without deleting or modifying anything."""
-    if user.role != "admin":
-        raise HTTPException(status_code=403, detail="Only an admin can view the duplicates report.")
 
     orgs = db.query(Organization).filter(Organization.is_deleted == False).order_by(Organization.id).all()  # noqa: E712
     groups: dict[str, list[Organization]] = {}
@@ -315,6 +324,7 @@ async def get_organization_detail(
     data["contacts"] = [OrgContactResponse.model_validate(c) for c in org.contacts]
     data["inquiry_count"] = inquiry_count
     data["tender_count"] = tender_count
+    data["can_change"] = can_change(db, _user, org)
     return data
 
 
@@ -329,8 +339,7 @@ async def update_organization(
     if not org:
         raise HTTPException(status_code=404, detail="Customer Organization not found")
     ensure_in_scope(db, user, org)
-    if not _can_modify(org, user):
-        raise HTTPException(status_code=403, detail="Only the creator or an admin can edit this customer organization.")
+    ensure_can_change(db, user, org, action="edit")
 
     if payload.name is not None and payload.name.strip().lower() != (org.name or "").strip().lower():
         name_clash = db.query(Organization).filter(
@@ -542,8 +551,7 @@ async def update_org_contact(
     if not contact:
         raise HTTPException(status_code=404, detail="Contact not found")
     ensure_parent_in_scope(db, user, "organization", org_id)
-    if not _can_modify(contact, user):
-        raise HTTPException(status_code=403, detail="Only the creator or an admin can edit this contact.")
+    _ensure_can_change_contact(db, user, db.get(Organization, org_id), contact)
     _check_contact_duplicates(db, org_id, payload.mobile, payload.email, exclude_contact_id=contact_id)
     if "address_id" in payload.model_fields_set:
         check_contact_address(db, org_id, payload.address_id)
@@ -565,8 +573,10 @@ async def delete_org_contact(
     if not contact:
         raise HTTPException(status_code=404, detail="Contact not found")
     ensure_parent_in_scope(db, user, "organization", org_id)
-    if not _can_modify(contact, user):
-        raise HTTPException(status_code=403, detail="Only the creator or an admin can delete this contact.")
+    if not _is_creator_or_admin(contact, user):
+        raise HTTPException(status_code=403, detail=(
+            "You can only delete a contact you added yourself — this one was added by someone else. "
+            "Ask the person who added it or an admin to delete it."))
     _ensure_contact_unused(db, contact)
     db.delete(contact)
     db.commit()

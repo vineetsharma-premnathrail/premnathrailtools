@@ -192,10 +192,14 @@ export default function PermissionMatrixEditor({ registry, value, onChange, read
       }
       // Unticking the last feature id must not silently re-enable inheritance.
     } else {
+      const hadView = next.has(`${mk}:${tab}:view`)
       next.add(id)
       // Any action implies seeing it (and a feature implies seeing its tab).
       next.add(`${mk}:${tk}:view`)
       if (isFeature) next.add(`${mk}:${tab}:view`)
+      // A customised tab's features no longer follow it on their own: ticking a tab
+      // action ticks the features that would have inherited it (and View, if it was just added).
+      else if (isTabCustomised(value, mk, tab)) addInheritingFeatures(next, mk, tab, hadView ? [id.split(':')[2]] : [id.split(':')[2], 'view'])
     }
     if (isFeature) {
       // A customised tab with no feature left keeps a "customised, none" marker.
@@ -204,6 +208,21 @@ export default function PermissionMatrixEditor({ registry, value, onChange, read
       if (!isTabCustomised(next, mk, tab)) next.add(marker)
     }
     commit(next)
+  }
+
+  /** On a customised tab: tick every feature action whose `inherit` is one of `tabActions` (plus the feature's View). */
+  const addInheritingFeatures = (next: Set<string>, mk: string, tab: string, tabActions: string[]) => {
+    let added = false
+    for (const [fk, f] of Object.entries(registry.modules[mk]?.features?.[tab] || {})) {
+      for (const [act, legacy] of Object.entries(f.inherit)) {
+        if (legacy != null && tabActions.includes(legacy) && f.actions.includes(act)) {
+          next.add(`${mk}:${tab}.${fk}:${act}`)
+          if (f.actions.includes('view')) next.add(`${mk}:${tab}.${fk}:view`)
+          added = true
+        }
+      }
+    }
+    if (added) next.delete(`${mk}:${tab}.*:none`)
   }
 
   /** Back to "features follow the tab" for one tab. */
@@ -217,7 +236,10 @@ export default function PermissionMatrixEditor({ registry, value, onChange, read
     const ids = (registry.modules[moduleKey].actions[tabKey] || []).map((a) => `${moduleKey}:${tabKey}:${a}`)
     const next = concretize(moduleKey)
     const allOn = ids.every((id) => next.has(id))
+    const turnedOn = allOn ? [] : ids.filter((id) => !next.has(id)).map((id) => id.split(':')[2])
     ids.forEach((id) => (allOn ? next.delete(id) : next.add(id)))
+    // Same as ticking one action: a customised tab's features get the newly ticked actions too.
+    if (turnedOn.length && isTabCustomised(value, moduleKey, tabKey)) addInheritingFeatures(next, moduleKey, tabKey, turnedOn)
     commit(next)
   }
 
@@ -324,6 +346,13 @@ export default function PermissionMatrixEditor({ registry, value, onChange, read
                                 style={{ ...smallSecondaryBtnStyle, marginLeft: 8, color: BRAND.primaryActive, background: 'rgba(244,113,59,0.08)', border: '1px solid transparent' }}>
                                 {featsOpen ? '▾' : '▸'} {feats.length} feature{feats.length === 1 ? '' : 's'}{customisedTab ? ' · customised' : ''}
                               </button>
+                            )}
+                            {feats.length > 0 && customisedTab && (
+                              <span data-tour="perm-matrix-customised-note"
+                                title="Ticking a tab action here also ticks the features that follow that action; unticking does not untick features. Open the features to check, or use “Reset to follow the tab”."
+                                style={{ display: 'inline-block', marginLeft: 8, fontSize: 11, color: '#92400e', background: 'rgba(217,119,6,0.08)', border: '1px solid rgba(217,119,6,0.25)', borderRadius: 6, padding: '1px 6px', verticalAlign: 'middle' }}>
+                                customised — features no longer follow the tab automatically
+                              </span>
                             )}
                             {visChip(fKey)}
                           </td>

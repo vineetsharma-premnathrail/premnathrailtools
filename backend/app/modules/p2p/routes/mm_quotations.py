@@ -15,7 +15,7 @@ from datetime import date, datetime, timedelta, timezone
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.permissions import GRANT_HINT, ensure_feature_action, ensure_tab_action, require_app_access
+from app.core.permissions import GRANT_HINT, ensure_feature_action
 from app.modules.p2p.pricing import mask_for, sees_prices
 from app.db.session import get_db
 from app.modules.accounts.models.vendor import Vendor
@@ -29,8 +29,8 @@ from app.modules.p2p import po_split, quotation_compare
 from app.modules.p2p.line_progress import line_progress
 from app.modules.p2p.routes.p2p_requests import _write_audit as _write_pr_audit
 from app.modules.p2p.routes.rfq import (
-    _get_pr_for_rfq, _get_rfq_or_404, _live_po_qty_by_quote_line, _po_of_rfq, _reload_rfq, active_items, ensure_rfq_owner,
-    ensure_rfq_readable,
+    _get_pr_for_rfq, _get_rfq_or_404, _live_po_qty_by_quote_line, _p2p_tab, _po_of_rfq, _reload_rfq, active_items,
+    ensure_rfq_owner, ensure_rfq_readable,
 )
 from app.modules.p2p.schemas.mm_purchasing import (
     LineQuotationCreate, LineQuotationResponse, PODraftDetailsPayload, QuotationAwardPayload,
@@ -41,16 +41,6 @@ from app.modules.store.models.location import StoreLocation
 router = APIRouter(prefix="/p2p/rfqs", tags=["P2P - Quotations & PO split"])
 
 _EPS = 1e-6
-
-
-def _purchase_tab(tab: str, action: str):
-    purchase_dep = require_app_access("purchase")
-
-    def _dependency(user: User = Depends(purchase_dep)) -> User:
-        ensure_tab_action(user, "p2p", tab, action)
-        return user
-
-    return _dependency
 
 
 def _rfq_pr(db: Session, rfq_id: int, user: User) -> tuple[RFQ, P2PRequest]:
@@ -170,7 +160,7 @@ def _apply_quote(db: Session, rfq: RFQ, pr: P2PRequest, vq: VendorQuotation, pay
 
 
 @router.get("/{rfq_id}/line-quotations", response_model=list[LineQuotationResponse])
-def list_line_quotations(rfq_id: int, db: Session = Depends(get_db), user: User = Depends(_purchase_tab("rfq", "view"))):
+def list_line_quotations(rfq_id: int, db: Session = Depends(get_db), user: User = Depends(_p2p_tab("rfq", "view"))):
     ensure_feature_action(user, "p2p", "rfq", "vendor_quotes", "view")
     rfq, pr = _rfq_pr(db, rfq_id, user)
     ensure_rfq_readable(db, rfq, user, pr)
@@ -179,7 +169,7 @@ def list_line_quotations(rfq_id: int, db: Session = Depends(get_db), user: User 
 
 @router.post("/{rfq_id}/line-quotations", response_model=LineQuotationResponse)
 def add_line_quotation(rfq_id: int, payload: LineQuotationCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db),
-                       user: User = Depends(_purchase_tab("rfq", "edit"))):
+                       user: User = Depends(_p2p_tab("rfq", "edit"))):
     ensure_feature_action(user, "p2p", "rfq", "vendor_quotes", "create")
     rfq, pr = _rfq_pr(db, rfq_id, user)
     ensure_rfq_owner(db, rfq, user, "record quotes on")
@@ -202,7 +192,7 @@ def add_line_quotation(rfq_id: int, payload: LineQuotationCreate, background_tas
 
 @router.put("/{rfq_id}/line-quotations/{vq_id}", response_model=LineQuotationResponse)
 def replace_line_quotation(rfq_id: int, vq_id: int, payload: LineQuotationCreate, db: Session = Depends(get_db),
-                           user: User = Depends(_purchase_tab("rfq", "edit"))):
+                           user: User = Depends(_p2p_tab("rfq", "edit"))):
     ensure_feature_action(user, "p2p", "rfq", "vendor_quotes", "edit")
     rfq, pr = _rfq_pr(db, rfq_id, user)
     ensure_rfq_owner(db, rfq, user, "change quotes on")
@@ -225,7 +215,7 @@ def replace_line_quotation(rfq_id: int, vq_id: int, payload: LineQuotationCreate
 
 
 @router.get("/{rfq_id}/comparison")
-def quotation_comparison(rfq_id: int, db: Session = Depends(get_db), user: User = Depends(_purchase_tab("rfq", "view"))):
+def quotation_comparison(rfq_id: int, db: Session = Depends(get_db), user: User = Depends(_p2p_tab("rfq", "view"))):
     ensure_feature_action(user, "p2p", "rfq", "comparison", "view")
     rfq, pr = _rfq_pr(db, rfq_id, user)
     ensure_rfq_readable(db, rfq, user, pr)
@@ -233,7 +223,7 @@ def quotation_comparison(rfq_id: int, db: Session = Depends(get_db), user: User 
 
 
 @router.get("/{rfq_id}/comparison/export")
-def export_comparison(rfq_id: int, db: Session = Depends(get_db), user: User = Depends(_purchase_tab("rfq", "export"))):
+def export_comparison(rfq_id: int, db: Session = Depends(get_db), user: User = Depends(_p2p_tab("rfq", "export"))):
     ensure_feature_action(user, "p2p", "rfq", "comparison", "export")
     if not sees_prices(user, "rfq"):
         raise HTTPException(status_code=403, detail=(
@@ -274,7 +264,7 @@ def _po_numbers_for_quote_line(db: Session, qi_id: int) -> str:
 
 @router.post("/{rfq_id}/awards")
 def award_lines(rfq_id: int, payload: QuotationAwardPayload, db: Session = Depends(get_db),
-                user: User = Depends(_purchase_tab("rfq", "edit"))):
+                user: User = Depends(_p2p_tab("rfq", "edit"))):
     """ME49 selection, per line, BY QUANTITY: the buyer says how much of each line goes to which vendor
     (a split across vendors is normal). quantity null = the whole remaining quantity of the line to that
     vendor (the line's other awards on this RFQ are cleared); more than 0 = a split award for that
@@ -404,7 +394,7 @@ def award_lines(rfq_id: int, payload: QuotationAwardPayload, db: Session = Depen
 
 
 @router.get("/{rfq_id}/split-proposal")
-def split_proposal(rfq_id: int, db: Session = Depends(get_db), user: User = Depends(_purchase_tab("purchase_orders", "view"))):
+def split_proposal(rfq_id: int, db: Session = Depends(get_db), user: User = Depends(_p2p_tab("purchase_orders", "view"))):
     """One proposed PO per vendor from the awarded quote lines (each at the quantity awarded and not yet on
     a PO), plus this RFQ's lines still to order that have no award."""
     from app.modules.p2p.quotation_compare import awarded_qty_of
@@ -472,7 +462,7 @@ def _receiving_from_pr(db: Session, lines) -> tuple[int | None, int | None]:
 
 @router.patch("/{rfq_id}/po-draft/{po_id}/details", response_model=P2PPurchaseOrderResponse)
 def update_po_draft_details(rfq_id: int, po_id: int, payload: PODraftDetailsPayload, db: Session = Depends(get_db),
-                            user: User = Depends(_purchase_tab("purchase_orders", "edit"))):
+                            user: User = Depends(_p2p_tab("purchase_orders", "edit"))):
     rfq, pr = _rfq_pr(db, rfq_id, user)
     ensure_rfq_owner(db, rfq, user, "edit the PO draft of")
     po = _po_of_rfq(db, rfq, pr, po_id, with_items=True, user=user)

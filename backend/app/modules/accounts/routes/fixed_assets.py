@@ -11,7 +11,7 @@ from app.modules.accounts.schemas.fixed_asset import (
     DepreciationRunCreate, DepreciationRunReversePayload, DepreciationRunResponse, DepreciationRunLineResponse,
 )
 from app.modules.accounts.services import assets
-from app.modules.accounts.routes._common import write_audit, who, service_errors, require_finance_manager, gl_labels
+from app.modules.accounts.routes._common import write_audit, who, service_errors, gl_labels
 from app.modules.accounts import access
 
 router = APIRouter(prefix="/accounts/fixed-assets", tags=["Accounts"])
@@ -82,7 +82,6 @@ async def delete_asset_route(asset_id: int, db: Session = Depends(get_db), user:
 @router.post("/{asset_id}/dispose", response_model=FixedAssetResponse)
 async def dispose_asset_route(asset_id: int, payload: FixedAssetDisposePayload, db: Session = Depends(get_db),
                               user: User = Depends(require_tab_action("accounts", "fixed_assets", "edit"))):
-    require_finance_manager(user, "dispose of a fixed asset")
     with service_errors(db):
         a = assets.dispose_asset(db, asset_id=asset_id, disposal_date=payload.disposal_date, proceeds=payload.proceeds,
                                  proceeds_gl_account_id=payload.proceeds_gl_account_id, user_id=user.id)
@@ -108,8 +107,8 @@ async def list_runs(db: Session = Depends(get_db), _user: User = Depends(require
 async def run_depreciation_route(payload: DepreciationRunCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db),
                                  user: User = Depends(require_tab_action("accounts", "depreciation", "approve"))):
     """Running depreciation goes through the approval engine ('Depreciation
-    run', default: a Finance Manager). A Finance Manager's click runs it at
-    once, as before; anyone else's click waits for one (202)."""
+    run', default: holders of Depreciation › Approve). An approver's click
+    runs it at once; anyone else's click waits for one (202)."""
     period = payload.accounting_period
     with service_errors(db):
         req = access.submit_process(db, access.KEY_DEPRECIATION, entity_id=access.period_entity_id(period), actor=user,
@@ -118,7 +117,7 @@ async def run_depreciation_route(payload: DepreciationRunCreate, background_task
         from app.modules.accounts import role_events_b
         role_events_b.fire(
             db, "depreciation_requested", title=f"Depreciation run for {period} waiting for approval",
-            message=(f"{user.name or user.email} requested the depreciation run for {period}. A Finance Manager approves it "
+            message=(f"{user.name or user.email} requested the depreciation run for {period}. Its approver approves it "
                      "from the Approval panel (Finance › Fixed Assets › Depreciation) — the journal posts on approval."),
             entity_type=req.entity_type, entity_id=req.entity_id, actor=user,
             skip={s.approver_id for s in (req.steps or []) if s.approver_id}, background_tasks=background_tasks)
@@ -134,7 +133,6 @@ async def run_depreciation_route(payload: DepreciationRunCreate, background_task
 @router.post("/depreciation/runs/{run_id}/reverse", response_model=DepreciationRunResponse)
 async def reverse_run_route(run_id: int, payload: DepreciationRunReversePayload, db: Session = Depends(get_db),
                             user: User = Depends(require_feature_action("accounts", "depreciation", "reversal", "cancel"))):
-    require_finance_manager(user, "reverse a depreciation run")
     with service_errors(db):
         run = assets.reverse_depreciation_run(db, run_id=run_id, reason=payload.reason, user_id=user.id)
     write_audit(db, "depreciation_run", run.id, "reversed", user, f"{who(user)} reversed depreciation for {run.accounting_period}: {payload.reason}")

@@ -30,13 +30,13 @@ const config: TourConfig = {
     {
       target: 'fin-rep-ye-close-btn',
       title: 'Close financial year',
-      purpose: 'Finance Manager or admin. Asks for confirmation.',
+      purpose: 'Needs Approve on Year-end Close. Asks for confirmation.',
       after: 'Posts the closing voucher, moves the year\'s profit/loss to Retained Earnings and marks the year closed. The year\'s P&L remains readable afterwards.',
     },
     {
       target: 'fin-rep-ye-reopen-btn',
       title: 'Reopen year',
-      purpose: 'Admin only, on a closed year. Asks for a reason (audit log).',
+      purpose: 'Needs Approve on Year-end Close, on a closed year. Asks for a reason (audit log).',
       after: 'The closing voucher is reversed (never deleted) and postings into the year are allowed again — close it again once corrections are done.',
     },
   ],

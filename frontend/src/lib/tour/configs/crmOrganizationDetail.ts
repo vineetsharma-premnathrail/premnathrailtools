@@ -28,7 +28,7 @@ const steps: TourStep[] = [
   {
     target: 'orgdetail-contact-edit-btn',
     title: 'Edit contact',
-    purpose: 'Opens this contact in a popup form so you can correct a number, email or designation.',
+    purpose: 'Opens this contact in a popup form so you can correct a number, email or designation. Shown when your role has Contacts › Edit and you added the contact, or the organization is inside the Edit scope of your role (Organization › Role & Permissions › Data access › Edit; by default records you created or are assigned to).',
   },
   {
     target: 'orgdetail-add-contact-btn',
@@ -134,7 +134,7 @@ const steps: TourStep[] = [
   {
     target: 'orgdetail-edit-link',
     title: 'Edit',
-    purpose: 'Opens the full Create/Edit Customer Organization form pre-filled with this customer organization\'s current values — its own tour covers every field there.',
+    purpose: 'Opens the full Create/Edit Customer Organization form pre-filled with this customer organization\'s current values — its own tour covers every field there. Shown when your role has Customer Organizations › Edit and the organization is inside the Edit scope of your role (Organization › Role & Permissions › Data access › Edit; by default records you created or are assigned to).',
   },
   {
     target: 'orgdetail-delete-btn',

@@ -225,27 +225,48 @@ def link_requirement(db: Session, user: User, project: RndProject) -> None:
                     performed_by_id=user.id))
 
 
+def display_many(db: Session, projects: list[RndProject]) -> dict[int, dict]:
+    """Denormalized origin fields for a whole list: project id -> the fields `display` returns.
+    One query per kind (machines, products, each source model) instead of one per project."""
+    from app.modules.erp.models.project import Project as Machine
+    from app.modules.products.models.product import FinishedProduct
+
+    machine_ids = {p.machine_id for p in projects if getattr(p, "machine_id", None)}
+    machines = {m.id: m for m in db.query(Machine).filter(Machine.id.in_(machine_ids)).all()} if machine_ids else {}
+    product_ids = {p.product_id for p in projects if p.product_id}
+    products = {r.id: r for r in db.query(FinishedProduct.id, FinishedProduct.code, FinishedProduct.name)
+                .filter(FinishedProduct.id.in_(product_ids)).all()} if product_ids else {}
+    alive: dict[str, set[int]] = {}
+    for kind in SOURCE_PATHS:
+        ids = {p.source_id for p in projects if p.source_kind == kind and p.source_id}
+        if ids:
+            model = _models()[kind]
+            alive[kind] = {r[0] for r in db.query(model.id).filter(model.id.in_(ids), model.is_deleted == False).all()}  # noqa: E712
+
+    out: dict[int, dict] = {}
+    for project in projects:
+        row = {
+            "origin_label": RND_ORIGIN_LABELS.get(project.origin) if project.origin else None,
+            "improvement_reason_label": RND_IMPROVEMENT_REASON_LABELS.get(project.improvement_reason) if project.improvement_reason else None,
+            "product_name": None, "machine_label": None, "source_path": None, "source_exists": False,
+        }
+        if getattr(project, "machine_id", None):
+            m = machines.get(project.machine_id)
+            row["machine_label"] = machine_label(m) if m else None
+        if project.product_id:
+            pr = products.get(project.product_id)
+            row["product_name"] = f"{pr.name} ({pr.code})" if pr else None
+        if project.source_kind in SOURCE_PATHS and project.source_id:
+            is_alive = project.source_id in alive.get(project.source_kind, set())
+            row["source_exists"] = is_alive
+            row["source_path"] = SOURCE_PATHS[project.source_kind] if is_alive else None
+        out[project.id] = row
+    return out
+
+
 def display(db: Session, project: RndProject) -> dict:
     """Denormalized origin fields for responses."""
-    from app.modules.products.models.product import FinishedProduct
-    out = {
-        "origin_label": RND_ORIGIN_LABELS.get(project.origin) if project.origin else None,
-        "improvement_reason_label": RND_IMPROVEMENT_REASON_LABELS.get(project.improvement_reason) if project.improvement_reason else None,
-        "product_name": None, "machine_label": None, "source_path": None, "source_exists": False,
-    }
-    if getattr(project, "machine_id", None):
-        from app.modules.erp.models.project import Project as Machine
-        m = db.get(Machine, project.machine_id)
-        out["machine_label"] = machine_label(m) if m else None
-    if project.product_id:
-        p = db.query(FinishedProduct.code, FinishedProduct.name).filter(FinishedProduct.id == project.product_id).first()
-        out["product_name"] = f"{p.name} ({p.code})" if p else None
-    if project.source_kind in SOURCE_PATHS and project.source_id:
-        model = _models()[project.source_kind]
-        alive = db.query(model.id).filter(model.id == project.source_id, model.is_deleted == False).first() is not None  # noqa: E712
-        out["source_exists"] = alive
-        out["source_path"] = SOURCE_PATHS[project.source_kind] if alive else None
-    return out
+    return display_many(db, [project])[project.id]
 
 
 def source_options(db: Session, user: User, kind: str, q: str | None) -> list[dict]:

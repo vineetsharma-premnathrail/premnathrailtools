@@ -1,13 +1,11 @@
 """Assign-to rules (core/assignee_rules.py) on the R&D pickers beyond tasks:
-project lead & team (rnd:projects.team) and experiment 'Conducted by'
-(rnd:experiments.conducted_by)."""
+project lead & team (rnd:projects.team)."""
 from app.auth.jwt_handler import create_access_token
 from app.modules.main.models.role import Role
 from app.modules.main.models.user import User
 
 BASE = "/api/v1/rnd"
-GRANTS = ["rnd:projects:view", "rnd:projects:create", "rnd:projects:edit",
-          "rnd:experiments:view", "rnd:experiments:create", "rnd:experiments:edit"]
+GRANTS = ["rnd:projects:view", "rnd:projects:create", "rnd:projects:edit"]
 
 
 def _user(db, email, rules=None):
@@ -57,27 +55,10 @@ def test_project_team_rule_blocks_outsiders_on_create_and_update(client, db):
     assert r.status_code == 200, r.text
 
 
-def test_experiment_conducted_by_rule(client, db):
-    mate = _user(db, "mate2@premnathrail.com")
-    outsider = _user(db, "outsider2@premnathrail.com")
-    eng = _user(db, "eng@premnathrail.com", {"rnd:experiments.conducted_by": {"mode": "custom", "users": [mate.id]}})
-    pid = _project(client, eng)
-
-    r = client.post(f"{BASE}/experiments", headers=_h(eng), json={"project_id": pid, "title": "Load test", "conducted_by_id": outsider.id})
-    assert r.status_code == 403 and "Assign experiment to" in r.json()["detail"]
-    r = client.post(f"{BASE}/experiments", headers=_h(eng), json={"project_id": pid, "title": "Load test"})
-    assert r.status_code == 200, r.text
-    eid = r.json()["id"]
-    assert r.json()["conducted_by_id"] == eng.id
-
-    assert client.patch(f"{BASE}/experiments/{eid}", headers=_h(eng), json={"conducted_by_id": outsider.id}).status_code == 403
-    assert client.patch(f"{BASE}/experiments/{eid}", headers=_h(eng), json={"conducted_by_id": mate.id}).status_code == 200
-    assert client.patch(f"{BASE}/experiments/{eid}", headers=_h(eng), json={"conducted_by_id": 999999}).status_code == 404
-
-
 def test_no_rule_means_anyone(client, db):
     other = _user(db, "other3@premnathrail.com")
-    eng = _user(db, "free@premnathrail.com", {})
-    r = client.post(f"{BASE}/experiments", headers=_h(eng),
-                    json={"project_id": _project(client, eng), "title": "T", "conducted_by_id": other.id})
+    lead = _user(db, "free@premnathrail.com", {})
+    r = client.post(f"{BASE}/projects", headers=_h(lead),
+                    json={"title": "Bogie", "objective": "Lighter", "team_member_ids": [other.id], "origin": "new_project",
+                          "origin_note": "Proposed by R&D head", "attachment_count": 1})
     assert r.status_code == 200, r.text

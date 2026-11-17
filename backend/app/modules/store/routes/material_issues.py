@@ -431,11 +431,10 @@ async def create_material_issue(
     spec = ISSUE_FORMS.get(issue_type_row.value, {}) if issue_type_row else {}
     if spec.get("remarks_label") and not (payload.remarks or "").strip():
         raise HTTPException(status_code=422, detail=f"Issue type '{issue_type_row.label}' needs Remarks: {spec['remarks_label'].lower()}.")
-    if spec.get("manager_only") and not (user.role == "admin"
-                                         or getattr(user, "is_store_manager", False)
-                                         or (location.manager_user_id and location.manager_user_id == user.id)):
-        raise HTTPException(status_code=403, detail=f"'{issue_type_row.label}' writes stock off, so only a Store Manager (or {location.name}'s "
-                                                    "manager) or an admin can post it — ask them, or ask an admin to tick 'Store Manager' on your user.")
+    # A write-off type (Scrap / Disposal) needs nothing beyond Store › Issues ›
+    # Create (owner, 2026-11-14: the matrix tick decides, not the 'Store
+    # Manager' user flag). Which roles may use it is the Issue Type list of the
+    # role's Store › Issues visibility, checked above.
     if form.get("challan_number") and len(form["challan_number"]) > 50:
         raise HTTPException(status_code=422, detail="Challan number is too long — keep it to 50 characters or fewer.")
     # Job work: the vendor comes from the Vendor master; its name is kept on

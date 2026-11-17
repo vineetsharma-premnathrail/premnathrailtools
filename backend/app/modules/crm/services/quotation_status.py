@@ -31,6 +31,8 @@ from sqlalchemy.orm import Session
 from app.core.notification_events import notify_event
 from app.core.permission_registry import can_feature
 from app.modules.crm.models.inquiry import Inquiry, Quotation
+from app.modules.crm.models.tender import Tender
+from app.modules.crm.services import quotation_parent as qparent
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.main.models.user import User
 from app.modules.organization.models.approval import ApprovalRequest, ApprovalWorkflow
@@ -192,9 +194,9 @@ _HINT = {
 
 def _event(db: Session, event: str, quot: Quotation, title: str, message: str, actor: User | None,
            skip: set[int] | None = None, background_tasks=None) -> set[int]:
-    """A quotation role event; members must be able to open its inquiry (CRM data scope)."""
+    """A quotation role event; members must be able to open its inquiry / tender (CRM data scope)."""
     from app.modules.crm.access import can_open_record
-    inquiry = db.get(Inquiry, quot.inquiry_id)
+    kind, inquiry = qparent.parent_of(db, quot)
     if inquiry is None:
         return set()
     org = inquiry.organization.name if inquiry.organization else "the customer"
@@ -202,7 +204,7 @@ def _event(db: Session, event: str, quot: Quotation, title: str, message: str, a
     return notify_event(
         db, background_tasks, "crm", event, title=title, message=message,
         entity_type=APPROVAL_ENTITY, entity_id=quot.id, actor=actor, can_open=can_open_record(db, inquiry),
-        details=[("Quotation", quot.quot_number or f"#{quot.id}"), ("Inquiry", inquiry.universal_id or ""),
+        details=[("Quotation", quot.quot_number or f"#{quot.id}"), (qparent.label(kind), inquiry.universal_id or ""),
                  ("Customer", org), ("Net value", f"₹{amt['net']:,.0f}")],
         skip_user_ids=skip,
     )
@@ -217,7 +219,7 @@ def _decided(db: Session, req: ApprovalRequest, outcome: str, actor: User) -> No
     if outcome == "approved":
         if quot.status != "submitted":
             raise HTTPException(status_code=409, detail=f"Quotation {quot.quot_number} is {STATUS_LABEL.get(quot.status, quot.status)}, "
-                                                        f"not awaiting approval — reload the inquiry.")
+                                                        f"not awaiting approval — reload the {qparent.kind_of(quot)}.")
         quot.approved_at, quot.approved_by_id = now_utc(), actor.id
         _set_status(db, quot, "approved", actor, f"Quotation {quot.quot_number} approved by {_name(actor)} — ready to send.", comment=None)
         # The requester already gets the engine's own "approved" notice.
@@ -239,33 +241,49 @@ def _decided(db: Session, req: ApprovalRequest, outcome: str, actor: User) -> No
                actor, skip={req.requester_id} if req.requester_id else None)
 
 
+def _validate_decision(db: Session, req, step, user: User, decision: str) -> None:
+    """Approval inbox / email link: refuse a decision once the quotation or its inquiry /
+    tender is deleted — the CRM screen already refuses it (load_live)."""
+    quot = db.get(Quotation, req.entity_id)
+    if quot is None:
+        raise HTTPException(status_code=409, detail=(
+            "This quotation was deleted after it was sent for approval, so there is nothing to decide — "
+            "refresh the approval inbox."))
+    kind, parent = qparent.parent_of(db, quot)
+    if parent is None or parent.is_deleted:
+        what = qparent.label(kind).lower()
+        raise HTTPException(status_code=409, detail=(
+            f"The {what} of quotation {quot.quot_number or f'#{quot.id}'} was deleted — restore the {what} from "
+            "the recycle bin first, then decide this approval."))
+
+
 register_transaction(TransactionType(
     key=APPROVAL_KEY, module_key="crm", subtab_key="inquiries_tenders", feature_key="quotations", label="CRM quotation",
     entity_type=APPROVAL_ENTITY, url="/dashboard/crm/quotations/{id}",
     description="Price / discount release of a quotation before it is sent to the customer — BD Head, then Director / "
                 "Partner by value or discount (limits in CRM › Settings › Quotation approval limits).",
     context_fields=CONTEXT_FIELDS, default_stages=default_stages(), on_decided=_decided,
+    validate_decision=_validate_decision,
     require_permission=True, distinct_approvers=False, allow_self_approval=False,
 ))
 
 
 # ---------------------------------------------------------------- actions
 
-def _ensure_actor(db: Session, quot: Quotation, inquiry: Inquiry, user: User, verb: str) -> None:
-    if user.role == "admin" or user.id in (quot.created_by_id, inquiry.created_by_id, inquiry.bd_owner_id):
-        return
-    raise HTTPException(status_code=403, detail=(
-        f"Only the quotation's creator, the inquiry owner / BD owner or an admin can {verb} quotation {quot.quot_number}."))
+def _ensure_actor(db: Session, quot: Quotation, inquiry: Inquiry | Tender, user: User, verb: str) -> None:
+    """The quotation's creator, or anyone whose CRM Edit scope covers the inquiry / tender
+    (default: its creator / BD owner / sales engineer) — crm.access.can_change_quotation."""
+    qparent.ensure_can_change(db, user, quot, inquiry, verb)
 
 
 def _need(quot: Quotation, allowed: tuple[str, ...], verb: str) -> None:
     if quot.status not in allowed:
         raise HTTPException(status_code=409, detail=(
             f"Quotation {quot.quot_number} is {STATUS_LABEL.get(quot.status, quot.status)} — it can only be {verb} when it is "
-            f"{' or '.join(STATUS_LABEL[s] for s in allowed)}. Reload the inquiry."))
+            f"{' or '.join(STATUS_LABEL[s] for s in allowed)}. Reload the {qparent.kind_of(quot)}."))
 
 
-def submit(db: Session, quot: Quotation, inquiry: Inquiry, user: User, background_tasks=None) -> ApprovalRequest | None:
+def submit(db: Session, quot: Quotation, inquiry: Inquiry | Tender, user: User, background_tasks=None) -> ApprovalRequest | None:
     _ensure_actor(db, quot, inquiry, user, "submit")
     _need(quot, ("draft",), "submitted for approval")
     problems = []
@@ -306,7 +324,8 @@ def submit(db: Session, quot: Quotation, inquiry: Inquiry, user: User, backgroun
     org_name = inquiry.organization.name if inquiry.organization else "customer"
     req = engine.submit(
         db, APPROVAL_KEY, entity_id=quot.id, requester=user, reference=quot.quot_number,
-        title=f"Quotation {quot.quot_number} — {org_name}, ₹{amt['net']:,.0f}"
+        title=f"Quotation {quot.quot_number} — {org_name}, " + (f"tender {inquiry.universal_id}, " if isinstance(inquiry, Tender) else "")
+              + f"₹{amt['net']:,.0f}"
               + (f", discount {amt['discount_percent']:g}%" if amt["discount_percent"] else ""),
         amount=amt["net"], context=ctx, exclude_user_ids=sorted(makers),
     )
@@ -320,12 +339,18 @@ def submit(db: Session, quot: Quotation, inquiry: Inquiry, user: User, backgroun
     return req
 
 
-def withdraw(db: Session, quot: Quotation, inquiry: Inquiry, user: User) -> None:
+def withdraw(db: Session, quot: Quotation, inquiry: Inquiry | Tender, user: User) -> None:
     _ensure_actor(db, quot, inquiry, user, "withdraw")
     _need(quot, ("submitted",), "withdrawn")
     engine.cancel_for_entity(db, APPROVAL_ENTITY, quot.id, user, "withdrawn by the submitter")
     if quot.status == "submitted":  # no engine request (legacy) — on_decided didn't run
         _set_status(db, quot, "draft", user, f"{_name(user)} withdrew quotation {quot.quot_number} from approval.")
+
+
+def cancel_pending_approval(db: Session, quot: Quotation, user: User, reason: str) -> None:
+    """Cancel the open approval request of a quotation that is going away (deleted) so it leaves the
+    approvers' inbox. No-op when nothing is pending. No commit."""
+    engine.cancel_for_entity(db, APPROVAL_ENTITY, quot.id, user, reason)
 
 
 def default_valid_until(db: Session, quot: Quotation) -> date:
@@ -334,7 +359,7 @@ def default_valid_until(db: Session, quot: Quotation) -> date:
     return (quot.quote_date or date.today()) + timedelta(days=days)
 
 
-def send(db: Session, quot: Quotation, inquiry: Inquiry, user: User, sent_on: date | None = None) -> None:
+def send(db: Session, quot: Quotation, inquiry: Inquiry | Tender, user: User, sent_on: date | None = None) -> None:
     _ensure_actor(db, quot, inquiry, user, "send")
     _need(quot, ("approved",), "marked as sent")
     sent_on = sent_on or date.today()
@@ -343,7 +368,7 @@ def send(db: Session, quot: Quotation, inquiry: Inquiry, user: User, sent_on: da
     if quot.valid_until < sent_on:
         raise HTTPException(status_code=422, detail=(
             f"Quotation {quot.quot_number} is valid only until {quot.valid_until.strftime('%d-%m-%Y')}, before the send date. "
-            f"This quotation is already approved, so its Valid Until can't be edited — use 'Create revision from this quotation' on the inquiry "
+            f"This quotation is already approved, so its Valid Until can't be edited — use 'Create revision from this quotation' on the {qparent.kind_of(quot)} "
             f"to offer it again with a new Valid Until (the new quotation needs approval)."))
     quot.sent_at, quot.sent_by_id = now_utc(), user.id
     quot.submitted_date = quot.submitted_date or sent_on
@@ -351,21 +376,21 @@ def send(db: Session, quot: Quotation, inquiry: Inquiry, user: User, sent_on: da
                                         f"(valid until {quot.valid_until.strftime('%d-%m-%Y')}).", comment=None)
 
 
-def accept(db: Session, quot: Quotation, inquiry: Inquiry, user: User, remarks: str | None = None) -> None:
+def accept(db: Session, quot: Quotation, inquiry: Inquiry | Tender, user: User, remarks: str | None = None) -> None:
     _ensure_actor(db, quot, inquiry, user, "mark as accepted")
     _need(quot, ("sent",), "marked as accepted")
-    other = db.query(Quotation).filter(Quotation.inquiry_id == quot.inquiry_id, Quotation.id != quot.id,
-                                       Quotation.status == "accepted").first()
+    other = qparent.other_accepted(db, quot)
     if other:
+        kind = qparent.kind_of(quot)
         raise HTTPException(status_code=409, detail=(
-            f"Quotation {other.quot_number} of this inquiry is already accepted — one accepted offer per inquiry. "
+            f"Quotation {other.quot_number} of this {kind} is already accepted — one accepted offer per {kind}. "
             f"Mark {other.quot_number} as lost first if the customer took this offer instead."))
     quot.decided_at, quot.decided_by_id = now_utc(), user.id
     _set_status(db, quot, "accepted", user, f"{_name(user)} recorded quotation {quot.quot_number} as accepted by the customer"
                 + (f": {remarks}" if remarks else "."), comment=remarks)
 
 
-def mark_lost(db: Session, quot: Quotation, inquiry: Inquiry, user: User, reason: str | None) -> None:
+def mark_lost(db: Session, quot: Quotation, inquiry: Inquiry | Tender, user: User, reason: str | None) -> None:
     _ensure_actor(db, quot, inquiry, user, "mark as lost")
     _need(quot, ("approved", "sent"), "marked as lost")
     reason = (reason or "").strip()
@@ -375,7 +400,7 @@ def mark_lost(db: Session, quot: Quotation, inquiry: Inquiry, user: User, reason
     _set_status(db, quot, "lost", user, f"{_name(user)} marked quotation {quot.quot_number} as lost: {reason}", comment=reason)
 
 
-def reopen(db: Session, quot: Quotation, inquiry: Inquiry, user: User, reason: str | None) -> None:
+def reopen(db: Session, quot: Quotation, inquiry: Inquiry | Tender, user: User, reason: str | None) -> None:
     """A recorded outcome (accepted / lost) is final - no undo, admins included
     (owner, 2026-10-28). A changed offer is a new quotation (revision)."""
     raise HTTPException(status_code=422, detail=(
@@ -396,7 +421,7 @@ def on_revised(db: Session, quot: Quotation, user: User) -> None:
         quot.customer_response = AWAITING
 
 
-def apply_customer_response(db: Session, quot: Quotation, inquiry: Inquiry, user: User, value: str) -> None:
+def apply_customer_response(db: Session, quot: Quotation, inquiry: Inquiry | Tender, user: User, value: str) -> None:
     """The old free-text-style 'Customer response' select, mapped onto the status flow."""
     if value == (quot.customer_response or AWAITING):
         return
@@ -429,7 +454,7 @@ def expire_due(db: Session, today: date | None = None) -> int:
                                             f"{q.valid_until.strftime('%d-%m-%Y')} without a customer decision.")
         _event(db, "quotation_expired", q, f"Quotation {q.quot_number} expired",
                f"Quotation {q.quot_number}'s validity ended on {q.valid_until.strftime('%d-%m-%Y')} without a customer decision. "
-               "Use 'Create revision from this quotation' on the inquiry to offer it again, or record the outcome.", None)
+               f"Use 'Create revision from this quotation' on the {qparent.kind_of(q)} to offer it again, or record the outcome.", None)
     if rows:
         db.flush()
     return len(rows)
@@ -467,9 +492,10 @@ def status_view(db: Session, quot: Quotation, user: User | None = None) -> dict:
         who = [s.approver.name or s.approver.email for s in pending if s.approver]
     can_decide = bool(user and req is not None and req.status == "pending" and engine.can_act_on_entity(db, user, APPROVAL_ENTITY, quot.id))
     # Same rule as _ensure_actor: who may record the send / customer outcome (the route also needs the Edit permission).
-    inq = db.get(Inquiry, quot.inquiry_id)
-    can_work = bool(user and (user.role == "admin" or user.id in (quot.created_by_id, inq.created_by_id if inq else None,
-                                                                  inq.bd_owner_id if inq else None)))
+    _kind, inq = qparent.parent_of(db, quot)
+    from app.modules.crm.access import can_change_quotation
+
+    can_work = bool(user and can_change_quotation(db, user, quot, inq))
     return {"status": quot.status, "can_work": can_work, "can_reopen": False,
             "status_label": STATUS_LABEL.get(quot.status, quot.status),
             "gross_value": amt["gross"], "discount_percent": amt["discount_percent"], "net_value": amt["net"],

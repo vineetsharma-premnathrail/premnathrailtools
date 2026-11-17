@@ -23,3 +23,26 @@ def is_lead(user, project: RndProject) -> bool:
 def can_manage(user, project: RndProject) -> bool:
     """Leads and admins manage tasks and files on the project."""
     return is_admin_user(user) or is_lead(user, project)
+
+
+def ticks_task_create(user) -> bool:
+    """The role tick that lets a person give tasks: Prototype / Research ›
+    Project tasks › Create, or R&D Tasks › Create (the board's Create Task)."""
+    from app.core.permission_registry import can_feature, can_perform
+
+    return can_feature(user, "rnd", "projects", "tasks", "create") or can_perform(user, "rnd", "tasks", "create")
+
+
+def can_give_tasks(db, user, project: RndProject) -> bool:
+    """Who may hand out top-level tasks on a Prototype / Research project
+    (owner decision 2026-11-14, "the tick decides"): its leads and admins as
+    before, PLUS anyone whose role ticks a task Create AND who has the project
+    inside their R&D Edit scope (Role › Data access › Edit; default own +
+    assigned = creator, lead, team member)."""
+    if can_manage(user, project):
+        return True
+    if not ticks_task_create(user):
+        return False
+    from app.core.data_scope import can_change
+
+    return can_change(db, user, project)

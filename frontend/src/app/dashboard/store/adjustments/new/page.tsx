@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
-import { storeApi, usersApi } from '@/lib/api'
+import { storeApi } from '@/lib/api'
 import { StoreItem, StoreLocation, StoreStockBalance, DirectoryUser } from '@/types'
 import { useFormDraft } from '@/lib/formDraft'
 import DraftBanner from '@/components/shared/DraftBanner'
@@ -20,6 +20,8 @@ import { RowCount } from '@/components/shared/ui'
 import { useVisibility } from '@/lib/visibility'
 import { VisColumns } from '@/components/quality/VisColumns'
 import { VisSection, VisTd, VisTh } from '@/lib/visibilityComponents'
+import StorePlantNote from '@/components/store/StorePlantNote'
+import { listAdjustmentApprovers } from '@/components/store/adjustmentApprovers'
 
 interface Line { itemId: string; actualQuantity: string; remarks: string }
 
@@ -37,7 +39,9 @@ export default function NewStockAdjustmentPage() {
 
   const [items, setItems] = useState<StoreItem[]>([])
   const [locations, setLocations] = useState<StoreLocation[]>([])
+  const [locsLoaded, setLocsLoaded] = useState(false)
   const [directory, setDirectory] = useState<DirectoryUser[]>([])
+  const [approversLoaded, setApproversLoaded] = useState(false)
   const [balances, setBalances] = useState<StoreStockBalance[]>([])
 
   const [locationId, setLocationId] = useState('')
@@ -64,8 +68,8 @@ export default function NewStockAdjustmentPage() {
   useEffect(() => {
     if (!isAuthorized) return
     storeApi.listItems().then(setItems).catch(loadFailed('items'))
-    storeApi.listLocations().then(setLocations).catch(loadFailed('stores'))
-    usersApi.directory().then(setDirectory).catch(loadFailed('the approver list'))
+    storeApi.listLocations().then((l) => { setLocations(l); setLocsLoaded(true) }).catch(loadFailed('stores'))
+    listAdjustmentApprovers().then((d) => { setDirectory(d); setApproversLoaded(true) }).catch(loadFailed('the approver list'))
   }, [isAuthorized])
 
   useEffect(() => {
@@ -145,6 +149,7 @@ export default function NewStockAdjustmentPage() {
                   <option value="">— Select —</option>
                   {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
                 </Select>
+                <StorePlantNote count={locations.length} loading={!locsLoaded} />
               </div>
               <div style={{ flex: '1 1 240px' }}>
                 <label style={sheetLabel}>Approver <Req /></label>
@@ -158,6 +163,11 @@ export default function NewStockAdjustmentPage() {
                     placeholder="Search name or email…"
                   />
                 </div>
+                {approversLoaded && directory.length === 0 && (
+                  <p style={{ fontSize: 11.5, color: '#b45309', margin: '4px 0 0' }}>
+                    Nobody else holds Store › Adjustments › Approve yet — ask an admin to tick it on a role in Organization › Role &amp; Permissions.
+                  </p>
+                )}
               </div>
             </div>
             <label style={{ ...sheetLabel, marginTop: 14 }}>Reason <Optional /></label>

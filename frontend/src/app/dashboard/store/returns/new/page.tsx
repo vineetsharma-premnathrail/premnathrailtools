@@ -16,6 +16,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { itemOptionDetail } from '@/lib/itemOptions'
 import Select from '@/components/shared/Select'
 import { CONTROL } from '@/lib/theme'
+import StorePlantNote from '@/components/store/StorePlantNote'
 
 interface Line { itemId: string; quantity: string; condition: string; batchNumber: string }
 
@@ -31,6 +32,7 @@ export default function NewMaterialReturnPage() {
 
   const [items, setItems] = useState<StoreItem[]>([])
   const [locations, setLocations] = useState<StoreLocation[]>([])
+  const [locsLoaded, setLocsLoaded] = useState(false)
   const [issues, setIssues] = useState<StoreMaterialIssue[]>([])
   const [departments, setDepartments] = useState<Department[]>([])
   const [sources, setSources] = useState<StoreDocType[]>([])
@@ -65,7 +67,7 @@ export default function NewMaterialReturnPage() {
   useEffect(() => {
     if (!isAuthorized) return
     storeApi.listItems().then(setItems).catch(loadFailed('items'))
-    storeApi.listLocations().then(setLocations).catch(loadFailed('stores'))
+    storeApi.listLocations().then((l) => { setLocations(l); setLocsLoaded(true) }).catch(loadFailed('stores'))
     storeApi.listMaterialIssues().then(setIssues).catch(loadFailed('material issues'))
     organizationApi.listDepartments().then(setDepartments).catch(loadFailed('departments'))
     storeApi.listDocTypes('return_source').then((s) => { setSources(s); setSourceType((v) => v || s[0]?.value || '') }).catch(loadFailed('return sources'))
@@ -167,6 +169,7 @@ export default function NewMaterialReturnPage() {
                   <option value="">— Select —</option>
                   {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
                 </Select>
+                <StorePlantNote count={locations.length} loading={!locsLoaded} />
               </div>
               <div style={{ flex: '1 1 200px' }}>
                 <label style={sheetLabel}>Source <Req /></label>

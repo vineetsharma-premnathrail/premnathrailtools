@@ -56,6 +56,7 @@ import 'modules/quality/quality_module.dart' as qa;
 import 'modules/quality/quality_ncr.dart' as qa;
 import 'modules/quality/quality_plans.dart' as qa;
 import 'modules/quality/quality_supplier.dart' as qa;
+import 'modules/rnd/rnd_machine_tasks.dart' as rnd;
 import 'modules/rnd/rnd_module.dart' as rnd;
 import 'modules/rnd/rnd_projects.dart' as rnd;
 import 'modules/rnd/rnd_requirements.dart' as rnd;
@@ -186,10 +187,12 @@ Future<Widget?> _resolve(String path) async {
           return at(1) == null ? _home('rnd') : rnd.ProjectDetailScreen(projectId: await _id(at(1)!));
         case 'project-tasks':
           return at(1) == null ? _home('rnd') : rnd.PmProjectTasksScreen(pmProjectId: await _id(at(1)!));
+        case 'machine-tasks':
+          return at(1) == null ? _home('rnd') : rnd.MachineTasksScreen(machineId: await _id(at(1)!));
         case 'tasks':
           return _home('rnd');
       }
-      // Calculators, prototypes, experiments: web only.
+      // Calculators: web only.
       return null;
 
     case 'crm':
@@ -210,6 +213,9 @@ Future<Widget?> _resolve(String path) async {
           if (at(1) == null) return _home('crm', 'Inquiries & Tenders');
           final quote = await Api.get('/crm/quotations/${await _id(at(1)!)}');
           final inquiryId = quote is Map ? quote['inquiry_id'] : null;
+          final tenderId = quote is Map ? quote['tender_id'] : null;
+          // A tender's price bid: open the tender (the app has no tender Quotations tab yet).
+          if (inquiryId is! int && tenderId is int) return crm.CrmRecordScreen(kind: crm.CrmKind.tender, id: tenderId);
           if (inquiryId is! int) return _home('crm', 'Inquiries & Tenders');
           return crm.CrmRecordScreen(kind: crm.CrmKind.inquiry, id: inquiryId, initialTab: 'Quotations');
         case 'followups':

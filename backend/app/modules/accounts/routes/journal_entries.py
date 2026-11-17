@@ -18,7 +18,7 @@ from app.modules.main.models.audit_log import AuditLog
 from app.modules.accounts.service import (
     create_draft_journal, discard_draft_journal, reverse_journal_entry,
 )
-from app.modules.accounts.routes._common import write_audit, who, service_errors, require_finance_manager
+from app.modules.accounts.routes._common import write_audit, who, service_errors
 from app.modules.accounts.services.proof import ensure_journal_proof
 from app.modules.accounts import access
 
@@ -343,7 +343,6 @@ async def reverse_journal_entry_route(
     db: Session = Depends(get_db),
     user: User = Depends(require_feature_action("accounts", "journal_vouchers", "reversal", "cancel")),
 ):
-    require_finance_manager(user, "reverse a journal entry")
     original = db.query(JournalEntry).filter(JournalEntry.id == journal_entry_id).first()
     if original:
         ensure_in_scope(db, user, original)

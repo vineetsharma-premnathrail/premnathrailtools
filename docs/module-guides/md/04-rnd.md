@@ -1,6 +1,6 @@
 # R&D Module
 
-The R&D (Research & Development) module is where the R&D team receives customer requirements from the Business Development (BD) team, works on them, and sends back a formal technical answer. In the company's core business flow (Customer → BD → **R&D** → Design/EHP → BOM → Store/Purchase → Production → QC → Dispatch → Commissioning → Machine → Service → Finance), R&D sits directly after BD. A requirement arrives in R&D when BD clicks "Send Technical Requirement to R&D" on a CRM Inquiry or Tender (this is called a Technical Offer Request, or TOR). R&D then answers the request, hands out tasks, shares the requirement with Design, Electrical and Hydraulic & Pneumatic for a feasibility reply, and writes a Technical Offer (a Word document on the company letterhead) that the R&D head sends back to BD so BD can quote against it. The module also holds R&D's own Prototype / Research projects (with their tasks and attachments), prototypes with a Bill of Materials that can be released to Production as a draft Production BOM, experiments and tests, a document library, and seven engineering calculators with a saved Calculation History.
+The R&D (Research & Development) module is where the R&D team receives customer requirements from the Business Development (BD) team, works on them, and sends back a formal technical answer. In the company's core business flow (Customer → BD → **R&D** → Design/EHP → BOM → Store/Purchase → Production → QC → Dispatch → Commissioning → Machine → Service → Finance), R&D sits directly after BD. A requirement arrives in R&D when BD clicks "Send Technical Requirement to R&D" on a CRM Inquiry or Tender (this is called a Technical Offer Request, or TOR). R&D then answers the request, hands out tasks, shares the requirement with Design, Electrical and Hydraulic & Pneumatic for a feasibility reply, and writes a Technical Offer (a Word document on the company letterhead) that the R&D head sends back to BD so BD can quote against it. The module also holds R&D's own Prototype / Research projects (with their tasks, budget card and attachments), a document library, and seven engineering calculators with a saved Calculation History. (Experiments & Tests and Prototypes with a BOM and "Release to Production" were removed on 2026-11-17.)
 
 ## 1. Navigation Tabs
 
@@ -30,7 +30,7 @@ When the user is inside Engineering Tools (the landing page or any calculator), 
 
 Pages that belong to R&D but are not tabs:
 
-- Experiments & Tests (/dashboard/rnd/experiments, /new, /[id]), Prototypes (/dashboard/rnd/prototypes, /new, /[id]) and R&D Documents (/dashboard/rnd/documents) still exist and work, but no tab links to them. Experiments are reached from a prototype's page ("+ New Experiment" and the experiment list), prototypes and experiments link back to their project. These are documented at the end of Section 3.
+- R&D Documents (/dashboard/rnd/documents) is documented at the end of Section 3. The Experiments & Tests and Prototypes pages no longer exist (removed 2026-11-17).
 - /dashboard/rnd/project-work is an old link. It now redirects to the company-wide Ongoing Projects page (/dashboard/ongoing-projects), keeping any ?id= that was in the link.
 
 ## 2. Dashboard
@@ -355,7 +355,8 @@ Section "Tasks": the Task board (see Requirements › Task board) with project l
 
 Section "Attachments (n)": the R&D documents panel for this project — **+ Upload Document** with Title *, Type (Specification, Drawing, Test Report, Research Note, Process Document, Other), Version, Files * (images, PDF, Word, Excel, DWG, DXF, STEP, ZIP), Description, then **Upload**. Each row shows type pill, title and "Rev [version]", file name, size, uploader and date, **View** (opens the file) and **Delete** (only project leads/admins with rnd:documents delete; confirm dialog; also deletes the file from SharePoint). Uploading needs rnd:documents create or rnd:projects edit.
 
-Stage, status, budget, feasibility study and handover checklist exist in the database but are not shown or editable on this page.
+Section "Budget card": budget, committed, actual spend and available for the project (a linked Finance budget, or the typed amount). If your role does not have R&D › Prototype / Research › Budget & costs and you cannot edit projects, the card says "Costs are hidden for your role (R&D › Prototype / Research › Budget & costs). Ask an admin if you need to see the budget."
+Stage, status, feasibility study and handover checklist exist in the database but are not shown or editable on this page. verify: stage / status controls on the project page were not re-checked in the 2026-11-17 edit.
 
 #### Edit
 
@@ -363,7 +364,7 @@ Clicking **Edit** switches the two detail sections into the same form as Create 
 
 #### Delete
 
-Confirm dialog "Delete this project?". The backend refuses if the project still has experiments, prototypes or attachments ("Delete those first"). Deletion is a soft delete kept for audit.
+Confirm dialog "Delete this project?". The backend refuses only if the project still has attachments or documents: "Can't delete [project number]: it still has [n] attachment(s)/document(s). Delete those first - attachments are in the project's Attachments section." (Delete the files in the Attachments section, then delete the project.) Deletion is a soft delete kept for audit.
 
 #### Statuses & workflow
 
@@ -525,91 +526,13 @@ Stat cards: Total Records, Tools Used, Latest (date of the newest record). Filte
 
 The R&D Team screen. See Section 4.
 
-### Experiments & Tests — /dashboard/rnd/experiments (not in the sub-nav)
+### Experiments & Tests and Prototypes — removed
 
-#### List view
+Both features (experiment records with pass / fail results, and prototype builds with a BOM and "Release to Production") were removed on 2026-11-17. Their pages, numbers (EXP-, PRT-) and data are gone. The "Prototype / Research" tab and projects stay. Documents now attach to a project only.
 
-Top button **+ New Experiment** (keeps the selected project filter). Filters: search by experiment number or title, project (searchable, All projects), type (Research, Lab Test, Field Trial, Simulation, Validation), status (Planned, In Progress, Completed, Cancelled), result (Pass, Fail, Inconclusive). A ?project_id= link pre-selects the project.
+### R&D Documents — /dashboard/rnd/documents (Documents tab)
 
-| Column | What it shows |
-|---|---|
-| Experiment No. | Auto number EXP-[year]-[0001] |
-| Title | Title |
-| Project | Project number (hover shows title) |
-| Type | Experiment type |
-| Status | Status pill |
-| Result | Result pill or — |
-| Date | Experiment date |
-| (action) | View |
-
-#### Create form — /dashboard/rnd/experiments/new
-
-| Field | Type | Required | Options / source of values | Rules & validation |
-|---|---|---|---|---|
-| Project | Searchable dropdown | Yes | R&D projects in scope | — |
-| Prototype | Searchable dropdown | No | Prototypes of the chosen project, or — None — | Disabled until a project is picked; must belong to that project. |
-| Title | Text | Yes | — | — |
-| Type | Dropdown | No | Research, Lab Test (default), Field Trial, Simulation, Validation | — |
-| Experiment Date | Date | No | Today | — |
-| Conducted By | Searchable dropdown | No | User directory | Defaults to the creator. |
-| Objective / Hypothesis | Long text | No | — | — |
-| Method / Procedure | Long text | No | — | — |
-| Test Parameters | Table rows: Parameter *, Specification, Measured, Unit, Result (—, Pass, Fail); "+ Add parameter", × removes | No | — | A row with any value needs a Parameter name. Empty rows are ignored. |
-
-**Buttons:** ← Back, Cancel, **Save Experiment** (opens the new experiment). Needs rnd:experiments create.
-
-#### View page and Edit — /dashboard/rnd/experiments/[signed id]
-
-Header: experiment number, status pill, result pill, "Project: [number — title]" link, ← Back. The whole page is an editable form (needs rnd:experiments edit to save): all Create fields plus **Status** (Planned, In Progress, Completed, Cancelled) and **Result** (—, Pass, Fail, Inconclusive — required when Status is Completed). "Conducted by [name] · created [date]". Test Parameters shows "[n] parameters · [n] pass · [n] fail". Section "Results & Conclusion": Observations, Conclusion. Section "Test Reports & Documents": documents panel scoped to this experiment. Buttons: **Delete Experiment** (rnd:experiments delete; confirm), **Save Changes**.
-
-Statuses: Planned → In Progress → Completed (needs a Result) or Cancelled — set freely from the Status dropdown.
-
-### Prototypes — /dashboard/rnd/prototypes (not in the sub-nav)
-
-#### List view
-
-Top button **+ New Prototype**. Filters: search by prototype number, name or version; project; status (Design, Building, Testing, Validated, Rejected).
-
-| Column | What it shows |
-|---|---|
-| Prototype No. | Auto number PRT-[year]-[0001] |
-| Name | Prototype name |
-| Version | Version (e.g. v1) |
-| Project | Project number |
-| Status | Status pill |
-| BOM Cost | Sum of quantity × unit cost (₹) |
-| Experiments | Number of experiments run on it |
-| (action) | View |
-
-#### Create form — /dashboard/rnd/prototypes/new
-
-| Field | Type | Required | Options / source of values | Rules & validation |
-|---|---|---|---|---|
-| Project | Searchable dropdown | Yes | R&D projects | — |
-| Name | Text | Yes | — | — |
-| Version | Text | Yes | Default "v1" | — |
-| Build Date | Date | No | — | — |
-| Description | Long text | No | — | — |
-| Prototype BOM lines | Item (search the Item Master or type a free-text part), Code, Qty, UoM, Unit Cost, Line cost (calculated), Remarks; "+ Add line", × removes | No | Item Master lookup (code, name, UoM) | Each used line needs an item name; quantity above 0; unit cost 0 or more or blank. Empty lines are ignored. Shows "BOM Total". |
-
-**Buttons:** ← Back, Cancel, **Save Prototype**. Needs rnd:prototypes create.
-
-#### View page and Edit — /dashboard/rnd/prototypes/[signed id]
-
-Header: prototype number, version, status pill, "Project: [number — title]" link, ← Back.
-
-- **Prototype Details** (editable): Project, Name, Version, Status (Design, Building, Testing, Validated, Rejected), Build Date, Description, Findings. A prototype cannot move to another project while experiments in its current project reference it.
-- **Prototype BOM**: the BOM editor; once released to Production it becomes read-only ("Frozen — released to Production as [BOM no.]") showing code, name, qty, UoM, line cost and total.
-- **Release to Production** panel: explains the current state — not Validated yet; free-text lines that Store must create in the Item Master first; no BOM lines; or, when ready, a form: Finished Product (Item Master) * (search; cannot be one of its own components), Base Qty (default 1, above 0), Note for Production, then **Release BOM to Production** (confirm). Needs rnd:prototypes approve. It creates a draft Production BOM (repeated parts merged), freezes the prototype's BOM and shows "Released as [BOM no.] ([status]) on [date] by [name]" with a link to the Production BOM and the next step (add routing and activate in Production).
-- **Experiments run on this prototype**: list with result or status pill, **+ New Experiment** link.
-- **Prototype Documents**: documents panel scoped to this prototype.
-- Buttons: **Delete** (rnd:prototypes delete; refused if released to Production or experiments were run on it), **Save Changes** (rnd:prototypes edit).
-
-Statuses: Design → Building → Testing → Validated or Rejected (chosen from the dropdown). Only Validated prototypes can be released.
-
-### R&D Documents — /dashboard/rnd/documents (not in the sub-nav)
-
-Heading "R&D Documents" — specifications, drawings, test reports and process documents across every R&D project. Filters: search by title or file name, project (All projects), type (Specification, Drawing, Test Report, Research Note, Process Document, Other). Below, the documents panel for all projects: **+ Upload Document** asks Project * as well as the fields listed under the project page; rows show project · experiment · prototype numbers; View; Delete for users with rnd:documents delete (data scope applies).
+Heading "R&D Documents" — specifications, drawings, test reports and process documents across every R&D project. Documents attach to a project only. Filters: search by title or file name, project (All projects), type (Specification, Drawing, Test Report, Research Note, Process Document, Other). Below, the documents panel for all projects: **+ Upload Document** asks Project * as well as the fields listed under the project page; rows show the project number; View; Delete for users with rnd:documents delete (data scope applies). verify: that the rows no longer show experiment / prototype numbers was read from the removed API fields, not from the page component.
 
 ## 4. Settings / Masters
 
@@ -645,9 +568,8 @@ App access "rnd" is required for every R&D page and endpoint. Tab and action key
 | rnd:dashboard | view | Dashboard tab and its numbers |
 | rnd:project_work | view, edit | Ongoing Projects category in My Tasks (the old Ongoing Projects page now redirects to the company-wide page) |
 | rnd:requirements | view, create, edit | Requirements tab, requirement endpoints, Settings tab visibility |
-| rnd:projects | view, create, edit, delete, approve | Prototype / Research list, New Project, Edit, Delete, project tasks |
-| rnd:experiments | view, create, edit, delete | Experiments pages |
-| rnd:prototypes | view, create, edit, delete, approve | Prototypes pages; approve = Release BOM to Production |
+| rnd:projects | view, create, edit, delete, approve | Prototype / Research list, New Project, Edit, Delete, project tasks; approve = move a project to Handover / Closed |
+| rnd:projects.costs (feature "Budget & costs") | view | Shows the project budget card. People with rnd:projects edit always see it. Replaces the old "R&D › Prototypes › BOM costs" switch (an existing grant was carried over automatically). |
 | rnd:documents | view, create, edit, delete | Document upload (create, or rnd:projects edit) and delete |
 | rnd:all | view | Engineering Tools tab (landing) |
 | rnd:braking, rnd:hydraulic, rnd:qmax, rnd:load_distribution, rnd:tractive_effort, rnd:vehicle_performance, rnd:spline | view, create, print | Each calculator page and its calculation/report endpoints |
@@ -660,7 +582,7 @@ Role rules inside the module:
 - **Technical Offers:** create/edit/delete draft/revise — heads and members ticked "Can create Technical Offers"; Send to BD Team — R&D head only.
 - **Requirement tasks:** anyone who can open the requirement creates tasks; the task creator and the R&D head review, edit, reopen, cancel and decide approvals; only the assignee completes, updates, re-dates, asks for approval or creates sub-tasks.
 - **Project tasks and files:** project leads and admins create top-level tasks, review every task and delete project files; tasks go to Team Members only.
-- **Data scope:** projects, experiments, prototypes, documents and saved calculations follow the central R&D data scope (owner = creator/uploader; assigned = project lead and team members; experiments, prototypes and documents inherit their project's team). Calculation History shows the user's own calculations; admins can view all users.
+- **Data scope:** projects, documents and saved calculations follow the central R&D data scope (owner = creator/uploader; assigned = project lead and team members; documents inherit their project's team). Calculation History shows the user's own calculations; admins can view all users.
 - **Settings:** only R&D heads and admins can change the team.
 
 ## 6. Documents, Notifications & Integrations
@@ -670,7 +592,7 @@ Role rules inside the module:
 - **Technical Offer** (Word, letterhead, managed document stored in SharePoint folder RnD-TechnicalOffers): created from the requirement, edited in Word Online, frozen once sent to BD, copied and renumbered on revision. The Word panel offers Create Word, Edit in Word, Upload revised .docx and Download .docx, and summarises edits made in Word.
 - **Calculator reports:** Braking (Word .docx and PDF), Hydraulic (Word .docx and PDF), Qmax (Word), Load Distribution (Word), Tractive Effort (Word), Vehicle Performance (Word), Spline (Word and PDF). Most tools also export inputs/results as CSV.
 - **R&D response documents** to CRM are stored in SharePoint with the CRM record (folder crm/[source]/[id]/rnd-response) and are visible on both sides.
-- Project, experiment and prototype documents are stored in SharePoint; deleting one deletes the file.
+- Project documents are stored in SharePoint; deleting one deletes the file.
 
 ### Notifications (bell; Teams only where noted)
 
@@ -694,5 +616,5 @@ Role rules inside the module:
 - **CRM:** requirements come from CRM Inquiries/Tenders ("Send Technical Requirement to R&D"); the R&D response and the released Technical Offer go back to CRM, where BD picks the offer in the quotation's Technical Offer field; the Discussion thread is shared with CRM.
 - **Design, Electrical, Hydraulic & Pneumatic:** requirements are shared with these departments for a feasibility reply; they see the requirement, tasks, documents and discussion from their own Requirements pages.
 - **Projects (Project Management):** My Tasks includes Ongoing Project milestone tasks; the old R&D Ongoing Projects link redirects to /dashboard/ongoing-projects.
-- **Store (Item Master):** prototype BOM lines and the release product are picked from the Item Master (read-only lookup available to R&D users).
-- **Production:** "Release BOM to Production" creates a draft Production BOM from a Validated prototype; Production adds routing and activates it.
+- **Store and Production:** no direct link any more. The prototype BOM, "Release BOM to Production" and the Item Master lookup were removed on 2026-11-17. Draft Production BOMs released earlier stay in Production.
+- **Finance:** the project budget card reads a linked Finance budget (open POs and posted vouchers).

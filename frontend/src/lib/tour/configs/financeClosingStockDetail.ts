@@ -25,13 +25,13 @@ const config: TourConfig = {
     {
       target: 'fin-inv-val-post',
       title: 'Post closing stock',
-      purpose: 'Finance Manager only, Draft only. Posts Dr Stock-in-Hand / Cr Changes in Inventories on the valuation date.',
+      purpose: 'Needs Approve on Inventory › Closing stock; Draft only. Posts Dr Stock-in-Hand / Cr Changes in Inventories on the valuation date.',
       after: 'It reverses automatically the next day, becoming next month\'s opening stock. Lines can no longer be edited — cancel and re-create instead.',
     },
     {
       target: 'fin-inv-val-cancel',
       title: 'Cancel valuation',
-      purpose: 'Finance Manager only. Asks for a reason. For a posted valuation both the entry and its next-day reversal are undone with counter-entries.',
+      purpose: 'Needs Cancel on Inventory › Closing stock. Asks for a reason. For a posted valuation both the entry and its next-day reversal are undone with counter-entries.',
     },
     {
       target: 'fin-inv-val-back',

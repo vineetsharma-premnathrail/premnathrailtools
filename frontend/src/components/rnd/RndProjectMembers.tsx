@@ -5,11 +5,12 @@ import { rndApi } from '@/lib/api'
 import { DirectoryUser, RndProjectDetail } from '@/types'
 import { extractErrorMessages } from '@/lib/validation'
 import TeamMemberPicker from '@/components/rnd/TeamMemberPicker'
-import { SHEET, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
-import { primaryBtnStyle, secondaryBtnStyle, smallSecondaryBtnStyle, tableStyle, thStyle, tdStyle, TableScroll, RowCount } from '@/components/shared/ui'
+import { FormSheet, SheetError, SheetIcon, SHEET, sheetBtn, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
+import { smallSecondaryBtnStyle, tableStyle, thStyle, tdStyle, TableScroll, RowCount } from '@/components/shared/ui'
 
 // Members tab of an R&D project: who leads it and who works on it.
-// Leads hand out tasks and plan milestones; team members can be given tasks.
+// Leads manage the members and give tasks to the team; team members can be given tasks.
+// Editing happens in the standard FormSheet popup; the tab itself only lists the people.
 export default function RndProjectMembers({
   project, users, pickable, canEdit, onSaved,
 }: {
@@ -41,8 +42,8 @@ export default function RndProjectMembers({
     setSaving(true)
     try {
       await rndApi.updateProject(project.id, { lead_ids: leadIds, team_member_ids: teamIds })
-      onSaved(await rndApi.getProject(project.id))
       setEditing(false)
+      onSaved(await rndApi.getProject(project.id))
     } catch (err) {
       setError(extractErrorMessages(err, 'Could not save the project members. Check that each person still has an active account, then try again.'))
     } finally {
@@ -55,29 +56,12 @@ export default function RndProjectMembers({
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
         <div>
           <h2 style={{ fontSize: 17, fontWeight: 700, color: SHEET.INK, margin: 0 }}>Project Members</h2>
-          <p style={{ ...sheetHint, margin: '4px 0 0' }}>Project Leads plan milestones and hand out tasks. Only people listed here can be given tasks on this project.</p>
+          <p style={{ ...sheetHint, margin: '4px 0 0' }}>Project Leads manage the members and give tasks to the team. Only people listed here can be given tasks on this project.</p>
         </div>
-        {canEdit && !editing && <button type="button" onClick={start} style={smallSecondaryBtnStyle}>Edit members</button>}
+        {canEdit && <button type="button" onClick={start} style={smallSecondaryBtnStyle}>Edit members</button>}
       </div>
 
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 14, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {Array.isArray(error) ? error.join(' ') : error}
-        </div>
-      )}
-
-      {editing ? (
-        <div>
-          <label style={sheetLabel}>Project Leads</label>
-          <TeamMemberPicker users={pickable} value={leadIds} onChange={setLeadIds} excludeIds={teamIds} placeholder="Search name or email to add a project lead…" />
-          <label style={{ ...sheetLabel, marginTop: 14 }}>Team Members</label>
-          <TeamMemberPicker users={pickable} value={teamIds} onChange={setTeamIds} excludeIds={leadIds} />
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
-            <button type="button" onClick={() => { setError(''); setEditing(false) }} disabled={saving} style={secondaryBtnStyle}>Cancel</button>
-            <button type="button" onClick={save} disabled={saving} style={{ ...primaryBtnStyle, opacity: saving ? 0.6 : 1 }}>{saving ? 'Saving…' : 'Save members'}</button>
-          </div>
-        </div>
-      ) : rows.length === 0 ? (
+      {rows.length === 0 ? (
         <p style={{ fontSize: 13, color: SHEET.MUTED, margin: 0 }}>No members yet{canEdit ? ' — use “Edit members” to add the project leads and team.' : '.'}</p>
       ) : (
         <TableScroll>
@@ -105,6 +89,25 @@ export default function RndProjectMembers({
             </tbody>
           </table>
         </TableScroll>
+      )}
+
+      {editing && (
+        <FormSheet icon="users" title="Edit members" subtitle="Who leads this project and who can be given tasks on it." width={560}
+          onClose={() => { setError(''); setEditing(false) }} busy={saving}
+          footer={<>
+            <button type="button" onClick={() => { setError(''); setEditing(false) }} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
+            <button type="button" onClick={save} disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)}>
+              <SheetIcon name="check" size={16} />{saving ? 'Saving…' : 'Save members'}
+            </button>
+          </>}>
+          <div style={{ padding: 24 }}>
+            <SheetError error={error} />
+            <label style={sheetLabel}>Project Leads</label>
+            <TeamMemberPicker users={pickable} value={leadIds} onChange={setLeadIds} excludeIds={teamIds} placeholder="Search name or email to add a project lead…" />
+            <label style={{ ...sheetLabel, marginTop: 14 }}>Team Members</label>
+            <TeamMemberPicker users={pickable} value={teamIds} onChange={setTeamIds} excludeIds={leadIds} />
+          </div>
+        </FormSheet>
       )}
     </div>
   )

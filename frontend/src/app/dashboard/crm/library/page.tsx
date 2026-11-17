@@ -11,7 +11,7 @@ import { useCan } from '@/lib/permissions'
 import { useRecordId } from '@/lib/recordRef'
 import { TEXT } from '@/lib/theme'
 import { formatDate } from '@/lib/format'
-import CrmNav from '@/components/crm/CrmNav'
+import CrmNav, { crmHomeHref } from '@/components/crm/CrmNav'
 import FilterMenu from '@/components/shared/FilterMenu'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { RowCount, TableScroll, inputStyle, primaryBtnStyle, secondaryBtnStyle, tdStyle, thStyle, pillStyle, smallPrimaryBtnStyle } from '@/components/shared/ui'
@@ -35,11 +35,11 @@ const START_FILTERS: RawFilters = { ...NO_FILTERS, product: null }
 
 export default function SalesLibraryPage() {
   const { isAuthorized: hasApp, isLoading } = useRequireApp('crm')
-  const { can, canDelete } = useCan()
+  const { can, canDelete, user } = useCan()
   const router = useRouter()
   const searchParams = useSearchParams()
   const allowed = hasApp && can('crm', 'sales_library', 'view')
-  useEffect(() => { if (!isLoading && hasApp && !allowed) router.push('/dashboard/crm') }, [isLoading, hasApp, allowed, router])
+  useEffect(() => { if (!isLoading && hasApp && !allowed) router.push(crmHomeHref(user) || '/dashboard') }, [isLoading, hasApp, allowed, router, user])
 
   const canCreate = can('crm', 'sales_library', 'create')
   const canEdit = can('crm', 'sales_library', 'edit')

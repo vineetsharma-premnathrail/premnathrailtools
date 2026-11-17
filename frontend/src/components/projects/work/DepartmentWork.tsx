@@ -11,8 +11,9 @@ import { TEXT } from '@/lib/theme'
 import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
-import { ErrorBanner, FlagPill, MILESTONE_HEX, MILESTONE_LABELS, PRIORITY_HEX, PRIORITY_LABELS, PROJECT_HEX, PROJECT_LABELS, Pill, ProgressBar, TASK_HEX, TASK_LABELS, smallActionBtn, inputStyle, sectionStyle, tdStyle, thStyle, todayIso } from './pmUi'
+import { canOpenProjectPage, ErrorBanner, FlagPill, MILESTONE_HEX, MILESTONE_LABELS, PRIORITY_HEX, PRIORITY_LABELS, PROJECT_HEX, PROJECT_LABELS, Pill, ProgressBar, TASK_HEX, TASK_LABELS, smallActionBtn, inputStyle, sectionStyle, tdStyle, thStyle, todayIso } from './pmUi'
 import { RowCount } from '@/components/shared/ui'
+import ScopeNote from '@/components/shared/ScopeNote'
 
 /** Shared task table — milestone workspace, department work and My Tasks. */
 export function TaskTable({ tasks, onOpen, showAssignee = true, showProject = false, actions }: {
@@ -129,7 +130,10 @@ export default function DepartmentWork({ departments, between }: { departments?:
     <>
       <ErrorBanner error={error} />
       {between}
-      <div style={sectionStyle}><p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>You are not on any milestone here yet. When a project manager makes you a milestone lead or assistant, it shows up on this page.</p></div>
+      <div style={sectionStyle}>
+        <ScopeNote module="projects" empty />
+        <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>You are not on any milestone here yet. When a project manager makes you a milestone lead or assistant, it shows up on this page.</p>
+      </div>
     </>
   )
 
@@ -137,7 +141,7 @@ export default function DepartmentWork({ departments, between }: { departments?:
   const nextStep = (s: string) => ({ not_started: 'Create & assign tasks', in_progress: 'Team working', submitted: 'Waiting for management', achieved: 'Accepted', cancelled: 'Cancelled' } as Record<string, string>)[s] || ''
   const stepText = (m: PmProjectMilestone) => m.is_locked ? (m.waiting_reason ? `Waits for ${m.waiting_reason}` : `Waits for step ${m.waiting_for_sequence}`) : m.my_role === 'member' ? `${m.task_count} open task(s) for you` : nextStep(m.status)
   const blockedFirst = [...tasks].sort((a, b) => Number(b.status === 'blocked') - Number(a.status === 'blocked') || Number(b.is_overdue) - Number(a.is_overdue))
-  const canOpenProject = !!user?.apps?.includes('projects')
+  const canOpenProject = canOpenProjectPage(user)
   const teamEmpty = workload.length === 0 && tasks.length === 0
 
   return (
@@ -158,7 +162,7 @@ export default function DepartmentWork({ departments, between }: { departments?:
             </label>
           </div>
         </div>
-        {shown.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted, margin: '8px 0 0' }}>No open milestones for you.</p> : shown.map((p) => (
+        {shown.length === 0 ? <><ScopeNote module="projects" empty style={{ margin: '8px 0 0' }} /><p style={{ fontSize: 13, color: TEXT.muted, margin: '8px 0 0' }}>No open milestones for you.</p></> : shown.map((p) => (
           <div key={p.project.id} style={{ borderTop: '1px solid rgba(0,0,0,0.07)', paddingTop: 12, marginTop: 12 }}>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 6 }}>
               {canOpenProject ? (

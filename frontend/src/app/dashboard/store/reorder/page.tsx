@@ -11,6 +11,7 @@ import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import FilterMenu from '@/components/shared/FilterMenu'
 import { primaryBtnStyle, RowCount, inputStyle as sharedInputStyle } from '@/components/shared/ui'
+import { can } from '@/lib/permissions'
 
 const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
@@ -32,7 +33,8 @@ const rk = (r: StoreReorderRow) => (r as PlantRow).row_key || String(r.item_id)
 export default function StoreReorderPage() {
   const { user, isAuthorized, isLoading } = useRequireApp('store')
   const router = useRouter()
-  const canRaisePr = !!user?.apps?.includes('p2p')
+  // Raising the PR needs Procurement › Purchase Requisitions › Create (the matrix tick, not just opening Procurement).
+  const canRaisePr = can(user, 'p2p', 'purchase_requisitions', 'create')
   const [rows, setRows] = useState<StoreReorderRow[]>([])
   const [loading, setLoading] = useState(true)
   const [categories, setCategories] = useState<{ id: number; name: string }[]>([])

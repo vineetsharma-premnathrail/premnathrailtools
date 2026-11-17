@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core import visibility
 from app.core.data_scope import apply_scope, ensure_in_scope
-from app.core.permission_registry import can_view_tab
+from app.core.permission_registry import can_perform, can_view_tab
 from app.core.permissions import ensure_feature_action, require_tab_access, require_tab_action, require_feature_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
@@ -222,13 +222,14 @@ async def write_off_route(payload: WriteOffCreate, db: Session = Depends(get_db)
                           user: User = Depends(require_feature_action("accounts", "payments", "write_offs", "create"))):
     """Clear what is left on one bill without cash (residual paise, an
     approved LD / short-payment write-off). Up to the small-difference
-    tolerance any Payments editor may do it; above it, a Finance Manager."""
+    tolerance any Payments editor may do it; above it, someone holding
+    Payments & Receipts › Approve (the role matrix decides, owner 2026-11-14)."""
     tolerance = float(get_accounts_setting(db, "small_difference_tolerance") or 0)
-    if payload.amount > tolerance + 1e-9 and not (user.is_finance_manager or user.role == "admin"):
+    if payload.amount > tolerance + 1e-9 and not can_perform(user, "accounts", "payments", "approve"):
         raise HTTPException(status_code=403, detail=(
-            f"A write-off of {payload.amount:,.2f} is above the small-difference tolerance ({tolerance:,.2f}, Finance > Settings) — "
-            f"only a Finance Manager can post it. Ask one, or record the deduction on the customer's receipt instead "
-            f"(it then goes through payment approval)."))
+            f"A write-off of {payload.amount:,.2f} is above the small-difference tolerance ({tolerance:,.2f}, Finance › Settings) — "
+            f"it needs 'Approve' permission on Finance & Accounting › Payments & Receipts. Ask an admin to tick it on your role, "
+            f"ask someone who has it, or record the deduction on the customer's receipt instead (it then goes through payment approval)."))
     with service_errors(db):
         adj = write_off(db, target_type=payload.target_type, target_id=payload.target_id, amount=payload.amount,
                         reason=payload.reason, write_off_date=payload.write_off_date or date.today(), created_by_id=user.id,

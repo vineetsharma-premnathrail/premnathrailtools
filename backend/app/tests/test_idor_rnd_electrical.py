@@ -1,8 +1,7 @@
 """IDOR / object-level authorization sweep — R&D and Electrical.
 
-Covers the gaps closed in the sweep: filing an experiment / prototype /
-document under an R&D project outside the user's data scope, the document
-upload permission, the project-file delete message (was a NameError 500),
+Covers the gaps closed in the sweep: filing a document under an R&D project
+outside the user's data scope, the document upload permission, the project-file delete message (was a NameError 500),
 and opening a CRM-internal file through R&D › Requirement work by id."""
 from app.auth.jwt_handler import create_access_token
 from app.modules.crm.models.document import CrmDocument
@@ -38,34 +37,6 @@ def _project(client, owner, **extra):
     return resp.json()
 
 
-def test_cannot_file_experiment_or_prototype_under_out_of_scope_project(client, db):
-    owner = make_user(db, "idor.rnd.owner@premnathrail.com")
-    outsider = make_user(db, "idor.rnd.out@premnathrail.com", scopes={"rnd": "own"})
-    project = _project(client, owner)
-
-    # The project itself is out of the outsider's scope …
-    assert client.get(f"{RND}/projects/{project['id']}", headers=auth(outsider)).status_code == 403
-    # … so they can't file records under it either.
-    r = client.post(f"{RND}/experiments", json={"title": "Load test", "project_id": project["id"]}, headers=auth(outsider))
-    assert r.status_code == 403 and "outside your data access" in r.json()["detail"]
-    r = client.post(f"{RND}/prototypes", json={"name": "Proto", "project_id": project["id"]}, headers=auth(outsider))
-    assert r.status_code == 403 and "outside your data access" in r.json()["detail"]
-
-    # Moving their own experiment into that project is refused too.
-    mine = _project(client, outsider)
-    own = client.post(f"{RND}/experiments", json={"title": "Bench test", "project_id": mine["id"]}, headers=auth(outsider))
-    assert own.status_code == 200, own.text
-    r = client.patch(f"{RND}/experiments/{own.json()['id']}", json={"project_id": project["id"]}, headers=auth(outsider))
-    assert r.status_code == 403
-    # Editing other fields of their own record still works.
-    r = client.patch(f"{RND}/experiments/{own.json()['id']}", json={"title": "Bench test 2"}, headers=auth(outsider))
-    assert r.status_code == 200, r.text
-
-    # The owner (in scope) can.
-    r = client.post(f"{RND}/experiments", json={"title": "Load test", "project_id": project["id"]}, headers=auth(owner))
-    assert r.status_code == 200, r.text
-
-
 def test_document_upload_checks_permission_and_project_scope(client, db):
     owner = make_user(db, "idor.rnd.docowner@premnathrail.com")
     outsider = make_user(db, "idor.rnd.docout@premnathrail.com", scopes={"rnd": "own"})
@@ -84,11 +55,14 @@ def test_team_member_delete_gets_real_reason(client, db):
     lead = make_user(db, "idor.rnd.lead@premnathrail.com")
     member = make_user(db, "idor.rnd.member@premnathrail.com")
     project = _project(client, lead, lead_ids=[lead.id], team_member_ids=[member.id])
-    doc = RndDocument(project_id=project["id"], doc_type="other", title="Drawing", file_name="d.pdf", uploaded_by_id=member.id)
+    # One delete rule since 2026-11-14: your own upload, or a project lead. A member
+    # deleting someone else's file gets the real reason.
+    doc = RndDocument(project_id=project["id"], doc_type="other", title="Drawing", file_name="d.pdf", uploaded_by_id=lead.id,
+                      uploaded_by_name="Lead")
     db.add(doc)
     db.commit()
     r = client.delete(f"{RND}/documents/{doc.id}", headers=auth(member))
-    assert r.status_code == 403 and "Only a project lead" in r.json()["detail"]
+    assert r.status_code == 403 and "only the files you uploaded" in r.json()["detail"] and "project lead" in r.json()["detail"]
 
 
 def test_requirement_work_cannot_open_crm_internal_file_by_id(client, db, tor_env, monkeypatch):

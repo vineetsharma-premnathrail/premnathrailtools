@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.core import visibility
 from app.core.permissions import ensure_can_delete, ensure_feature_action, require_feature_action, require_tab_access, require_tab_action
-from app.core.data_scope import apply_scope, ensure_in_scope
+from app.core.data_scope import apply_scope, can_change, ensure_can_change, ensure_in_scope
 from app.modules.crm.access import INQUIRY_MONEY_FIELDS, blank, can_open_record, drop_money_updates, ensure_parent_in_scope, mask_revision_changes, sees_prices
 from app.core.sequential_id import next_sequential_id
 from app.modules.main.models.user import User
@@ -50,6 +50,7 @@ def _out(inquiry: Inquiry, user: User, db: Session | None = None) -> InquiryResp
         from app.modules.sales import legacy as sales_legacy
         order = sales_legacy.live_order_for_source(db, inquiry.id, None)
         resp.sales_order_number = order.display_number if order else None
+        resp.can_change = can_change(db, user, inquiry)
     return resp if sees_prices(user) else blank(resp, INQUIRY_MONEY_FIELDS)
 
 # Pre-sales stages only — mirrors INQ_STAGES in frontend/src/components/crm/constants.ts.
@@ -134,10 +135,6 @@ def _write_spec_revision(db: Session, inquiry_id: int, user: User, old_vals: dic
         summary=f"{user.name or user.email} updated requirement spec: {', '.join(new_vals.keys())}.",
         performed_by_id=user.id,
     ))
-
-
-def _can_modify(record, user: User) -> bool:
-    return user.role == "admin" or record.created_by_id == user.id
 
 
 def _check_doc_date(value: date | None) -> None:
@@ -308,8 +305,7 @@ async def update_inquiry(
     if not inquiry:
         raise HTTPException(status_code=404, detail="Inquiry not found")
     ensure_in_scope(db, user, inquiry)
-    if not _can_modify(inquiry, user):
-        raise HTTPException(status_code=403, detail="Only the creator or an admin can edit this inquiry.")
+    ensure_can_change(db, user, inquiry, action="edit")
 
     updates = payload.model_dump(exclude_unset=True, exclude={"additional_items", "stage_reason"})
     if updates.get("priority") is not None:
@@ -630,8 +626,7 @@ async def add_inquiry_stage(
     if not inquiry:
         raise HTTPException(status_code=404, detail="Inquiry not found")
     ensure_in_scope(db, user, inquiry)
-    if not _can_modify(inquiry, user):
-        raise HTTPException(status_code=403, detail="Only the creator or an admin can change this inquiry's stage.")
+    ensure_can_change(db, user, inquiry, action="change the stage of")
     if payload.stage not in INQ_STAGES:
         raise HTTPException(status_code=422, detail=f"Invalid stage. Must be one of: {', '.join(INQ_STAGES)}")
     if check_stage_move(db, stages=INQ_STAGES, old=inquiry.current_stage, new=payload.stage, user=user,

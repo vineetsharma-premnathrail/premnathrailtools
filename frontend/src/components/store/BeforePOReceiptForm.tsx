@@ -19,6 +19,9 @@ import { segmentBtnStyle } from '@/components/shared/ui'
 import { useFormDraft } from '@/lib/formDraft'
 import { useAuthStore } from '@/store/authStore'
 import DraftBanner from '@/components/shared/DraftBanner'
+import QuickAddItemDialog from '@/components/store/QuickAddItemDialog'
+import { squareBtn } from '@/components/shared/MoreValuesButtons'
+import { useCan } from '@/lib/permissions'
 import { FormSheet, SheetSection, SheetIcon, SheetError, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 
 type DocType = 'invoice' | 'challan'
@@ -83,6 +86,9 @@ export default function BeforePOReceiptForm({ onClose, onSaved, poNotInList = fa
   // enforces the same in store/routes/pre_po_receipts.py _own_store_id): the stores
   // they manage, else the stores of their plant. Admins may pick any store.
   const isAdmin = user?.role === 'admin'
+  // Quick add of a new Item Master item for one line (owner, 2026-11-14) — needs Item Master › Create.
+  const canAddItem = useCan().can('store', 'items', 'create')
+  const [quickAddLine, setQuickAddLine] = useState<number | null>(null)
   const managed = locations.filter((l) => !!user && l.manager_user_id === user.id)
   const ownStores = isAdmin ? locations : managed.length ? managed : locations
   const lockedStore = !isAdmin && ownStores.length === 1 ? ownStores[0] : null
@@ -137,7 +143,7 @@ export default function BeforePOReceiptForm({ onClose, onSaved, poNotInList = fa
       return
     }
     if (poNotInList && !poNumber.trim()) { setError('Type the PO number as printed on the purchase order — or, if there is no PO at all, use Before PO instead.'); return }
-    if (poDate && !poNumber.trim()) { setError('A PO date is filled in but no PO number — type the PO number, or clear the PO date.'); return }
+    if (poNotInList && poDate && !poNumber.trim()) { setError('A PO date is filled in but no PO number — type the PO number, or clear the PO date.'); return }
     if (docType === 'challan' && challanDate && challanDate > receivedDate) { setError('The challan date is after the date the goods were received — check the date printed on the delivery challan, or correct the Received on date.'); return }
     if (docType === 'invoice' && invoiceDate && invoiceDate > receivedDate) { setError('The invoice date is after the date the goods were received — check the date printed on the vendor’s bill, or correct the Received on date.'); return }
     const filled = lines.filter((l) => l.itemId || l.quantity)
@@ -158,15 +164,15 @@ export default function BeforePOReceiptForm({ onClose, onSaved, poNotInList = fa
         delivery_challan_date: docType === 'challan' ? challanDate || undefined : undefined,
         vendor_invoice_number: docType === 'invoice' ? invoice.trim() || undefined : undefined,
         vendor_invoice_date: docType === 'invoice' ? invoiceDate || undefined : undefined,
-        manual_po_number: poNumber.trim() || undefined,
-        manual_po_date: poNumber.trim() ? poDate || undefined : undefined,
+        manual_po_number: poNotInList ? poNumber.trim() || undefined : undefined,
+        manual_po_date: poNotInList && poNumber.trim() ? poDate || undefined : undefined,
         remarks: remarks.trim() || undefined,
         items: filled.map((l) => ({ store_item_id: Number(l.itemId), quantity: Number(l.quantity), unit_rate: l.rate.trim() !== '' ? Number(l.rate) : undefined, remarks: l.remarks.trim() || undefined, invoice_item_name: l.invoiceName.trim() || undefined })),
       })
       // Files go up after the receipt exists; a failed upload doesn't undo the receipt.
       const notes: string[] = []
       let latest = saved
-      for (const [file, type] of [docType === 'invoice' ? [invoiceFile, 'invoice'] : [challanFile, 'challan'], [poNumber.trim() ? poFile : null, 'po']] as [File | null, 'invoice' | 'challan' | 'po'][]) {
+      for (const [file, type] of [docType === 'invoice' ? [invoiceFile, 'invoice'] : [challanFile, 'challan'], [poNotInList && poNumber.trim() ? poFile : null, 'po']] as [File | null, 'invoice' | 'challan' | 'po'][]) {
         if (!file) continue
         try { latest = await prePoStoreApi.uploadAttachment(saved.id, file, type) }
         catch (err) { notes.push(`${file.name}: ${extractErrorMessages(err, 'upload failed').join(' ')}`) }
@@ -179,7 +185,7 @@ export default function BeforePOReceiptForm({ onClose, onSaved, poNotInList = fa
     }
   }
 
-  return (
+  return (<>
     <FormSheet icon="box" title={poNotInList ? 'Goods receipt — PO not in list' : 'Before PO receipt'}
       subtitle={poNotInList ? 'The PO was made outside the portal (Tally / vendor) — type its number and date' : 'Goods that arrived before their purchase order'} onClose={onClose} busy={busy} tour="store-bpo-form" width={1320} onSubmit={save}
       footer={<>
@@ -224,10 +230,11 @@ export default function BeforePOReceiptForm({ onClose, onSaved, poNotInList = fa
           </div>
         </SheetSection>
 
-        <SheetSection icon="doc" title="Purchase Order" extra={poNotInList ? undefined : <Optional />}>
+        {/* PO number / date / file only on "PO not in list" — a Before PO receipt has no PO yet (owner, 2026-11-14). */}
+        {poNotInList && <SheetSection icon="doc" title="Purchase Order">
           <div data-tour="store-bpo-manual-po" style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
             <div style={{ flex: '1 1 200px', maxWidth: 280 }}>
-              <label style={sheetLabel}>PO number {poNotInList ? <Req /> : <Optional />}</label>
+              <label style={sheetLabel}>PO number <Req /></label>
               <input style={sheetInput} value={poNumber} onChange={(e) => setPoNumber(e.target.value)} maxLength={100} placeholder="As printed on the PO" aria-label="PO number" />
             </div>
             <div style={{ flex: '0 1 180px', minWidth: 160 }}>
@@ -240,10 +247,8 @@ export default function BeforePOReceiptForm({ onClose, onSaved, poNotInList = fa
                 onChange={(e) => setPoFile(e.target.files?.[0] || null)} aria-label="PO file" />
             </div>
           </div>
-          <p style={sheetHint}>{poNotInList
-            ? 'For a PO made in Tally or sent by the vendor, which is not in the portal’s PO list. The number is shown on the receipt and can be searched.'
-            : 'Fill this only if the goods came on a PO made outside the portal (Tally / vendor).'}</p>
-        </SheetSection>
+          <p style={sheetHint}>For a PO made in Tally or sent by the vendor, which is not in the portal’s PO list. The number is shown on the receipt and can be searched.</p>
+        </SheetSection>}
 
         <SheetSection icon="clip" title="Vendor Documents">
           <label style={sheetLabel}>Goods came with</label>
@@ -307,9 +312,19 @@ export default function BeforePOReceiptForm({ onClose, onSaved, poNotInList = fa
                     </div>
                     <div style={{ flex: '1 1 170px', minWidth: 150 }}>
                       {idx === 0 && <label style={sheetLabel}>Item (Item Master) <Req /></label>}
-                      <SearchableSelect ariaLabel={`Item, line ${idx + 1}`} value={line.itemId} onChange={(v) => setLine(idx, { itemId: v, auto: false })}
-                        placeholder="Search code, name or technical details…"
-                        options={stockItems.filter((i) => !line.itemType || i.item_type === line.itemType || String(i.id) === line.itemId).map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}`, description: itemOptionDetail(i), disabled: usedIds.has(String(i.id)) && String(i.id) !== line.itemId }))} />
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <SearchableSelect ariaLabel={`Item, line ${idx + 1}`} value={line.itemId} onChange={(v) => setLine(idx, { itemId: v, auto: false })}
+                            placeholder="Search code, name or technical details…"
+                            options={stockItems.filter((i) => !line.itemType || i.item_type === line.itemType || String(i.id) === line.itemId).map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}`, description: itemOptionDetail(i), disabled: usedIds.has(String(i.id)) && String(i.id) !== line.itemId }))} />
+                        </div>
+                        {canAddItem && (
+                          <button type="button" data-tour={idx === 0 ? 'store-bpo-add-item' : undefined} onClick={() => setQuickAddLine(idx)} style={squareBtn(SHEET.BLUE)}
+                            title="Item not in the Item Master? Add it here" aria-label={`Add a new item for line ${idx + 1}`}>
+                            <SheetIcon name="plus" size={15} />
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <div style={{ flex: '1 1 120px', minWidth: 100 }}>
                       {idx === 0 && <label style={sheetLabel}>Name on invoice <Optional /></label>}
@@ -355,5 +370,27 @@ export default function BeforePOReceiptForm({ onClose, onSaved, poNotInList = fa
         </div>
       </div>
     </FormSheet>
-  )
+    {/* Outside the receipt's FormSheet: a portal still bubbles React events, so the item popup's
+        submit must not reach the receipt form's onSubmit (it would save the receipt). */}
+    {quickAddLine !== null && (
+        <QuickAddItemDialog
+          initialName={lines[quickAddLine]?.invoiceName}
+          initialType={lines[quickAddLine]?.itemType}
+          allowedTypes={typeFits}
+          vendorId={vendorId && vendorId !== NEW_VENDOR ? Number(vendorId) : undefined}
+          onClose={() => setQuickAddLine(null)}
+          onCreated={(item) => {
+            setItems((all) => [...all, item].sort((a, b) => a.item_code.localeCompare(b.item_code, undefined, { numeric: true })))
+            setLine(quickAddLine, { itemId: String(item.id), itemType: '', auto: false })
+            setQuickAddLine(null)
+          }}
+          onPickExisting={(id) => {
+            const taken = lines.some((l, i) => i !== quickAddLine && l.itemId === String(id))
+            if (taken) { setError('That item is already on another line of this receipt — change the quantity there instead.'); setQuickAddLine(null); return }
+            setLine(quickAddLine, { itemId: String(id), itemType: '', auto: false })
+            setQuickAddLine(null)
+          }}
+        />
+      )}
+  </>)
 }

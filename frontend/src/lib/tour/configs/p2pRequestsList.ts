@@ -18,7 +18,7 @@ const config: TourConfig = {
     {
       target: 'p2p-nav-send',
       title: 'R.F.Q tab',
-      purpose: 'Request for Quotation — the purchase team asks several vendors for prices against an approved PR and compares them. Purchase team only.',
+      purpose: 'Request for Quotation — the purchase team asks several vendors for prices against an approved PR and compares them. Shown to roles with View on Procurement › R.F.Q.',
       why: 'Getting more than one quote before ordering is basic purchase control: it proves the price was competitive and protects against favouritism.',
     },
     {

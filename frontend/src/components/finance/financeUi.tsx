@@ -117,16 +117,30 @@ export function StatusPill({ status, labels, colors }: { status: string; labels?
  * In-page sub-tabs filtered by the Permission Matrix: `keys` maps each
  * sub-tab label to its Finance & Accounting tab key; a sub-tab the user can't
  * view is hidden, and the selection falls back to the first visible one.
+ * When NO sub-tab is viewable, `tab` is '' (matches no sub-tab, so no section
+ * renders) and <SubTabs> shows <NoSectionAccess /> — never an unpermitted
+ * section that would only load a 403 (owner, 2026-11-14).
  */
 export function useFinanceSubTabs<T extends string>(tabs: readonly T[], keys: Record<T, string>, initial?: T) {
   const { can } = useCan()
   const visible = tabs.filter((t) => can('accounts', keys[t], 'view'))
   const [tab, setTab] = useState<T>(initial ?? visible[0] ?? tabs[0])
-  const current = visible.includes(tab) ? tab : (visible[0] ?? tab)
+  const current = visible.includes(tab) ? tab : (visible[0] ?? ('' as T))
   return { tabs: visible, tab: current, setTab, none: visible.length === 0 }
 }
 
+/** Shown in place of a Finance section's sub-tabs when the role can view none of them. */
+export function NoSectionAccess() {
+  return (
+    <div role="note" data-tour="fin-no-section-access" style={{ padding: '14px 16px', marginBottom: 16, borderRadius: 10, background: 'rgba(180,83,9,0.07)', border: '1px solid rgba(180,83,9,0.2)', color: '#b45309', fontSize: 13, lineHeight: 1.5 }}>
+      You don&apos;t have access to any part of this section — ask an admin to give your role &apos;View&apos; on one of its tabs
+      (Finance &amp; Accounting) in Organization › Role &amp; Permissions.
+    </div>
+  )
+}
+
 export function SubTabs<T extends string>({ tabs, value, onChange }: { tabs: readonly T[]; value: T; onChange: (t: T) => void }) {
+  if (tabs.length === 0) return <NoSectionAccess />
   return (
     <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
       {tabs.map((t) => (

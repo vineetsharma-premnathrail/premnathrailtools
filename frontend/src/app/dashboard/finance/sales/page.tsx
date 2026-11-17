@@ -3,6 +3,7 @@
 /** Finance > Sales — GST sales (tax) invoices with e-invoice / e-way bill
  *  fields, and credit notes (sales returns) against posted invoices. */
 import { Fragment, useCallback, useEffect, useState } from 'react'
+import ScopeNote from '@/components/shared/ScopeNote'
 import Link from 'next/link'
 import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
@@ -179,7 +180,7 @@ export default function FinanceSalesPage() {
       <ErrorBanner error={error} />
       {setup && setup.warnings.length > 0 && <InfoBanner tone="warning">{setup.warnings.map((w) => <div key={w}>{w}</div>)}</InfoBanner>}
       <SubTabs tabs={visibleTabs} value={tab} onChange={setTab} />
-      {tab === 'Sales Invoices' ? <InvoicesTab {...ctx} /> : tab === 'Billing Due' ? (visibleTabs.includes('Billing Due') && <SalesBillingDueTab />) : <CreditNotesTab {...ctx} />}
+      {tab === 'Sales Invoices' ? <InvoicesTab {...ctx} /> : tab === 'Billing Due' ? (visibleTabs.includes('Billing Due') && <SalesBillingDueTab />) : tab === 'Credit Notes' ? <CreditNotesTab {...ctx} /> : null}
     </div>
   )
 }
@@ -281,6 +282,7 @@ function InvoicesTab(ctx: Ctx) {
         </div>
       </div>
 
+      <ScopeNote module="accounts" empty={!loading && rows.length === 0} />
       <TableWrap minWidth={1450} tour="fin-sinv-table">
         <thead>
           <tr>
@@ -717,6 +719,7 @@ function CreditNotesTab(ctx: Ctx) {
         </div>
       )}
 
+      <ScopeNote module="accounts" empty={!loading && rows.length === 0} />
       <TableWrap minWidth={1150} tour="fin-cn-table">
         <thead>
           <tr>

@@ -167,10 +167,18 @@ def _department_or_404(db: Session, department_id: int) -> Department:
     return dept
 
 
+def _sees_every_department(user: User) -> bool:
+    """Admins and management (Partners, Directors, All Projects › Create
+    holders) follow every department's work (2026-11-14); data scope still
+    narrows which WBS elements they see."""
+    return wf.is_admin(user) or wf.is_management(user)
+
+
 def _require_head_of(db: Session, user: User, department_id: int) -> Department:
     dept = _department_or_404(db, department_id)
-    if not (wf.is_admin(user) or user.id in wf.department_head_ids(dept)):
-        raise HTTPException(status_code=403, detail=f"Only the head of {dept.name} can do this.")
+    if not (_sees_every_department(user) or user.id in wf.department_head_ids(dept)):
+        raise HTTPException(status_code=403, detail=f"Only the head of {dept.name} (or management) can open its work. "
+                                                    "Pick one of your own departments, or ask an admin to make you a head of it in Organization › Departments.")
     return dept
 
 
@@ -178,7 +186,7 @@ def _scoped_department_ids(db: Session, user: User, department_id: int | None) -
     if department_id is not None:
         _require_head_of(db, user, department_id)
         return [department_id]
-    if wf.is_admin(user):
+    if _sees_every_department(user):
         return [d.id for d in db.query(Department.id).all()]
     return wf.headed_department_ids(db, user)
 
@@ -200,7 +208,7 @@ def _my_milestones(db: Session, user: User, department_id: int | None) -> dict[i
     as "lead", the ones they assist on as "member"."""
     if department_id is not None:
         dept = _department_or_404(db, department_id)
-        dept_ids = {department_id} if (wf.is_admin(user) or user.id in wf.department_head_ids(dept)) else set()
+        dept_ids = {department_id} if (_sees_every_department(user) or user.id in wf.department_head_ids(dept)) else set()
     else:
         dept_ids = set(_scoped_department_ids(db, user, None))
     out: dict[int, tuple[PmProjectMilestone, str]] = {}
@@ -255,7 +263,7 @@ def _check_priority(priority: str, user: User, current: str | None = None) -> st
 async def my_work_context(db: Session = Depends(get_db), user: User = Depends(_work_access(("my_tasks", "department_work"), "view"))):
     headed = wf.headed_department_ids(db, user)
     depts = db.query(Department).order_by(Department.name).all()
-    visible = depts if wf.is_admin(user) else [d for d in depts if d.id in headed]
+    visible = depts if _sees_every_department(user) else [d for d in depts if d.id in headed]
     open_tasks = db.query(func.count(PmProjectTask.id)).filter(
         PmProjectTask.assignee_id == user.id, PmProjectTask.status.in_(PM_TASK_OPEN_STATUSES),
     ).scalar() or 0

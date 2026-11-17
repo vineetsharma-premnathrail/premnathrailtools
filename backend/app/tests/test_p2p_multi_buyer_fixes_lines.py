@@ -84,26 +84,28 @@ def test_reassign_target_can_not_be_the_requester(client, db):
     assert _line(db, w, w.mat).buyer_id == w.a.id
 
 
-def test_reassign_target_must_be_in_the_purchase_team(client, db):
+def test_reassign_target_must_be_able_to_work_lines(client, db):
+    # 2026-11-14: a buyer needs 'View' on Purchase Requisitions and its My Lines tab (the tick decides, not the desk).
     w = _world(client, db)
     l1 = _line(db, w, w.mat)
-    outsider = _user(db, ["p2p:purchase_requisitions:view"], name="Outside Viewer")  # PR view, no buyer desk
+    outsider = _user(db, ["store:items:view"], name="Store Only")  # no Procurement access at all
     r = _reassign(client, w, w.head, l1, outsider)
     assert r.status_code == 409, r.text
-    assert "not in the Purchase team" in r.json()["detail"] and "Outside Viewer" in r.json()["detail"]
-    nobody = _user(db, ["store:items:view"], name="Store Only")  # purchase desk but no PR view is not enough either
-    assert _reassign(client, w, w.head, l1, nobody).status_code == 409
+    assert "can't work requisition lines" in r.json()["detail"] and "Store Only" in r.json()["detail"]
     assert _line(db, w, w.mat).buyer_id == w.a.id
 
 
-def test_short_close_needs_the_purchase_desk(client, db):
+def test_short_close_needs_the_close_grant_and_the_line(client, db):
+    # 2026-11-14: the Close / short-close grant decides (no Purchase desk), and only on the user's own line.
     w = _world(client, db)
     l1 = _line(db, w, w.mat)
-    # The requester can view the PR and holds Close-like rights on nothing: refused before anything is read.
-    viewer = _user(db, ["p2p:purchase_requisitions:view", "p2p:purchase_requisitions.close:edit"], name="Desk-less Closer")
+    viewer = _user(db, ["p2p:purchase_requisitions:view"], name="Viewer Only")
     r = _short(client, w, viewer, l1)
+    assert r.status_code == 403 and "Close" in r.json()["detail"], r.text
+    closer = _user(db, ["p2p:purchase_requisitions:view", "p2p:purchase_requisitions.close:edit"], name="Desk-less Closer")
+    r = _short(client, w, closer, l1)
     assert r.status_code == 403, r.text
-    assert "Procurement" in r.json()["detail"] or "module" in r.json()["detail"]
+    assert "is assigned to" in r.json()["detail"]
     db.expire_all()
     assert db.get(P2PRequestItem, l1.id).short_closed_qty == 0
     # The line's own buyer, on the desk, still can.

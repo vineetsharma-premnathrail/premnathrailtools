@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from 'react'
 import { crmQuotationStatusApi, QuotationAction } from '@/lib/sdApi'
+import type { QuotParent } from '@/lib/api'
 import { extractErrorMessages } from '@/lib/validation'
 import { QuotationItem, QuotationStatusView } from '@/types'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
@@ -23,8 +24,9 @@ const STATUS_HEX: Record<string, string> = {
 
 type Prompt = { action: QuotationAction; title: string; message: string; placeholder: string; label: string; required: boolean; danger: boolean; icon?: 'undo' | 'check' | 'x' }
 
-export default function QuotationStatusBar({ inquiryId, quot, canModify, canSubmit = canModify, canWork = false, onChanged, tour }: {
-  inquiryId: number
+export default function QuotationStatusBar({ parent, quot, canModify, canSubmit = canModify, canWork = false, onChanged, tour }: {
+  /** The inquiry (plain id) or tender the quotation belongs to. */
+  parent: QuotParent
   quot: QuotationItem
   /** Inquiries & Tenders › Quotations › Edit (default for canSubmit). */
   canModify: boolean
@@ -43,6 +45,8 @@ export default function QuotationStatusBar({ inquiryId, quot, canModify, canSubm
   const [promptError, setPromptError] = useState<string | string[]>('')
   const [confirm, setConfirm] = useState<{ action: QuotationAction; title: string; message: string; label: string } | null>(null)
   const status = (quot.status || 'draft') as string
+  const parentKey = typeof parent === 'number' ? `inquiry:${parent}` : `${parent.kind}:${parent.id}`
+  const parentWord = typeof parent !== 'number' && parent.kind === 'tender' ? 'tender' : 'inquiry'
 
   const [viewError, setViewError] = useState(false)
   const [viewTick, setViewTick] = useState(0)
@@ -50,23 +54,23 @@ export default function QuotationStatusBar({ inquiryId, quot, canModify, canSubm
   useEffect(() => {
     let alive = true
     setViewError(false)
-    crmQuotationStatusApi.status(inquiryId, quot.id)
+    crmQuotationStatusApi.status(parent, quot.id)
       .then((v) => { if (alive) setView(v) })
       .catch(() => { if (alive) { setView(null); setViewError(true) } })
     return () => { alive = false }
-  }, [inquiryId, quot.id, quot.status, quot.revision_number, viewTick])
+  }, [parentKey, quot.id, quot.status, quot.revision_number, viewTick])
 
   // Returns the error (if any) so a reason popup can show it in place.
   const run = async (action: QuotationAction, comment?: string, inPopup = false) => {
     setBusy(true); setError('')
     try {
-      const r = await crmQuotationStatusApi.act(inquiryId, quot.id, action, comment ? { comment } : {})
+      const r = await crmQuotationStatusApi.act(parent, quot.id, action, comment ? { comment } : {})
       setView(r.status_view)
       onChanged()
       return true
     } catch (e) {
       const verb: Record<string, string> = { send: 'mark as sent', accept: 'record as accepted', lost: 'mark as lost', reopen: 'reopen', withdraw: 'withdraw', submit: 'submit' }
-      const msg = extractErrorMessages(e, `Couldn't ${verb[action] || action} quotation ${quot.quot_number || ''}. Reload the inquiry and try again; if it persists, check your connection.`)
+      const msg = extractErrorMessages(e, `Couldn't ${verb[action] || action} quotation ${quot.quot_number || ''}. Reload the ${parentWord} and try again; if it persists, check your connection.`)
       if (inPopup) setPromptError(msg)
       else setError(msg)
       return false
@@ -126,11 +130,11 @@ export default function QuotationStatusBar({ inquiryId, quot, canModify, canSubm
       {quot.status_comment && ['draft', 'lost', 'accepted'].includes(status) && (
         <div style={{ fontSize: 11.5, color: '#57534e', marginTop: 4 }}>{quot.status_comment}</div>
       )}
-      {status === 'approved' && !mayWork && <div style={{ fontSize: 11.5, color: '#78716c', marginTop: 4 }}>Approved — the quotation&apos;s creator or the inquiry owner marks it as sent to the customer.</div>}
+      {status === 'approved' && !mayWork && <div style={{ fontSize: 11.5, color: '#78716c', marginTop: 4 }}>Approved — the quotation&apos;s creator or the {parentWord} owner marks it as sent to the customer.</div>}
       {status === 'expired' && <div style={{ fontSize: 11.5, color: '#78716c', marginTop: 4 }}>Validity ended without a decision — use &quot;Create revision from this quotation&quot; to offer it again (a finalised quotation can&apos;t be edited).</div>}
       {viewError && (
         <div role="alert" style={{ padding: '10px 14px', marginTop: 8, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <span>Approval details could not be loaded — reload the inquiry; if it persists check your connection.</span>
+          <span>Approval details could not be loaded — reload the {parentWord}; if it persists check your connection.</span>
           <button type="button" onClick={() => setViewTick((n) => n + 1)} style={smallSecondaryBtnStyle}>Try again</button>
         </div>
       )}

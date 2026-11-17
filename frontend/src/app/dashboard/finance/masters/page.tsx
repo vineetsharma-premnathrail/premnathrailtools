@@ -140,10 +140,9 @@ function groupTree(groups: AccountGroup[]): { group: AccountGroup; depth: number
 }
 
 export default function FinanceMastersPage() {
-  const { isAuthorized, isLoading, user } = useRequireApp('accounts')
+  const { isAuthorized, isLoading } = useRequireApp('accounts')
   const { tabs: visibleTabs, tab, setTab } = useFinanceSubTabs(SUB_TABS, SUB_TAB_KEYS)
   const { can } = useCan()
-  const isFinanceManager = !!(user?.is_finance_manager || user?.role === 'admin')
   // Role editor "Preview & choose" of Finance > Vendors: only the Vendors section, without the page chrome.
   const vendorsPreview = useVisibility('accounts:vendors').preview
 
@@ -159,12 +158,12 @@ export default function FinanceMastersPage() {
       {tab === 'Company & FY' && <CompanyFYSection />}
       {tab === 'Account Groups' && <AccountGroupsSection />}
       {tab === 'Ledgers' && <LedgersSection onGoOpening={() => setTab('Opening Balances')} />}
-      {tab === 'Ledger Settings' && <LedgerSettingsSection canManage={isFinanceManager && can('accounts', 'ledger_settings', 'edit')} />}
-      {tab === 'GST Rates' && <GSTRatesSection canManage={isFinanceManager} />}
+      {tab === 'Ledger Settings' && <LedgerSettingsSection canManage={can('accounts', 'ledger_settings', 'edit')} />}
+      {tab === 'GST Rates' && <GSTRatesSection />}
       {tab === 'Bank & Cash' && <BankCashSection onGoOpening={() => setTab('Opening Balances')} />}
       {tab === 'Vendors' && <VendorsSection />}
       {tab === 'Internal Orders' && <InternalOrdersSection />}
-      {tab === 'Opening Balances' && <OpeningBalancesSection canManage={isFinanceManager && can('accounts', 'opening_balances', 'edit')} />}
+      {tab === 'Opening Balances' && <OpeningBalancesSection canManage={can('accounts', 'opening_balances', 'edit')} />}
     </div>
   )
 }
@@ -756,7 +755,7 @@ function LedgerSettingsSection({ canManage }: { canManage: boolean }) {
         plays each role. Defaults come from the standard chart; change one only if your chart uses a different ledger. Changing a role affects
         new postings only — past vouchers stay where they were posted.
       </InfoBanner>
-      {!canManage && <InfoBanner tone="warning">Only a Finance Manager (or admin) can change these. Ask an admin to tick &apos;Finance Manager&apos; on your user.</InfoBanner>}
+      {!canManage && <InfoBanner tone="warning">You can see these, but changing them needs &apos;Edit&apos; on Finance &amp; Accounting › Ledger Settings. Ask an admin to tick it on your role in Organization › Role &amp; Permissions.</InfoBanner>}
 
       <TableWrap minWidth={900} tour="fin-ledger-settings-table">
         <thead>
@@ -793,7 +792,7 @@ function LedgerSettingsSection({ canManage }: { canManage: boolean }) {
 // GST Rates
 // ---------------------------------------------------------------------------
 
-function GSTRatesSection({ canManage }: { canManage: boolean }) {
+function GSTRatesSection() {
   const { can } = useCan()
   const canCreate = can('accounts', 'gst_rates', 'create')
   const canEdit = can('accounts', 'gst_rates', 'edit')
@@ -845,7 +844,7 @@ function GSTRatesSection({ canManage }: { canManage: boolean }) {
 
   return (
     <div style={sectionStyle} data-tour="fin-masters-gst-rates">
-      <SectionHeader title="GST rates" action={canManage && canCreate && (
+      <SectionHeader title="GST rates" action={canCreate && (
         <button type="button" data-tour="fin-gst-new-btn" style={primaryBtnStyle} onClick={() => { setError([]); setForm({ rate: '', description: '', is_active: true }); setAddOpen(true) }}>+ Add Rate</button>
       )} />
       {!addOpen && editId == null && <ErrorBanner error={error} />}
@@ -854,9 +853,8 @@ function GSTRatesSection({ canManage }: { canManage: boolean }) {
         documents dated before that (and credit/debit notes against them) can still be read. An inactive rate simply stops appearing on new
         invoice lines.
       </InfoBanner>
-      {!canManage && <InfoBanner tone="warning">Only a Finance Manager (or admin) can add or change GST rates.</InfoBanner>}
 
-      {addOpen && canManage && canCreate && (
+      {addOpen && canCreate && (
         <FormSheet tour="fin-gst-form" width={560} icon="tag" title="Add GST rate" subtitle="A new slab offered in the GST % dropdown on invoice and note lines."
           onClose={() => { setError([]); setAddOpen(false) }} busy={saving}
           footer={<>
@@ -917,7 +915,7 @@ function GSTRatesSection({ canManage }: { canManage: boolean }) {
                 <td style={tdStyle}>{r.description || <span style={{ color: TEXT.muted }}>—</span>}</td>
                 <td style={tdStyle}><StatusPill status={r.is_active ? 'active' : 'inactive'} colors={STATUS_HEX} labels={STATUS_LABELS} /></td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                  {canManage && canEdit && (
+                  {canEdit && (
                     <div style={{ display: 'flex', gap: 10 }}>
                       <button type="button" style={linkBtnStyle} onClick={() => { setEditId(r.id); setEditDesc(r.description || '') }}>Edit description</button>
                       <button type="button" style={r.is_active ? dangerLinkStyle : linkBtnStyle} onClick={() => update(r, { is_active: !r.is_active })}>
@@ -1751,7 +1749,7 @@ function OpeningBalancesSection({ canManage }: { canManage: boolean }) {
         <div style={{ padding: '20px 24px 0' }}>
           <ErrorBanner error={error} />
           {posted && <InfoBanner tone="success">Opening balances posted as {posted.entry_number} — total {inr(posted.total)}. Party bills now show in outstanding and aging.</InfoBanner>}
-          {!canManage && <InfoBanner tone="warning">Only a Finance Manager (or admin) can post opening balances.</InfoBanner>}
+          {!canManage && <InfoBanner tone="warning">Posting opening balances needs &apos;Edit&apos; on Finance &amp; Accounting › Opening Balances. Ask an admin to tick it on your role in Organization › Role &amp; Permissions.</InfoBanner>}
           <SheetSection icon="calendar" title="Voucher">
             <div style={sheetRow}>
               <SF label="Opening date (first day of books)" req style={fixedW(240)} tour="fin-ob-date"><DateField value={asOf} onChange={setAsOf} /></SF>

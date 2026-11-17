@@ -11,9 +11,10 @@ from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from app.core import assignee_rules
+from app.core.data_scope import ensure_can_change
 from app.core.permission_registry import can_perform
 from app.core.permissions import ensure_feature_action, require_app_access, require_feature_action
 from app.db.session import get_db
@@ -94,16 +95,18 @@ def _summary(db: Session, sr: ServiceRequest) -> dict:
 
 def _ensure_can_log(sr: ServiceRequest, user: User, engineer_id: int | None) -> None:
     """Own visits: the SR's assigned engineer, or the engineer of the visit.
-    Anyone else (planning other engineers' visits): Service Requests › Edit."""
-    if can_perform(user, "erp", "service_requests", "edit"):
-        return
+    Anyone else (planning other engineers' visits): Service Requests › Edit with
+    the SR inside their Service Edit scope (Role › Data access › Edit; default =
+    SRs they raised or are the assigned engineer of)."""
     if engineer_id == user.id or (engineer_id is None and sr.assigned_service_person_id == user.id):
         return
-    raise HTTPException(
-        status_code=403,
-        detail="Only the visiting engineer can log their own visit. Logging or changing another engineer's visit needs "
-               "Service Module › Service Requests › Edit.",
-    )
+    if not can_perform(user, "erp", "service_requests", "edit"):
+        raise HTTPException(
+            status_code=403,
+            detail="Only the visiting engineer can log their own visit. Logging or changing another engineer's visit needs "
+                   "Service Module › Service Requests › Edit — ask an admin to add it to your role in Organization › Role & Permissions.",
+        )
+    ensure_can_change(object_session(sr), user, sr, action="log or change other engineers' visits on")
 
 
 def _ensure_may_pick_engineer(db: Session, user: User, engineer_id: int | None) -> None:

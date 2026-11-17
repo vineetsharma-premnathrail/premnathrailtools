@@ -3,6 +3,7 @@
 /** Journals — manual journal vouchers (draft → posted by another user),
  *  the Day Book, ledger statements and month-end period close. */
 import { Fragment, useEffect, useState } from 'react'
+import ScopeNote from '@/components/shared/ScopeNote'
 import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
 import { accountsApi, costCentersApi, crmApi } from '@/lib/api'
@@ -103,10 +104,10 @@ export default function FinanceJournalsPage() {
       <PageHeader title="Journals" subtitle="Manual journal vouchers, the day book of every voucher, ledger statements and month-end period close." />
       <SubTabs tabs={visibleTabs} value={tab} onChange={setTab} />
       <ErrorBanner error={mastersError} />
-      {tab === 'Journal Vouchers' && <JournalVouchers masters={masters} userId={user?.id ?? null} canReverse={(!!user?.is_finance_manager || user?.role === 'admin') && canFeature('accounts', 'journal_vouchers', 'reversal', 'cancel')} />}
+      {tab === 'Journal Vouchers' && <JournalVouchers masters={masters} userId={user?.id ?? null} canReverse={canFeature('accounts', 'journal_vouchers', 'reversal', 'cancel')} />}
       {tab === 'Day Book' && <DayBookTab />}
       {tab === 'Ledger Statement' && <LedgerStatementTab ledgers={masters.ledgers} />}
-      {tab === 'Period Close' && <PeriodCloseTab canClose={can('accounts', 'period_close', 'approve')} closesDirectly={!!user?.is_finance_manager || user?.role === 'admin'} isAdmin={user?.role === 'admin'} />}
+      {tab === 'Period Close' && <PeriodCloseTab canClose={can('accounts', 'period_close', 'approve')} closesDirectly={can('accounts', 'period_close', 'approve')} canReopen={can('accounts', 'period_close', 'approve')} />}
     </div>
   )
 }
@@ -236,6 +237,7 @@ function JournalVouchers({ masters, userId, canReverse }: { masters: Masters; us
         )}
       </div>
 
+      <ScopeNote module="accounts" empty={!loading && entries.length === 0} />
       <TableWrap minWidth={1150} tour="fin-jv-table">
         <thead>
           <tr>
@@ -302,7 +304,7 @@ function JournalVouchers({ masters, userId, canReverse }: { masters: Masters; us
                     {e.status === 'posted' && (() => {
                       const blocked = reverseBlockedReason(e, canReverse)
                       return blocked
-                        ? <span style={{ fontSize: 11, color: TEXT.muted }} title={blocked}>{e.reverses_journal_entry_id ? 'Reversal entry' : !canReverse ? 'Finance Manager reverses' : 'Correct via source'}</span>
+                        ? <span style={{ fontSize: 11, color: TEXT.muted }} title={blocked}>{e.reverses_journal_entry_id ? 'Reversal entry' : !canReverse ? 'No reverse permission' : 'Correct via source'}</span>
                         : <button type="button" style={dangerLinkStyle} disabled={busy} onClick={() => setReverseTarget(e)}>Reverse</button>
                     })()}
                   </td>
@@ -399,7 +401,7 @@ function reverseBlockedReason(e: JournalEntry, canReverse: boolean): string | nu
   if (e.posting_type === 'year_end') return 'Year-end closing entry — use Reports > Year-end > Reopen.'
   if (e.posting_type === 'closing_stock') return 'Closing-stock entry — cancel the valuation under Finance > Inventory.'
   if (e.posting_type === 'asset_disposal') return 'Asset disposal — correct it on the asset under Finance > Assets.'
-  if (!canReverse) return "Only a Finance Manager (or admin) whose role includes Journal Vouchers › Reverse posted journals can reverse a journal. Ask an admin to tick 'Finance Manager' on your user and grant that feature in your role."
+  if (!canReverse) return "Reversing a journal needs 'Cancel' on Finance & Accounting › Journal Vouchers › Reverse posted journals. Ask an admin to tick it on your role in Organization › Role & Permissions."
   return null
 }
 
@@ -722,6 +724,7 @@ function DayBookTab() {
         <button type="button" data-tour="fin-daybook-show" style={{ ...primaryBtnStyle }} onClick={load} disabled={loading}>{loading ? 'Loading…' : 'Show'}</button>
       </div>
 
+      <ScopeNote module="accounts" empty={!loading && !!data && data.entries.length === 0} />
       <TableWrap minWidth={950} tour="fin-daybook-table">
         <thead>
           <tr>
@@ -892,7 +895,7 @@ function recentPeriods(n = 18): string[] {
   return out
 }
 
-function PeriodCloseTab({ canClose, closesDirectly, isAdmin }: { canClose: boolean; closesDirectly: boolean; isAdmin: boolean }) {
+function PeriodCloseTab({ canClose, closesDirectly, canReopen }: { canClose: boolean; closesDirectly: boolean; canReopen: boolean }) {
   const [periods, setPeriods] = useState<PeriodClose[]>([])
   const [period, setPeriod] = useState(currentPeriod())
   const [closePrompt, setClosePrompt] = useState(false)
@@ -915,7 +918,7 @@ function PeriodCloseTab({ canClose, closesDirectly, isAdmin }: { canClose: boole
   const doClose = async (notes: string) => {
     setBusy(true); setError(null); setNotice(''); setClosePrompt(false)
     try {
-      // 202 = submitted and waiting for a Finance Manager (approval engine).
+      // 202 = submitted and waiting for its approver (approval engine).
       const out: { approval_status?: string; message?: string } = await accountsApi.closePeriod(period, notes || undefined)
       if (out?.approval_status === 'pending' && out.message) setNotice(out.message)
       load()
@@ -935,8 +938,9 @@ function PeriodCloseTab({ canClose, closesDirectly, isAdmin }: { canClose: boole
       <InfoBanner>
         Closing a month locks it: nothing more can be posted with a date in it, so reports for that month stop changing. To close, every
         document dated in the month (invoices, notes, payment vouchers, journals) must be posted — drafts left behind block the close.
-        Closing goes through the approval workflow (Organization › Approval Workflows › Accounting period close): a Finance
-        Manager&apos;s click closes it at once; anyone else&apos;s request waits for a Finance Manager. Only an admin can reopen, with a reason.
+        Closing goes through the approval workflow (Organization › Approval Workflows › Accounting period close): by default a click by
+        someone with Approve on Period Close closes it at once; otherwise the request waits for the approver. Reopening (with a reason) needs
+        the same Approve permission.
       </InfoBanner>
       <ErrorBanner error={error} />
       {notice && <InfoBanner tone="success">{notice}</InfoBanner>}
@@ -960,9 +964,9 @@ function PeriodCloseTab({ canClose, closesDirectly, isAdmin }: { canClose: boole
                 {closesDirectly ? `Close ${periodLabel(period)}` : closePending ? 'Close requested' : `Request close of ${periodLabel(period)}`}
               </button>
             : <span style={{ fontSize: 12, color: TEXT.muted }}>You need the Approve permission on Period Close to close a period.</span>)}
-          {isClosed && (isAdmin
+          {isClosed && (canReopen
             ? <button type="button" data-tour="fin-period-reopen-btn" style={{ ...secondaryBtnStyle, color: '#b91c1c' }} disabled={busy} onClick={() => setReopenPrompt(true)}>Reopen</button>
-            : <span style={{ fontSize: 12, color: TEXT.muted }}>Only an admin can reopen a closed period.</span>)}
+            : <span style={{ fontSize: 12, color: TEXT.muted }}>Reopening needs &apos;Approve&apos; on Finance &amp; Accounting › Period Close — ask an admin to tick it on your role.</span>)}
         </div>
       </div>
 

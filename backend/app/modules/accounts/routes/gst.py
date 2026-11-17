@@ -6,7 +6,7 @@ from app.core.permissions import require_tab_access, require_tab_action, require
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.accounts.services import gst_returns
-from app.modules.accounts.routes._common import write_audit, who, service_errors, require_finance_manager
+from app.modules.accounts.routes._common import write_audit, who, service_errors
 
 router = APIRouter(prefix="/accounts/gst", tags=["Accounts"])
 
@@ -50,7 +50,6 @@ async def setoff_preview_route(period: str | None = Query(None), db: Session = D
 
 @router.post("/setoff")
 async def setoff_post_route(period: str = Query(...), db: Session = Depends(get_db), user: User = Depends(require_feature_action("accounts", "gst", "itc_setoff", "approve"))):
-    require_finance_manager(user, "post the GST set-off")
     with service_errors(db):
         entry = gst_returns.post_setoff(db, period=period, user_id=user.id)
     write_audit(db, "journal_entry", entry.id, "posted", user, f"{who(user)} posted the GST set-off for {period} ({entry.entry_number}).")

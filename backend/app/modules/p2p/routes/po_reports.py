@@ -27,11 +27,12 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.data_scope import apply_scope
-from app.core.permissions import GRANT_HINT, ensure_feature_action, require_app_access, require_tab_access, require_tab_action
+from app.core.permissions import GRANT_HINT, ensure_feature_action, require_tab_access, require_tab_action
 import app.modules.p2p.access  # noqa: F401 — registers the Procurement data scopes
 from app.modules.p2p.pricing import mask_for, sees_prices
 from app.db.session import get_db
 from app.modules.main.models.user import User
+from app.modules.main.routes.auth import get_current_user
 from app.modules.p2p.models.goods_receipt import P2PGoodsReceipt, P2PGoodsReceiptItem
 from app.modules.p2p.models.p2p_request import P2PRequest
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder, P2PPurchaseOrderItem
@@ -217,7 +218,7 @@ async def po_tracking_list(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
+    user: User = Depends(get_current_user),
     _tab: User = Depends(require_tab_access("p2p", "purchase_orders")),
 ):
     """Every PO with its true lifecycle stage, delivery progress and days to its expected delivery —
@@ -240,7 +241,7 @@ async def po_tracking_list(
 @router.get("/tracking/filters")
 async def po_tracking_filters(
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
+    user: User = Depends(get_current_user),
     _tab: User = Depends(require_tab_access("p2p", "purchase_orders")),
 ):
     """Vendors and buyers on the viewer's POs, for the tracking filter pickers."""

@@ -20,11 +20,6 @@ def _write_audit(db: Session, action: str, user: User, summary: str | None = Non
     db.add(AuditLog(entity_type="period_close", entity_id=None, action=action, performed_by_id=user.id, summary=summary))
 
 
-def _require_admin(user: User) -> None:
-    if user.role != "admin":
-        raise HTTPException(status_code=403, detail="Only an admin can reopen a closed accounting period.")
-
-
 def _to_response(pc: PeriodClose, db: Session, approval: dict | None = None) -> PeriodCloseResponse:
     user_ids = {pc.closed_by_id, pc.reopened_by_id} - {None}
     users = {u.id: u for u in db.query(User).filter(User.id.in_(user_ids)).all()} if user_ids else {}
@@ -70,16 +65,16 @@ async def close_period_route(
     user: User = Depends(require_tab_action("accounts", "period_close", "approve")),
 ):
     """Closing a month goes through the approval engine ('Accounting period
-    close', default: a Finance Manager). A Finance Manager's click approves it
-    at once, as before; anyone else's click waits for one (202)."""
+    close', default: holders of Period Close › Approve). An approver's click
+    approves it at once; anyone else's click waits for one (202)."""
     with service_errors(db):
         req = access.submit_process(
             db, access.KEY_PERIOD_CLOSE, entity_id=access.period_entity_id(period), actor=user,
             title=f"Close accounting period {period}", reference=period, context={"period": period, "notes": payload.notes},
         )
     if req.status == "pending":
-        access.role_event(db, "period_close_requested", title=f"Closing period {period} waits for a Finance Manager",
-                          message=f"{user.name or user.email} asked to close accounting period {period}. A Finance Manager must "
+        access.role_event(db, "period_close_requested", title=f"Closing period {period} waits for approval",
+                          message=f"{user.name or user.email} asked to close accounting period {period}. Its approver must "
                                   f"approve it (Approvals inbox or Finance › Journals › Period Close).",
                           entity_type=access.ET_PERIOD_CLOSE, entity_id=req.entity_id, actor=user,
                           skip={s.approver_id for s in req.steps if s.approver_id}, background_tasks=background_tasks)
@@ -97,7 +92,8 @@ async def reopen_period_route(
     db: Session = Depends(get_db),
     user: User = Depends(require_tab_action("accounts", "period_close", "approve")),
 ):
-    _require_admin(user)
+    # Reopening is Period Close › Approve (the route's dependency) — the role
+    # matrix decides, not the portal-admin role (owner, 2026-11-14).
     try:
         pc = reopen_period(db, accounting_period=period, reopened_by_id=user.id, reason=payload.reason)
     except ValueError as e:

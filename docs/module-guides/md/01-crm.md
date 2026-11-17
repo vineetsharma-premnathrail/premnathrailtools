@@ -134,9 +134,9 @@ Breadcrumb "Customer Organizations › New", title "Add Organization", **← Bac
 | Field | Type | Required | Options / source of values | Rules & validation |
 |---|---|---|---|---|
 | Organization Name | text | Yes | Free text | Must not match an existing organization's name (case-insensitive) — server returns "An organization with this name already exists" |
-| Organization Type | dropdown | Yes | Public Sector Undertaking (PSU), Govt Department, Railway, Private, Joint Venture, Other | Choosing Other shows a "Specify organization type" box, which is then required |
+| Organization Type | dropdown | Yes | Public Sector Undertaking (PSU), Government Department, Railway, Private Company, Joint Venture, Other | Choosing Other shows a "Specify organization type" box, which is then required |
 | Parent Organization | text | No | Free text | — |
-| Railway Zone | dropdown | No | Northern, Southern, Eastern, Western, Central, South Eastern, North Eastern, Northeast Frontier, South Central, East Central, East Coast, West Central, North Central, North Western, South Western Railway, Metro Railway Kolkata, Not Applicable, Other | Shown only when Type is Railway or Govt Department. Other shows a "Specify railway zone" box. Changing Type to anything else clears zone and division |
+| Railway Zone | dropdown | No | Northern, Southern, Eastern, Western, Central, South Eastern, North Eastern, Northeast Frontier, South Central, East Central, East Coast, West Central, North Central, North Western, South Western Railway, Metro Railway Kolkata, Not Applicable, Other | Shown only when Type is Railway or Government Department. Other shows a "Specify railway zone" box. Changing Type to anything else clears zone and division |
 | Division / Workshop | text | No | Free text | Shown only with Railway Zone |
 | Address | multi-line text | No | — | — |
 | Country | dropdown | No | India (default), USA, UK, UAE, Other | Other shows a "Specify country" box |
@@ -172,7 +172,7 @@ Overview tab — three cards. Empty values show "Not provided".
 | Organization Details | Organization Code | Auto code ORG-YYYY-NNNN |
 | Organization Details | Type | Organization type |
 | Organization Details | Parent Organization | Parent body, if any |
-| Organization Details | Railway Zone, Division / Workshop | Shown for Railway / Govt Department types, or if old data has a value |
+| Organization Details | Railway Zone, Division / Workshop | Shown for Railway / Government Department types, or if old data has a value |
 | Location | Address, City, State, PIN Code, Country | Postal location |
 | Contact & Registration | GST Number | GSTIN |
 | Contact & Registration | Official Phone | Main phone plus extra phones, comma separated |

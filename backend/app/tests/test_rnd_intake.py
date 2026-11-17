@@ -50,9 +50,18 @@ def _accept(client, inq, who, **body):
 def _return(db, inq, who, reason=LONG_REASON):
     """Return to BD is no longer offered (owner, 2026-10-30); older requirements may still be in
     that state, so tests put one there through the service to check how it is shown."""
-    from app.modules.rnd.services import requirements as intake
-    from app.modules.crm.models.inquiry import Inquiry
-    intake.return_to_bd(db, source="inquiry", record=db.get(Inquiry, inq.id), user=who, reason=reason, revision_no=None)
+    # The service that did this (return_to_bd) was deleted 2026-11-17; the helper writes the state itself.
+    from app.modules.main.models.audit_log import AuditLog
+    req = _req(db, inq)
+    rev = _revs(db, inq)[-1]  # both helpers expire the session, so load first and change after
+    rev.status, rev.reviewed_by_id, rev.return_reason = "returned", who.id, reason
+    req = db.get(RndRequirement, req.id)
+    req.status = "returned"
+    crm_req = db.get(CrmRndRequest, rev.crm_rnd_request_id) if rev.crm_rnd_request_id else None
+    if crm_req and crm_req.status == "open":
+        crm_req.status = "returned"
+    db.add(AuditLog(entity_type="rnd_req_inquiry", entity_id=inq.id, action="requirement_returned", module_key="rnd",
+                    summary=f"{who.name} returned {rev.revision_code} to BD: {reason}", performed_by_id=who.id))
     db.commit()
 
 
@@ -180,11 +189,10 @@ def test_admin_who_is_not_head_cannot_accept_or_return(client, db, tor_env):
     # Not offered in the UI flags either.
     my = client.get(f"{RND}/requirements/inquiry/{inq.id}", headers=auth(admin)).json()["my_access"]
     assert my["can_review"] is False
-    from app.modules.crm.models.inquiry import Inquiry
-    from app.modules.rnd.services import requirements as intake
+    from app.modules.rnd.services import requirement_access as ra
     from fastapi import HTTPException
     with pytest.raises(HTTPException) as exc:
-        intake.return_to_bd(db, source="inquiry", record=db.get(Inquiry, inq.id), user=admin, reason=LONG_REASON, revision_no=None)
+        ra.ensure_can_review(db, admin, "accept")
     assert exc.value.status_code == 403
     # The named head still accepts.
     assert _accept(client, inq, head).status_code == 200
@@ -218,6 +226,12 @@ def test_ask_bd_for_details_keeps_the_request_open(client, db, tor_env):
     # BD sees the question on the movement card; R&D can still give the final response.
     moves = client.get(f"{CRM}/inquiries/{inq.id}/requirement-movements", headers=auth(bd)).json()
     assert moves[0]["rnd_request"]["queries"][0]["remarks"] == "Axle load and gauge are missing"
+    # Both Timelines keep the question: BD's (CRM audit) and R&D's.
+    audit = client.get(f"{CRM}/inquiries/{inq.id}/audit", headers=auth(bd)).json()
+    assert any(a["action"] == "rnd_asked_details" and "Axle load and gauge are missing" in (a["summary"] or "") for a in audit)
+    tl = client.get(f"{RND}/requirement-work/inquiry/{inq.id}/history", headers=auth(head))
+    assert tl.status_code == 200, tl.text
+    assert any(r["kind"] == "query" and "Axle load and gauge are missing" in r["summary"] for r in tl.json())
     assert client.post(url, data={"remarks": "Feasible"}, headers=auth(head)).json()["status"] == "responded"
     # Nothing to ask on a closed request.
     assert client.post(url, data={"remarks": "One more question please", "ask_details": "true"}, headers=auth(head)).status_code == 409

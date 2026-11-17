@@ -5,7 +5,9 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.priority import PRIORITIES, parse_priority
+from app.core.permission_registry import can_view_tab
 from app.core.permissions import ensure_can_delete, require_app_access, require_tab_access, require_tab_action
+from app.modules.main.routes.auth import get_current_user
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
@@ -371,8 +373,24 @@ async def create_project_with_machine(
     return views.project_response(db, project, user)
 
 
+# The project page opens for anyone who can view one of its tabs (owner,
+# 2026-11-14: the tick decides) — not only All Projects › View. Data scope
+# still decides WHICH projects.
+WORKSPACE_TABS = ("all_projects", "overview", "milestones", "documents", "project_history")
+
+
+def _workspace_reader(user: User = Depends(get_current_user)) -> User:
+    if not any(can_view_tab(user, "projects", t) for t in WORKSPACE_TABS):
+        raise HTTPException(
+            status_code=403,
+            detail="You can't open a project page: none of your roles ticks 'View' on Project Management › All Projects, "
+                   "Overview, Milestones, Documents or History. Ask an admin to tick one of them in Organization › Role & Permissions.",
+        )
+    return user
+
+
 @router.get("/{project_id}", response_model=PmProjectResponse)
-async def get_project(project_id: int, db: Session = Depends(get_db), user: User = Depends(require_tab_access("projects", "all_projects"))):
+async def get_project(project_id: int, db: Session = Depends(get_db), user: User = Depends(_workspace_reader)):
     return views.project_response(db, _get_or_404(db, project_id, user), user)
 
 
@@ -651,7 +669,7 @@ async def project_closure(project_id: int, db: Session = Depends(get_db), user: 
 async def delete_project(project_id: int, db: Session = Depends(get_db), user: User = Depends(require_tab_access("projects", "all_projects"))):
     project = _get_or_404(db, project_id, user)
     ensure_can_delete(user, project, "projects", "all_projects", what="project")
-    wf.require_manage(project, user, "delete the project")
+    wf.require_manage(project, user, "delete the project", grant=("all_projects", "delete"))
     if project.status != "planning":
         raise HTTPException(status_code=409, detail=f"Project {project.project_code} is {wf.PROJECT_STATUS_LABELS.get(project.status, project.status)}. Only projects still in Planning can be deleted; cancel it instead so its history is kept.")
     machine = db.query(MachineProject.serial_number).filter(

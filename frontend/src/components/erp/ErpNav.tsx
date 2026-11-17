@@ -2,9 +2,11 @@
 
 import Link from 'next/link'
 import { navScrollRef } from '@/components/shared/navScroll'
-import { usePathname } from 'next/navigation'
-import { useAuth } from '@/hooks/useAuth'
-import { filterTabsByAccess } from '@/lib/tabAccess'
+import { usePathname, useRouter } from 'next/navigation'
+import { useEffect } from 'react'
+import { useAuth, useRequireApp } from '@/hooks/useAuth'
+import { canViewTab, filterTabsByAccess, firstViewableTab } from '@/lib/tabAccess'
+import type { User } from '@/types'
 import NotificationBell from './NotificationBell'
 import TourButton from '@/components/tour/TourButton'
 import NavSettingsGear from '@/components/shared/NavSettingsGear'
@@ -12,7 +14,7 @@ import { SERVICE_CONTRACTS_ENABLED } from '@/lib/features'
 import { ChartBar, FileText, ShieldCheck, SquaresFour, Trash, Users, type Icon } from '@phosphor-icons/react'
 import { pillStyle } from '@/components/shared/ui'
 
-const TABS = [
+export const ERP_TABS = [
   { href: '/dashboard/erp', label: 'Dashboard', icon: 'grid', subtabKey: 'dashboard' },
   { href: '/dashboard/erp/service-requests', label: 'Service Requests', icon: 'file', subtabKey: 'service_requests' },
   { href: '/dashboard/erp/service-contracts', label: 'Contracts', icon: 'shield', subtabKey: 'service_contracts' },
@@ -21,6 +23,39 @@ const TABS = [
   // Approvals switches, warranty & billing defaults and notification rules (gear next to the bell, not a tab).
   { href: '/dashboard/erp/settings', label: 'Settings', icon: 'gear', subtabKey: 'settings' },
 ] as const
+const TABS = ERP_TABS
+
+/** The Service Dashboard is built from the Service Requests list, so it needs both ticks. */
+export function seesErpDashboard(user: User | null | undefined): boolean {
+  return canViewTab('erp', 'dashboard', user) && canViewTab('erp', 'service_requests', user)
+}
+
+/**
+ * Where "Service" takes `user`: the Dashboard when their role can use it, else the
+ * first Service tab they may open (owner, 2026-11-14: never land on a page that
+ * only answers 403). Undefined when no Service tab is viewable.
+ */
+export function erpHomeHref(user: User | null | undefined): string | undefined {
+  if (seesErpDashboard(user)) return '/dashboard/erp'
+  return firstViewableTab('erp', ERP_TABS.filter((t) => t.subtabKey !== 'dashboard' && t.subtabKey !== 'settings'
+    && (t.subtabKey !== 'service_contracts' || SERVICE_CONTRACTS_ENABLED)), user)?.href
+    ?? (canViewTab('erp', 'settings', user) ? '/dashboard/erp/settings' : undefined)
+}
+
+/**
+ * Page gate for one Service tab: the Service app plus View on `subtabKey`;
+ * anyone else goes to the Service tab their role opens instead of a page that
+ * would render and then answer 403.
+ */
+export function useErpTabAccess(subtabKey: string) {
+  const { user, isAuthorized: hasApp, isLoading } = useRequireApp('erp')
+  const router = useRouter()
+  const allowed = hasApp && canViewTab('erp', subtabKey, user)
+  useEffect(() => {
+    if (!isLoading && hasApp && !allowed) router.replace(erpHomeHref(user) || '/dashboard')
+  }, [isLoading, hasApp, allowed, router, user])
+  return { user, isAuthorized: allowed, isLoading }
+}
 
 // Tab icon key -> Phosphor icon (Regular weight). The key also feeds the
 // tab's data-tour id, so keys stay as they are.

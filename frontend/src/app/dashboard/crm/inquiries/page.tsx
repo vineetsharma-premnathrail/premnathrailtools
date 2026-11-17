@@ -29,6 +29,7 @@ import { priorityLabel } from '@/lib/priority'
 import { useVisibility, type VisibilityApi } from '@/lib/visibility'
 import { VisTd, VisTh } from '@/lib/visibilityComponents'
 import { sampleInquiries, sampleOrganizations, sampleTenders } from '@/lib/crmPreviewSamples'
+import ScopeNote from '@/components/shared/ScopeNote'
 
 const PINNED_KEY = PINNED_INQUIRY_TENDER_KEY
 
@@ -95,7 +96,7 @@ function ColTh({ vis, k, ...rest }: { vis: VisibilityApi; k: string } & React.Th
 }
 
 export default function InquiriesPage() {
-  const { user, isAuthorized, isLoading } = useRequireApp('crm')
+  const { isAuthorized, isLoading } = useRequireApp('crm')
   // Role-wise visibility: columns a role hides (header AND cells from the same check; the ID column always shows).
   // In the Role editor's preview (vis.preview) the list draws sample rows and loads nothing.
   const vis = useVisibility('crm:inquiries_tenders')
@@ -375,7 +376,7 @@ export default function InquiriesPage() {
           <button onClick={clearFilters} data-tour="iq-clear-btn" type="button" style={secondaryBtnStyle}>Clear</button>
           <div style={{ display: 'flex', gap: 8 }}>
             {can('crm', 'inquiries_tenders', 'export') && <button type="button" data-tour="iq-export-btn" onClick={() => setShowExport(true)} style={secondaryBtnStyle}>Export</button>}
-            {user?.role === 'admin' && can('crm', 'organizations', 'import') && <button type="button" data-tour="iq-import-btn" onClick={() => setShowImport(true)} style={secondaryBtnStyle}>Import</button>}
+            {can('crm', 'organizations', 'import') && <button type="button" data-tour="iq-import-btn" onClick={() => setShowImport(true)} style={secondaryBtnStyle}>Import</button>}
           </div>
         </div>
       </div>
@@ -409,6 +410,7 @@ export default function InquiriesPage() {
 
   const fullTable = (
     <>
+      {!vis.preview && <ScopeNote module="crm" empty={!loading && sortedRows.length === 0} />}
       <div style={{ ...panelOuterStyle, flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <div style={{ overflow: 'auto', flex: 1, minHeight: 0 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100, tableLayout: 'fixed' }}>

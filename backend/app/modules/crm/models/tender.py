@@ -8,6 +8,7 @@ from app.db.mixins import TimestampMixin, SoftDeleteMixin
 
 if TYPE_CHECKING:
     from app.modules.crm.models.organization import Organization
+    from app.modules.crm.models.inquiry import Quotation
 
 # Coded tender statuses — mirrors TENDER_STATUSES in frontend/src/components/crm/constants.ts.
 # Lives on the model so the routes AND the visibility catalogue (core/features/crm.py) share one list.
@@ -85,3 +86,5 @@ class Tender(Base, TimestampMixin, SoftDeleteMixin):
     created_by_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
 
     organization: Mapped["Organization"] = relationship("Organization", back_populates="tenders")
+    # Price-bid quotations raised against this tender. No cascade: tenders are soft-deleted.
+    quotations: Mapped[list["Quotation"]] = relationship("Quotation", back_populates="tender")

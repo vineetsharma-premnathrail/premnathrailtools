@@ -12,7 +12,8 @@ import { Bank, ChartBar, CurrencyInr, Database, Notebook, Package, Percent, Shop
 
 // subtabKeys: the Permission Matrix tabs (Finance & Accounting) each nav tab
 // covers — the nav tab shows when the user may view any one of them.
-const TABS = [
+// Exported for the Finance landing page (first viewable tab).
+export const FINANCE_TABS = [
   { href: '/dashboard/finance/masters', label: 'Masters', icon: 'file', subtabKeys: ['company_fy', 'account_groups', 'ledgers', 'ledger_settings', 'gst_rates', 'bank_cash_accounts', 'vendors', 'internal_orders', 'opening_balances'] },
   { href: '/dashboard/finance/ledger', label: 'Journals', icon: 'grid', subtabKeys: ['journal_vouchers', 'day_book', 'ledger_statement', 'period_close'] },
   { href: '/dashboard/finance/purchase', label: 'Purchase', icon: 'cart', subtabKeys: ['purchase_invoices', 'debit_notes'] },
@@ -55,7 +56,7 @@ export default function FinanceNav() {
   const pathname = usePathname()
   const user = useAuthStore((s) => s.user)
   // Settings sits as a gear next to the bell, not in the tab row (same as R&D).
-  const allowedTabs = filterTabsByAccess('accounts', TABS, user)
+  const allowedTabs = filterTabsByAccess('accounts', FINANCE_TABS, user)
   const tabs = allowedTabs.filter((t) => t.href !== '/dashboard/finance/settings')
   const settingsTab = allowedTabs.find((t) => t.href === '/dashboard/finance/settings')
   const isTabActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`)

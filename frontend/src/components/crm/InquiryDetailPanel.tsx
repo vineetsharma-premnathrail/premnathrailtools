@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState, Fragment, ReactNode } from 'react
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
+import { activityChangeable, inquiryChangeable, tenderChangeable, quotationChangeable } from '@/components/crm/changeRights'
 import { useVisibility } from '@/lib/visibility'
 import { normalizePriority } from '@/lib/priority'
 import { VisSection } from '@/lib/visibilityComponents'
@@ -12,7 +13,7 @@ import { sampleContact, sampleInquiries, sampleOrganizations } from '@/lib/crmPr
 import { crmApi } from '@/lib/api'
 import { recordVisit } from '@/lib/crmShortcuts'
 import { formatDate, formatDateTime } from '@/lib/format'
-import { Inquiry, Organization, OrgContact, QuotationItem, QuotationLineItem, CrmActivity, CrmDocument, CrmStageLogEntry, RndRequestAssignment, CrmQuotationProduct, CrmQuotationApplication, CrmQuotationLookup } from '@/types'
+import { Inquiry, Tender, Organization, OrgContact, QuotationItem, QuotationLineItem, CrmActivity, CrmDocument, CrmStageLogEntry, RndRequestAssignment, CrmQuotationProduct, CrmQuotationApplication, CrmQuotationLookup } from '@/types'
 import type { CrmOfferV2, CrmRndRequirement } from '@/types/rndIntake'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
@@ -121,8 +122,10 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inquiryId])
 
-  // Creator-or-admin (backend rule) AND Inquiries & Tenders › Edit in the Permission Matrix.
-  const canModify = !!inquiry && !!user && (user.role === 'admin' || inquiry.created_by_id === user.id) && can('crm', 'inquiries_tenders', 'edit') && !vis.preview
+  // Inquiries & Tenders › Edit tick AND the inquiry inside the role's CRM Edit scope (Role › Data access › Edit;
+  // default = its creator, BD owner and sales engineer) — the backend's ensure_can_change.
+  const changeable = inquiryChangeable(user, inquiry) && !vis.preview
+  const canModify = changeable && can('crm', 'inquiries_tenders', 'edit')
   const canEditRecord = canModify
   const canDeleteRecord = !!inquiry && canDelete('crm', 'inquiries_tenders', inquiry.created_by_id ?? null) && !vis.preview
   const isAdmin = user?.role === 'admin'
@@ -314,9 +317,9 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
       )}
       {/* Role editor preview: the sub-tabs load their own records, so the preview only shows a note under them. */}
       {tab !== 'Info' && seeTab(tab) && vis.preview && <p style={{ fontSize: 13, color: '#78716c', padding: '14px 16px', borderRadius: 12, background: '#fff', border: '1px dashed rgba(0,0,0,0.12)', margin: 0 }}>Shown with the real records on the page; the preview only decides whether this tab is offered.</p>}
-      {tab === 'Quotations' && seeQuotations && !vis.preview && <QuotationsTab inquiryId={inquiry.id} org={org} contact={contact} inquiry={inquiry} />}
+      {tab === 'Quotations' && seeQuotations && !vis.preview && <QuotationsTab parent={{ kind: 'inquiry', id: inquiry.id }} record={inquiry} org={org} contact={contact} />}
       {tab === 'Technical Offers' && seeTab('Technical Offers') && !vis.preview && <BdTechnicalOffers kind="inquiry" recordId={inquiry.id} />}
-      {tab === 'Documents' && seeTab('Documents') && !vis.preview && <DocumentsTab inquiry={inquiry} canModify={canModify && canFeature('crm', 'inquiries_tenders', 'documents', 'create')} isAdmin={isAdmin} />}
+      {tab === 'Documents' && seeTab('Documents') && !vis.preview && <DocumentsTab inquiry={inquiry} canModify={changeable && canFeature('crm', 'inquiries_tenders', 'documents', 'create')} isAdmin={isAdmin} />}
       {tab === 'Follow Ups' && seeTab('Follow Ups') && !vis.preview && <ActivitiesTab inquiry={inquiry} org={org} />}
       {tab === 'Timeline' && seeTab('Timeline') && !vis.preview && <TimelineTab inquiryId={inquiry.id} />}
 
@@ -494,7 +497,7 @@ const fmtAmount = (v: number | string | null | undefined) =>
 
 /** Quotation prices are visible with Prices & margins, or to whoever creates /
  *  edits / approves quotations (same rule as crm/access.py sees_quotation_prices). */
-const seesQuotationPrices = (canFeature: ReturnType<typeof useCan>['canFeature']) =>
+export const seesQuotationPrices = (canFeature: ReturnType<typeof useCan>['canFeature']) =>
   canFeature('crm', 'inquiries_tenders', 'prices', 'view')
   || canFeature('crm', 'inquiries_tenders', 'quotations', 'create')
   || canFeature('crm', 'inquiries_tenders', 'quotations', 'edit')
@@ -510,22 +513,27 @@ function SF({ label, tourId, children }: { label: ReactNode; tourId?: string; ch
   )
 }
 
-function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number; org: Organization | null; contact: OrgContact | null; inquiry: Inquiry }) {
+/** The Quotations tab, shared by the inquiry and the tender detail (a tender's price bid is the same quotation document). */
+export function QuotationsTab({ parent, record, org, contact }: { parent: { kind: 'inquiry' | 'tender'; id: number }; record: Inquiry | Tender; org: Organization | null; contact: OrgContact | null }) {
+  const parentId = parent.id
+  const parentWord = parent.kind === 'tender' ? 'tender' : 'inquiry'
   const { canFeature } = useCan()
   const { user: me } = useAuth()
-  // Inquiry owner or admin (backend rule) AND Inquiries & Tenders › Quotations › Create / Edit.
-  const ownerOrAdmin = !!me && (me.role === 'admin' || inquiry.created_by_id === me.id)
-  const canModify = ownerOrAdmin && canFeature('crm', 'inquiries_tenders', 'quotations', 'edit')
-  const canCreateQuote = ownerOrAdmin && canFeature('crm', 'inquiries_tenders', 'quotations', 'create')
+  // Quotations › Create / Edit / Submit tick AND the inquiry / tender (or, for one quotation, also its creator) inside
+  // the role's CRM Edit scope — the backend's can_change_quotation.
+  const inquiryOpen = parent.kind === 'tender' ? tenderChangeable(me, record as Tender) : inquiryChangeable(me, record as Inquiry)
+  const quotOpen = (q: QuotationItem) => quotationChangeable(me, q, record, parent.kind)
+  const canModify = inquiryOpen && canFeature('crm', 'inquiries_tenders', 'quotations', 'edit')
+  const canModifyQuot = (q: QuotationItem) => quotOpen(q) && canFeature('crm', 'inquiries_tenders', 'quotations', 'edit')
+  const canCreateQuote = inquiryOpen && canFeature('crm', 'inquiries_tenders', 'quotations', 'create')
   const seeQuotePrices = seesQuotationPrices(canFeature)
-  const { user } = useAuth()
   const [quotations, setQuotations] = useState<QuotationItem[]>([])
   const [showForm, setShowForm] = useState(false)
   // Revise opens the same full form, filled with this quotation; saving records a revision.
   const [revisingQuot, setRevisingQuot] = useState<QuotationItem | null>(null)
   const [revisionSource, setRevisionSource] = useState<QuotationItem | null>(null)
   const todayIso = new Date().toLocaleDateString('en-CA') // local date, not UTC
-  // R&D's released Technical Offers for this inquiry — the quotation quotes against one of them.
+  // R&D's released Technical Offers for this inquiry / tender — the quotation quotes against one of them.
   const [technicalOffers, setTechnicalOffers] = useState<CrmOfferV2[]>([])
   const currentOffer = technicalOffers.find((o) => o.status === 'released')
   const emptyForm = {
@@ -554,31 +562,31 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
   const [saving, setSaving] = useState(false)
   const [tabError, setTabError] = useState<{ title: string; message: string | string[] } | null>(null)
   const load = () => {
-    crmApi.listQuotations(inquiryId).then((data: QuotationItem[]) => {
+    crmApi.listQuotations(parent).then((data: QuotationItem[]) => {
       setQuotations(data)
       data.filter((q) => q.revision_number > 0).forEach((q) => {
-        crmApi.getQuotationRevisions(inquiryId, q.id)
+        crmApi.getQuotationRevisions(parent, q.id)
           .then((revs) => setQuotRevisions((m) => ({ ...m, [q.id]: revs })))
           .catch((err) => setTabError({ title: 'Cannot Load Revision History', message: extractErrorMessages(err, `Could not load the revision history of ${q.quot_number || 'this quotation'}. Refresh the page; if it persists, check your connection.`) }))
       })
-    }).catch((err) => setTabError({ title: 'Cannot Load Quotations', message: extractErrorMessages(err, 'Could not load the quotations for this inquiry. Refresh the page; if it persists, check your connection.') }))
+    }).catch((err) => setTabError({ title: 'Cannot Load Quotations', message: extractErrorMessages(err, `Could not load the quotations for this ${parentWord}. Refresh the page; if it persists, check your connection.`) }))
   }
   // Status (draft → approval → sent → accepted / lost) is driven by QuotationStatusBar,
   // not by a free-text customer-response select.
-  useEffect(() => { load() }, [inquiryId]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load() }, [parentId, parent.kind]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     crmApi.listQuotationProducts().then((d: CrmQuotationLookup) => { setQuotationProducts(d.products); setQuotationApplications(d.applications) })
       .catch((err) => setTabError({ title: 'Cannot Load Products', message: extractErrorMessages(err, 'Could not load the product list for quotation lines. Refresh the page; if it persists, ask an admin to check your CRM Quotations permission.') }))
     crmApi.listPaymentTerms().then(setPaymentTerms).catch(() => {})
   }, [])
   useEffect(() => {
-    crmApi.listTechnicalOffers('inquiry', inquiryId).then(setTechnicalOffers)
-      .catch((err) => setTabError({ title: 'Cannot Load Technical Offers', message: extractErrorMessages(err, "Could not load R&D's Technical Offers for this inquiry. Refresh the page; if it persists, check your connection.") }))
-  }, [inquiryId])
+    crmApi.listTechnicalOffers(parent.kind, parentId).then(setTechnicalOffers)
+      .catch((err) => setTabError({ title: 'Cannot Load Technical Offers', message: extractErrorMessages(err, `Could not load R&D's Technical Offers for this ${parentWord}. Refresh the page; if it persists, check your connection.`) }))
+  }, [parentId, parent.kind]) // eslint-disable-line react-hooks/exhaustive-deps
   const openTechnicalOfferPdf = async (offer: CrmOfferV2) => {
     const tab = window.open('', '_blank')
     try {
-      const url = URL.createObjectURL(await crmApi.technicalOfferFile('inquiry', inquiryId, offer.id))
+      const url = URL.createObjectURL(await crmApi.technicalOfferFile(parent.kind, parentId, offer.id))
       if (tab) tab.location.href = url
       else window.open(url, '_blank')
     } catch (err) {
@@ -605,7 +613,7 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
       ...(row.product_id !== String(product.id) ? { unit_price: '', subtotal: '', total: '' } : {}),
     } : row))
     if (form.pricing_mode === 'lumpsum' || !seeQuotePrices) return
-    crmApi.quotationProductPrice(inquiryId, product.id).then((r) => {
+    crmApi.quotationProductPrice(parent, product.id).then((r) => {
       if (r.price == null) {
         setProductNotice(`${product.name} has no price for this customer in the Product master — type the Price/unit, or add a price under CRM › Products › ${product.name} › Pricing.`)
         return
@@ -647,7 +655,7 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
     setDownloadingId(q.id)
     setPdfError('')
     try {
-      const blob = await crmApi.downloadQuotationPdf(inquiryId, q.id)
+      const blob = await crmApi.downloadQuotationPdf(parent, q.id)
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
@@ -697,9 +705,9 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
     })) : [{ ...emptyLineItem }]
   }
 
-  // "Fill from a past quotation": copies items, prices and terms of an earlier quotation OF THIS INQUIRY
-  // (owner, 2026-10-27: only this inquiry's quotations, never other inquiries'). Customer, Technical
-  // Offer and dates stay this inquiry's own.
+  // "Fill from a past quotation": copies items, prices and terms of an earlier quotation OF THIS INQUIRY / TENDER
+  // (owner, 2026-10-27: only this record's quotations, never another record's). Customer, Technical
+  // Offer and dates stay this record's own.
   const [pastQuery, setPastQuery] = useState('')
   const showPastPicker = showForm && !revisingQuot && quotations.length > 0
   const pastQuotes = useMemo(() => {
@@ -897,8 +905,8 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
     }
     setSaving(true)
     try {
-      if (revisingQuot) await crmApi.updateQuotation(inquiryId, revisingQuot.id, payload)
-      else await crmApi.createQuotation(inquiryId, payload)
+      if (revisingQuot) await crmApi.updateQuotation(parent, revisingQuot.id, payload)
+      else await crmApi.createQuotation(parent, payload)
     } catch (err) {
       setFormError(extractErrorMessages(err, 'Failed to save quotation.'))
       return
@@ -911,7 +919,7 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {(canCreateQuote || canModify) && (
+      {(canCreateQuote || canModify || quotations.some(canModifyQuot)) && (
         <div>
           {canCreateQuote && <button onClick={() => { setFormError(''); setForm(emptyForm); setItems([{ ...emptyLineItem }]); setRevisingQuot(null); setRevisionSource(null); setShowForm(true) }} data-tour="quotation-create-btn" style={primaryBtnStyle}>+ Create Quote</button>}
           {/* Create and Revise both open the form as a popup (FormSheet is portalled to body —
@@ -924,7 +932,7 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
                 ? `Saving updates this quotation as revision r${revisingQuot.revision_number + 1}; earlier versions stay available in its revision list.`
                 : revisionSource
                   ? `Pre-filled from ${revisionSource.quot_number || 'the selected quotation'} (items and terms). Dates are reset; saving creates a new draft quotation that needs approval — ${revisionSource.quot_number || 'the original'} stays as it is.`
-                  : `Price offer to ${org?.name || 'the customer'} for inquiry ${inquiry.universal_id}.`}
+                  : `Price offer to ${org?.name || 'the customer'} for ${parentWord} ${record.universal_id}.`}
               footer={<>
                 <button type="button" onClick={cancelForm} disabled={saving} data-tour="quot-cancel-btn" style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
                 <button type="submit" form="quotation-form" data-tour="quot-save" disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)}>
@@ -947,9 +955,9 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
                       onChange={setPastQuery}
                       onPick={(o) => { const q = pastQuotes.find((p) => String(p.id) === o.key); if (q) fillFromPast(q) }}
                       options={pastQuotes.map((q) => ({ key: String(q.id), label: pastQuoteLabel(q), sublabel: pastQuoteSub(q) }))}
-                      placeholder="This inquiry's quotations — search by quotation no. or item, pick one to copy its items, prices and terms"
+                      placeholder={`This ${parentWord}'s quotations — search by quotation no. or item, pick one to copy its items, prices and terms`}
                     />
-                    <p style={{ fontSize: 12, color: '#78716c', margin: '6px 0 0' }}>Customer, Technical Offer and dates stay as they are for this inquiry; everything copied can be edited before saving.</p>
+                    <p style={{ fontSize: 12, color: '#78716c', margin: '6px 0 0' }}>Customer, Technical Offer and dates stay as they are for this {parentWord}; everything copied can be edited before saving.</p>
                   </div>
                 </SheetSection>
               )}
@@ -988,7 +996,7 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
                 <div style={{ gridColumn: 'span 2' }}>
                   <SF label="Technical Offer" tourId="quot-tor-number">
                     {technicalOffers.length === 0 ? (
-                      <p style={{ fontSize: 12.5, color: '#78716c', margin: '10px 0 0' }}>No Technical Offer yet — R&amp;D uploads theirs and the R&amp;D head releases it to the BD team, or upload your own in this inquiry&apos;s Technical Offers tab.</p>
+                      <p style={{ fontSize: 12.5, color: '#78716c', margin: '10px 0 0' }}>No Technical Offer yet — R&amp;D uploads theirs and the R&amp;D head releases it to the BD team, or upload your own in this {parentWord}&apos;s Technical Offers tab.</p>
                     ) : (
                       <Select value={form.technical_offer_id} onChange={(e) => setForm((f) => ({ ...f, technical_offer_id: e.target.value }))} style={sheetInput}>
                         <option value="">— No technical offer —</option>
@@ -1209,7 +1217,7 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
                 {q.valid_until && ` · Valid till: ${formatDate(q.valid_until)}`}{q.submitted_date && ` · Submitted: ${formatDate(q.submitted_date)}`}
                 {seeQuotePrices && q.discount != null && ` · Discount: ${q.discount_type === 'flat' ? (q.quotation_type === 'Export' ? 'USD ' : 'INR ') : ''}${q.discount}${q.discount_type === 'flat' ? '' : '%'}`}
               </p>
-              <QuotationStatusBar inquiryId={inquiryId} quot={q} canModify={canModify} canSubmit={ownerOrAdmin && canFeature('crm', 'inquiries_tenders', 'quotations', 'submit')} canWork={canFeature('crm', 'inquiries_tenders', 'quotations', 'edit')} onChanged={load} tour={qIdx === 0} />
+              <QuotationStatusBar parent={parent} quot={q} canModify={canModifyQuot(q)} canSubmit={quotOpen(q) && canFeature('crm', 'inquiries_tenders', 'quotations', 'submit')} canWork={canFeature('crm', 'inquiries_tenders', 'quotations', 'edit')} onChanged={load} tour={qIdx === 0} />
               {q.quote_conditions && <p style={{ fontSize: 12, color: '#57534e', margin: '2px 0 0' }}>Conditions: {q.quote_conditions}</p>}
               {q.client_contact_name && (
                 <p style={{ fontSize: 12, color: '#57534e', margin: '2px 0 0' }}>
@@ -1281,7 +1289,7 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
               )}
               {q.payment_terms && <p style={{ fontSize: 12, color: '#57534e', margin: '4px 0 0' }}>Payment: {q.payment_terms}</p>}
               {q.notes && <p style={{ fontSize: 12, color: '#57534e', margin: '2px 0 0' }}>{q.notes}</p>}
-              {seeQuotePrices && <ManagedDocumentPanel entityType="crm_quotation" entityId={q.id} revision={q.revision_number} canModify={canModify && ['draft', 'submitted'].includes(q.status || 'draft')}recordLabel="quotation" downloadName={q.quot_number || `Quotation-${q.id}`} />}
+              {seeQuotePrices && <ManagedDocumentPanel entityType="crm_quotation" entityId={q.id} revision={q.revision_number} canModify={canModifyQuot(q) && ['draft', 'submitted'].includes(q.status || 'draft')}recordLabel="quotation" downloadName={q.quot_number || `Quotation-${q.id}`} />}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
               {canFeature('crm', 'inquiries_tenders', 'quotations', 'print') && seeQuotePrices && <button onClick={() => downloadPdf(q)} disabled={downloadingId === q.id} data-tour={qIdx === 0 ? 'quot-download-pdf-btn' : undefined} style={{ ...smallSecondaryBtnStyle, opacity: downloadingId === q.id ? 0.7 : 1 }}>
@@ -1294,7 +1302,7 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
                 </button>
               )}
               {/* Edit only while draft: a quotation awaiting approval must be withdrawn first (status bar), else the save is refused. */}
-              {canModify && (q.status || 'draft') === 'draft' && (
+              {canModifyQuot(q) && (q.status || 'draft') === 'draft' && (
                 <button onClick={() => startRevise(q)} data-tour={qIdx === 0 ? 'quot-revise-btn' : undefined} style={{ ...smallSecondaryBtnStyle }}>
                   Edit
                 </button>
@@ -1433,8 +1441,9 @@ function ActivitiesTab({ inquiry, org }: { inquiry: Inquiry; org: Organization |
     setShowForm(false)
   }
 
-  // Editing a follow-up (and its status) is creator-or-admin on the backend.
-  const canEditActivity = (a: CrmActivity) => canFeature('crm', 'inquiries_tenders', 'followups', 'edit') && !!user && (user.role === 'admin' || a.created_by_id === user.id)
+  // Editing a follow-up (and its status): Follow-ups › Edit tick + the follow-up inside the CRM Edit scope
+  // (default = its creator and the person it is assigned to).
+  const canEditActivity = (a: CrmActivity) => canFeature('crm', 'inquiries_tenders', 'followups', 'edit') && activityChangeable(user, a)
   const changeStatus = (a: CrmActivity, status: string) => crmApi.updateActivity(a.id, { status }).then(load)
 
   const handleDelete = async () => {
@@ -1589,7 +1598,7 @@ function ChangeStatusButton({ currentStatus, statuses, onSelect, tourId }: { cur
 
 type TimelineEntry = {
   key: string
-  kind: 'created' | 'updated' | 'deleted' | 'stage' | 'followup' | 'quotation' | 'info' | 'email' | 'email_failed'
+  kind: 'created' | 'updated' | 'deleted' | 'stage' | 'followup' | 'quotation' | 'info' | 'email' | 'email_failed' | 'rnd_query'
   title: string
   detail?: string
   by?: string
@@ -1606,9 +1615,11 @@ const TIMELINE_KIND_STYLE: Record<TimelineEntry['kind'], { bg: string; text: str
   info: { bg: 'rgba(99,102,241,0.12)', text: '#4338ca', label: 'Info Update' },
   email: { bg: 'rgba(13,148,136,0.12)', text: '#0f766e', label: 'Email Sent' },
   email_failed: { bg: 'rgba(220,38,38,0.1)', text: '#b91c1c', label: 'Email Failed' },
+  rnd_query: { bg: 'rgba(124,58,237,0.12)', text: '#6d28d9', label: 'R&D Query' },
 }
 
 function auditActionKind(action: string): TimelineEntry['kind'] {
+  if (action === 'rnd_asked_details') return 'rnd_query'
   if (action === 'created') return 'created'
   if (action === 'deleted') return 'deleted'
   if (action.endsWith('_sent')) return 'email'
@@ -1664,6 +1675,13 @@ function cleanAuditTitle(summary: string | null, actor: string | null | undefine
   return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
+// "Name (R&D) asked for more details on R1: question" → "Asked for more details on R1: question" (name is in the meta line).
+function rndQueryTitle(summary: string | null, actor: string | null | undefined): string {
+  let s = summary || 'R&D asked for more details'
+  if (actor && s.startsWith(actor)) s = s.slice(actor.length).replace(/^\s*\(R&D\)\s*/, '')
+  return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
 function TimelineTab({ inquiryId }: { inquiryId: number }) {
   const { canFeature: canFeatureTl } = useCan()
   const seeQuotationsTl = canFeatureTl('crm', 'inquiries_tenders', 'quotations', 'view')
@@ -1687,7 +1705,8 @@ function TimelineTab({ inquiryId }: { inquiryId: number }) {
           .map((a: { id: number; action: string; summary: string | null; performed_by: string; performed_at: string | null }) => ({
             key: `audit-${a.id}`,
             kind: auditActionKind(a.action),
-            title: cleanAuditTitle(a.summary, a.performed_by) || `Inquiry ${a.action}`,
+            // R&D's question is shown as written (no field-name relabelling of its text).
+            title: a.action === 'rnd_asked_details' ? rndQueryTitle(a.summary, a.performed_by) : cleanAuditTitle(a.summary, a.performed_by) || `Inquiry ${a.action}`,
             by: a.performed_by,
             date: a.performed_at,
           })),

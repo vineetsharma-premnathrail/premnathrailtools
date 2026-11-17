@@ -22,6 +22,13 @@ const config: TourConfig = {
       after: 'The goods are in stock. The receipt shows as "PO pending" with an "In stock" tag and appears in Procurement › Purchase Orders › Before PO.',
     },
     {
+      target: 'store-bpo-add-item',
+      title: '+ New item (inside the form)',
+      purpose: 'The square + next to a line’s Item field adds an item that is not in the Item Master yet, without leaving the receipt: type, category, name, unit and technical details (HSN / GST if printed on the bill). The Name on invoice is filled in for you.',
+      after: 'While you type, the Item Master is checked for the same item (same name on this vendor’s earlier bill, same or similar name) — click "Use this" to take the existing one instead of a duplicate. A new item goes onto the line and is marked "Added at inward — needs review" in the Item Master.',
+      why: 'The receipt is not held up by a missing item, and the Item Master does not fill up with copies of the same item.',
+    },
+    {
       target: 'store-bpo-stats',
       title: 'PO pending / PO created / Closed',
       purpose: 'PO pending: waiting for Procurement. PO created: a PO exists for it. Closed: the GRN for the full quantity is done. Click a number to show only those rows; click it again to show all.',

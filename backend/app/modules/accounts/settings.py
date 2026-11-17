@@ -22,7 +22,7 @@ _SPECS = [
                      "and deductions up to the limit post at once. 0 = every receipt with a deduction needs approval."),
     SettingSpec("small_difference_tolerance", "settlement", "Small-difference tolerance (₹)", "decimal", 10, min=0, max=1000,
                 help="A standalone write-off (no cash) of a residual up to this amount may be posted by any Finance user "
-                     "with Payments → Edit; above it, the write-off needs a Finance Manager."),
+                     "with Payments → Edit; above it, the write-off needs Payments → Approve."),
     SettingSpec("expense_payment_approval_limit", "approval", "Expense payment approval limit (₹)", "decimal", 0, min=0,
                 help="Expense payment vouchers above this amount wait for approval like vendor payments. 0 = expense "
                      "payments post at once (vendor payments always need approval)."),
@@ -58,7 +58,7 @@ _SPECS = [
     # buyer does not set the slack for checking their own POs.
     SettingSpec("invoice_qty_tolerance_pct", "invoice_match", "Quantity tolerance (%)", "decimal", 2.0, min=0, max=50,
                 help="A bill line may invoice up to this % more than was received (and not yet invoiced) on its PO line "
-                     "before it is held as a variance for Finance Manager approval."),
+                     "before it is held as a variance for approval (Purchase Invoices › Approve 3-way-match variance)."),
     SettingSpec("invoice_price_tolerance_pct", "invoice_match", "Price tolerance (%)", "decimal", 1.0, min=0, max=50,
                 help="A bill line's rate may differ from the PO line's rate by up to this % (either way)."),
     SettingSpec("invoice_price_tolerance_abs", "invoice_match", "Price tolerance cap (₹ per line)", "decimal", 500.0, min=0, max=10000000,

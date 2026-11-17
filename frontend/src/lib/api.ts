@@ -8,7 +8,7 @@ import { lockHeaderFor, rememberLockVersion } from '@/lib/lockVersion'
 import { IDEMPOTENT_METHODS, keyFor, settle } from '@/lib/idempotency'
 import { isUserActive, notifyLocked } from '@/lib/appLockState'
 import { looksLikeTeams, teamsSilentSignIn } from '@/lib/teamsAuth'
-import type { P2PRequestLineItemInput, RequirementMovement, RndRequirement, RndRequirementDetail, PRCategoryMeta, StoreDocType, StoreDocTypeKind, StoreStockEntry, StoreDocTypePayload, StoreIssueFormStandard, StorePlantAccess, StorePlantAccessPayload, StoreItemMeta, StoreItemVendorSuggestion, RndRequest, RndRequestAssignment, RndAssignee, PrTracker, MyLinesResponse } from '@/types'
+import type { P2PRequestLineItemInput, RequirementMovement, RndRequirement, RndRequirementDetail, PRCategoryMeta, StoreDocType, StoreDocTypeKind, StoreStockEntry, StoreDocTypePayload, StoreIssueFormStandard, StorePlantAccess, StorePlantAccessPayload, StoreItem, StoreItemMeta, StoreItemSimilar, StoreItemVendorSuggestion, RndRequest, RndRequestAssignment, RndAssignee, PrTracker, MyLinesResponse } from '@/types'
 
 // Files above this open through a direct SharePoint link rather than the API.
 const LARGE_DOWNLOAD_BYTES = 50 * 1024 * 1024
@@ -165,6 +165,8 @@ function refreshSession(): Promise<boolean> {
     refreshInFlight = (async () => {
       try {
         await apiClient.post('/auth/refresh')
+        // A new token is a good moment to pick up role / permission changes.
+        void useAuthStore.getState().refreshUser()
         return true
       } catch {
         // fall through to Teams
@@ -199,6 +201,12 @@ apiClient.interceptors.response.use(
         (error.config as { _retried?: boolean })._retried = true
         return apiClient.request(error.config)
       }
+    }
+
+    // A 403 may mean the roles changed since this tab loaded — re-read them
+    // (throttled) so the screen stops offering what the server now refuses.
+    if (error.response?.status === 403 && !url.includes('/auth/')) {
+      void useAuthStore.getState().refreshUser()
     }
 
     // A failed /auth/refresh is not itself the sign-out: refreshSession() may
@@ -409,6 +417,12 @@ export const managedDocumentsApi = {
     return (await apiClient.post(`/managed-documents/${entityType}/${entityId}/upload`, formData, { headers: { 'Content-Type': 'multipart/form-data' } })).data
   },
 }
+
+/** The record a CRM quotation belongs to: an inquiry (plain id, the old form) or a tender. */
+export type QuotParent = number | { kind: 'inquiry' | 'tender'; id: number }
+export const quotParentBase = (parent: QuotParent): string =>
+  typeof parent === 'number' ? `/crm/inquiries/${parent}`
+    : `/crm/${parent.kind === 'tender' ? 'tenders' : 'inquiries'}/${parent.id}`
 
 export const crmApi = {
   // R&D intake + Technical Offers on an inquiry / tender (BD side)
@@ -736,24 +750,26 @@ export const crmApi = {
     return data
   },
 
-  listQuotations: async (inquiryId: number) => (await apiClient.get(`/crm/inquiries/${inquiryId}/quotations`)).data,
+  // Quotation methods take the parent record: a plain number = an inquiry (old callers),
+  // or { kind: 'tender', id } for a tender's price bid. See quotParentBase.
+  listQuotations: async (parent: QuotParent) => (await apiClient.get(`${quotParentBase(parent)}/quotations`)).data,
   listPastQuotations: async (q?: string): Promise<import('@/types').QuotationItem[]> => (await apiClient.get('/crm/past-quotations', { params: q ? { q } : {} })).data,
   listInquiryTechnicalOffers: async (inquiryId: number): Promise<import('@/types').CrmTechnicalOfferOption[]> => (await apiClient.get(`/crm/inquiries/${inquiryId}/technical-offers`)).data,
   technicalOfferPdf: async (inquiryId: number, offerId: number): Promise<Blob> => (await apiClient.get(`/crm/inquiries/${inquiryId}/technical-offers/${offerId}/pdf`, { responseType: 'blob' })).data,
-  createQuotation: async (inquiryId: number, payload: Record<string, unknown>) => (await apiClient.post(`/crm/inquiries/${inquiryId}/quotations`, payload)).data,
-  updateQuotation: async (inquiryId: number, quotId: number, payload: Record<string, unknown>) => (await apiClient.patch(`/crm/inquiries/${inquiryId}/quotations/${quotId}`, payload)).data,
-  deleteQuotation: async (inquiryId: number, quotId: number) => (await apiClient.delete(`/crm/inquiries/${inquiryId}/quotations/${quotId}`)).data,
-  getQuotationRevisions: async (inquiryId: number, quotId: number) => (await apiClient.get(`/crm/inquiries/${inquiryId}/quotations/${quotId}/revisions`)).data,
-  downloadQuotationPdf: async (inquiryId: number, quotId: number) => {
-    const { data } = await apiClient.get(`/crm/inquiries/${inquiryId}/quotations/${quotId}/pdf`, { responseType: 'blob' })
+  createQuotation: async (parent: QuotParent, payload: Record<string, unknown>) => (await apiClient.post(`${quotParentBase(parent)}/quotations`, payload)).data,
+  updateQuotation: async (parent: QuotParent, quotId: number, payload: Record<string, unknown>) => (await apiClient.patch(`${quotParentBase(parent)}/quotations/${quotId}`, payload)).data,
+  deleteQuotation: async (parent: QuotParent, quotId: number) => (await apiClient.delete(`${quotParentBase(parent)}/quotations/${quotId}`)).data,
+  getQuotationRevisions: async (parent: QuotParent, quotId: number) => (await apiClient.get(`${quotParentBase(parent)}/quotations/${quotId}/revisions`)).data,
+  downloadQuotationPdf: async (parent: QuotParent, quotId: number) => {
+    const { data } = await apiClient.get(`${quotParentBase(parent)}/quotations/${quotId}/pdf`, { responseType: 'blob' })
     return data as Blob
   },
 
   listProducts: async (search?: string) => (await apiClient.get('/crm/products', { params: search ? { search } : {} })).data,
   // Product master choices for quotation lines (active + in development, with their applications).
   listQuotationProducts: async () => (await apiClient.get('/crm/quotation-products')).data,
-  quotationProductPrice: async (inquiryId: number, productId: number) =>
-    (await apiClient.get(`/crm/inquiries/${inquiryId}/quotation-products/${productId}/price`)).data as { price: number | null; price_source?: string | null },
+  quotationProductPrice: async (parent: QuotParent, productId: number) =>
+    (await apiClient.get(`${quotParentBase(parent)}/quotation-products/${productId}/price`)).data as { price: number | null; price_source?: string | null },
   createProduct: async (payload: Record<string, unknown>) => (await apiClient.post('/crm/products', payload)).data,
   updateProduct: async (id: number, payload: Record<string, unknown>) => (await apiClient.patch(`/crm/products/${id}`, payload)).data,
   deleteProduct: async (id: number) => (await apiClient.delete(`/crm/products/${id}`)).data,
@@ -2176,6 +2192,16 @@ export const storeApi = {
     const { data } = await apiClient.get('/store/items/meta')
     return data
   },
+  /** Look-alike items before a quick add at inward: same name on this vendor's bill, same or similar name. */
+  similarItems: async (params: { name: string; spec?: string; vendor_id?: number }): Promise<StoreItemSimilar[]> => {
+    const { data } = await apiClient.get('/store/items/similar', { params, background: true })
+    return data
+  },
+  /** Clears "Added at inward — needs review" on an item. */
+  markItemReviewed: async (id: number): Promise<StoreItem> => {
+    const { data } = await apiClient.post(`/store/items/${id}/mark-reviewed`)
+    return data
+  },
   // Who can supply the item: preferred vendor, vendor catalogs, past POs.
   getItemVendors: async (id: number): Promise<StoreItemVendorSuggestion[]> => {
     const { data } = await apiClient.get(`/store/items/${id}/vendors`)
@@ -3325,6 +3351,7 @@ export const rndApi = {
     if (p.record_id) form.append('record_id', String(p.record_id))
     if (p.rnd_project_id) form.append('rnd_project_id', String(p.rnd_project_id))
     if (p.pm_project_id) form.append('pm_project_id', String(p.pm_project_id))
+    if (p.machine_id) form.append('machine_id', String(p.machine_id))
     if (p.remarks) form.append('remarks', p.remarks)
     if (p.start_date) form.append('start_date', p.start_date)
     if (p.checklist?.length) form.append('checklist', JSON.stringify(p.checklist))
@@ -3332,10 +3359,25 @@ export const rndApi = {
     const { data } = await apiClient.post('/rnd/tasks', form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 600000, activityLabel: 'Assigning' }); return data
   },
   /** Project Management (All Projects) projects the user may give R&D tasks on. */
-  pmProjectOptions: async (q?: string): Promise<{ id: number; project_code: string; name: string; label: string }[]> => { const { data } = await apiClient.get('/rnd/tasks/pm-project-options', { params: q ? { q } : undefined }); return data },
+  pmProjectOptions: async (q?: string): Promise<{ kind?: 'pm_project' | 'machine'; id: number; project_code: string; name: string; client_name?: string | null; label: string }[]> => { const { data } = await apiClient.get('/rnd/tasks/pm-project-options', { params: q ? { q } : undefined }); return data },
   // R&D tasks on a Project Management project — same RndTask shape; task-level actions reuse the project-task methods below.
   pmProjectTaskAccess: async (pmProjectId: number): Promise<{ can_manage: boolean; people: import('@/types').RndPerson[]; team: import('@/types').RndPerson[]; project: { id: number; project_code: string; name: string; client_name: string | null; status: string } }> => { const { data } = await apiClient.get(`/rnd/pm-projects/${pmProjectId}/task-access`); return data },
   listPmProjectTasks: async (pmProjectId: number): Promise<import('@/types').RndTask[]> => { const { data } = await apiClient.get(`/rnd/pm-projects/${pmProjectId}/tasks`); return data },
+  // R&D tasks on a past machine (PEW-1.. serial, All Projects) — same RndTask shape, task-level actions reuse the project-task methods.
+  machineTaskAccess: async (machineId: number): Promise<{ can_manage: boolean; people: import('@/types').RndPerson[]; team: import('@/types').RndPerson[]; /** The machine's own card: the serial (project_number / project_code) and title (title / name) — either spelling is accepted. */ machine?: { id: number; project_number?: string; project_code?: string; title?: string | null; name?: string | null; client_name?: string | null; status?: string | null }; project?: { id: number; project_number?: string; project_code?: string; title?: string | null; name?: string | null; client_name?: string | null; status?: string | null } }> => { const { data } = await apiClient.get(`/rnd/machines/${machineId}/task-access`); return data },
+  listMachineTasks: async (machineId: number): Promise<import('@/types').RndTask[]> => { const { data } = await apiClient.get(`/rnd/machines/${machineId}/tasks`); return data },
+  createMachineTask: async (machineId: number, p: import('@/types').RndTaskCreateInput, parentTaskId?: number): Promise<import('@/types').RndTask> => {
+    const form = new FormData()
+    form.append('title', p.title)
+    form.append('assigned_to_id', String(p.assigned_to_id))
+    form.append('due_date', p.due_date)
+    if (p.remarks) form.append('remarks', p.remarks)
+    appendTaskPlanning(form, p)
+    for (const f of p.files) form.append('files', f)
+    const url = parentTaskId ? `/rnd/project-tasks/${parentTaskId}/subtasks` : `/rnd/machines/${machineId}/tasks`
+    const { data } = await apiClient.post(url, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 600000, activityLabel: 'Assigning' })
+    return data
+  },
   createPmProjectTask: async (pmProjectId: number, p: import('@/types').RndTaskCreateInput, parentTaskId?: number): Promise<import('@/types').RndTask> => {
     const form = new FormData()
     form.append('title', p.title)
@@ -3377,11 +3419,6 @@ export const rndApi = {
   linkableProjects: async (source: string, id: number): Promise<import('@/types').RndLinkedProject[]> => { const { data } = await apiClient.get(`/rnd/requirement-work/${source}/${id}/linkable-projects`); return data },
   linkProject: async (source: string, id: number, projectId: number): Promise<import('@/types').RndLinkedProject[]> => { const { data } = await apiClient.post(`/rnd/requirement-work/${source}/${id}/projects`, { project_id: projectId }); return data },
   unlinkProject: async (source: string, id: number, projectId: number): Promise<import('@/types').RndLinkedProject[]> => { const { data } = await apiClient.delete(`/rnd/requirement-work/${source}/${id}/projects/${projectId}`); return data },
-  // Per-requirement access (set by the R&D head)
-  getAccess: async (source: string, id: number): Promise<import('@/types').RndRequirementAccessRow[]> => { const { data } = await apiClient.get(`/rnd/requirement-work/${source}/${id}/access`); return data },
-  saveAccess: async (source: string, id: number, rows: Omit<import('@/types').RndRequirementAccessRow, 'name' | 'granted_by'>[]): Promise<import('@/types').RndRequirementAccessRow[]> => {
-    const { data } = await apiClient.put(`/rnd/requirement-work/${source}/${id}/access`, { rows }); return data
-  },
   // Requirement documents on the R&D side - opened only through the R&D access check
   listWorkDocuments: async (source: string, id: number): Promise<import('@/types').RndWorkDocument[]> => { const { data } = await apiClient.get(`/rnd/requirement-work/${source}/${id}/documents`); return data },
   /** Upload under one of my departments; 'own' keeps the files to that department, 'all' shows them to every department. */
@@ -3391,9 +3428,6 @@ export const rndApi = {
     form.append('category', opts.category)
     const { data } = await apiClient.post(`/rnd/requirement-work/${source}/${id}/documents`, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 600000, activityLabel: 'Uploading' })
     return data
-  },
-  setDocumentVisibility: async (documentId: number, sharedWithAll: boolean): Promise<import('@/types').RndWorkDocument> => {
-    const { data } = await apiClient.patch(`/rnd/requirement-work/documents/${documentId}/visibility`, { shared_with_all: sharedWithAll }); return data
   },
   /** What I may do on a requirement and which of its departments I belong to (R&D or a shared department). */
   requirementMyAccess: async (source: string, id: number): Promise<import('@/types').RndMyAccess> => { const { data } = await apiClient.get(`/rnd/requirement-work/${source}/${id}/my-access`); return data },
@@ -3413,13 +3447,7 @@ export const rndApi = {
   myTasks: async (includeDone = false): Promise<import('@/types').RndTask[]> => { const { data } = await apiClient.get('/rnd/requirement-work/tasks/mine', { params: includeDone ? { include_done: true } : undefined }); return data },
   /** Tasks assigned to me on R&D (Prototype / Research) projects. */
   myProjectTasks: async (includeDone = false): Promise<import('@/types').RndTask[]> => { const { data } = await apiClient.get('/rnd/project-tasks/mine', { params: includeDone ? { include_done: true } : undefined }); return data },
-  // Requirement Plan & Milestones (same plan as an R&D project) and the requirement's History tab.
-  listRequirementMilestones: async (source: string, id: number): Promise<import('@/types').RndMilestone[]> => { const { data } = await apiClient.get(`/rnd/requirement-work/${source}/${id}/milestones`); return data },
-  requirementMilestonePeople: async (source: string, id: number): Promise<{ id: number; name: string; department?: string | null; designation?: string | null; team_role: string }[]> => { const { data } = await apiClient.get(`/rnd/requirement-work/${source}/${id}/milestone-people`); return data },
-  createRequirementMilestone: async (source: string, id: number, p: import('@/types').RndMilestoneInput): Promise<import('@/types').RndMilestone> => { const { data } = await apiClient.post(`/rnd/requirement-work/${source}/${id}/milestones`, p); return data },
-  editRequirementMilestone: async (source: string, id: number, milestoneId: number, p: Partial<import('@/types').RndMilestoneInput>): Promise<import('@/types').RndMilestone> => { const { data } = await apiClient.patch(`/rnd/requirement-work/${source}/${id}/milestones/${milestoneId}`, p); return data },
-  requirementMilestoneStatus: async (source: string, id: number, milestoneId: number, action: 'done' | 'reopen' | 'cancel', reason?: string): Promise<import('@/types').RndMilestone> => { const { data } = await apiClient.post(`/rnd/requirement-work/${source}/${id}/milestones/${milestoneId}/status`, { action, reason }); return data },
-  deleteRequirementMilestone: async (source: string, id: number, milestoneId: number): Promise<{ message: string }> => { const { data } = await apiClient.delete(`/rnd/requirement-work/${source}/${id}/milestones/${milestoneId}`); return data },
+  // The requirement's Timeline (old History tab).
   requirementHistory: async (source: string, id: number): Promise<import('@/types').RndProjectHistoryEntry[]> => { const { data } = await apiClient.get(`/rnd/requirement-work/${source}/${id}/history`); return data },
   createTask: async (source: string, id: number, p: import('@/types').RndTaskCreateInput): Promise<import('@/types').RndTask> => {
     const form = new FormData()
@@ -3487,30 +3515,14 @@ export const rndApi = {
   listAllRequirementDocuments: async (source: string, id: number): Promise<import('@/types').RndWorkDocument[]> => { const { data } = await apiClient.get(`/rnd/requirement-work/${source}/${id}/all-documents`); return data },
   // Technical Offers on a requirement (R&D prepares, the R&D head releases, CRM quotes against it).
   listTechnicalOffers: async (source: string, id: number): Promise<import('@/types/rndIntake').RndOfferV2[]> => { const { data } = await apiClient.get(`/rnd/requirement-work/${source}/${id}/technical-offers`); return data },
-  technicalOfferTorOptions: async (): Promise<import('@/types').RndTorOption[]> => { const { data } = await apiClient.get('/rnd/requirement-work/technical-offers/tor-options'); return data },
-  createTechnicalOffer: async (source: string, id: number, p: Partial<import('@/types').RndTechnicalOfferInput> = {}): Promise<import('@/types').RndTechnicalOffer> => { const { data } = await apiClient.post(`/rnd/requirement-work/${source}/${id}/technical-offers`, p); return data },
   updateTechnicalOffer: async (offerId: number, p: Partial<import('@/types').RndTechnicalOfferInput>): Promise<import('@/types').RndTechnicalOffer> => { const { data } = await apiClient.patch(`/rnd/requirement-work/technical-offers/${offerId}`, p); return data },
   deleteTechnicalOffer: async (offerId: number) => { const { data } = await apiClient.delete(`/rnd/requirement-work/technical-offers/${offerId}`); return data },
   releaseTechnicalOffer: async (offerId: number): Promise<import('@/types').RndTechnicalOffer> => { const { data } = await apiClient.post(`/rnd/requirement-work/technical-offers/${offerId}/release`); return data },
-  reviseTechnicalOffer: async (offerId: number, reason: string): Promise<import('@/types').RndTechnicalOffer> => { const { data } = await apiClient.post(`/rnd/requirement-work/technical-offers/${offerId}/revise`, { reason }); return data },
-  /** Creator → R&D head for approval (frozen until approved or returned). */
-  submitTechnicalOffer: async (offerId: number): Promise<import('@/types').RndTechnicalOffer> => { const { data } = await apiClient.post(`/rnd/requirement-work/technical-offers/${offerId}/submit`); return data },
   returnTechnicalOffer: async (offerId: number, reason: string): Promise<import('@/types').RndTechnicalOffer> => { const { data } = await apiClient.post(`/rnd/requirement-work/technical-offers/${offerId}/return`, { reason }); return data },
-  requestTechnicalOfferRevision: async (offerId: number, reason: string): Promise<import('@/types').RndTechnicalOffer> => { const { data } = await apiClient.post(`/rnd/requirement-work/technical-offers/${offerId}/request-revision`, { reason }); return data },
-  decideTechnicalOfferRevision: async (offerId: number, approve: boolean, note?: string): Promise<import('@/types').RndTechnicalOffer> => { const { data } = await apiClient.post(`/rnd/requirement-work/technical-offers/${offerId}/revision-request/decide`, { approve, note }); return data },
-  // Shared with Design / Electrical / Hydraulic & Pneumatic for a feasibility reply.
-  listShares: async (source: string, id: number): Promise<import('@/types').RndRequirementShare[]> => { const { data } = await apiClient.get(`/rnd/requirement-work/${source}/${id}/shares`); return data },
-  shareRequirement: async (source: string, id: number, p: { departments: string[]; note: string; due_date: string | null }): Promise<import('@/types').RndRequirementShare[]> => { const { data } = await apiClient.post(`/rnd/requirement-work/${source}/${id}/shares`, p); return data },
   // Project (Prototype / Research) tasks — same RndTask shape as requirement tasks.
   projectTaskAccess: async (projectId: number): Promise<{ can_manage: boolean; people: import('@/types').RndPerson[]; team: import('@/types').RndPerson[] }> => { const { data } = await apiClient.get(`/rnd/projects/${projectId}/task-access`); return data },
   listProjectTasks: async (projectId: number): Promise<import('@/types').RndTask[]> => { const { data } = await apiClient.get(`/rnd/projects/${projectId}/tasks`); return data },
-  // Project Plan & Milestones (same plan as Project Management) and the project's History tab.
-  listMilestones: async (projectId: number): Promise<import('@/types').RndMilestone[]> => { const { data } = await apiClient.get(`/rnd/projects/${projectId}/milestones`); return data },
-  milestonePeople: async (projectId: number): Promise<{ id: number; name: string; department?: string | null; designation?: string | null; team_role: string }[]> => { const { data } = await apiClient.get(`/rnd/projects/${projectId}/milestone-people`); return data },
-  createMilestone: async (projectId: number, p: import('@/types').RndMilestoneInput): Promise<import('@/types').RndMilestone> => { const { data } = await apiClient.post(`/rnd/projects/${projectId}/milestones`, p); return data },
-  editMilestone: async (projectId: number, milestoneId: number, p: Partial<import('@/types').RndMilestoneInput>): Promise<import('@/types').RndMilestone> => { const { data } = await apiClient.patch(`/rnd/projects/${projectId}/milestones/${milestoneId}`, p); return data },
-  milestoneStatus: async (projectId: number, milestoneId: number, action: 'done' | 'reopen' | 'cancel', reason?: string): Promise<import('@/types').RndMilestone> => { const { data } = await apiClient.post(`/rnd/projects/${projectId}/milestones/${milestoneId}/status`, { action, reason }); return data },
-  deleteMilestone: async (projectId: number, milestoneId: number): Promise<{ message: string }> => { const { data } = await apiClient.delete(`/rnd/projects/${projectId}/milestones/${milestoneId}`); return data },
+  // The project's Timeline (old History tab).
   projectHistory: async (projectId: number): Promise<import('@/types').RndProjectHistoryEntry[]> => { const { data } = await apiClient.get(`/rnd/projects/${projectId}/history`); return data },
   createProjectTask: async (projectId: number, p: import('@/types').RndTaskCreateInput, parentTaskId?: number): Promise<import('@/types').RndTask> => {
     const form = new FormData()
@@ -3668,13 +3680,9 @@ export const rndApi = {
 
   toolPath: (toolName: string) => RND_TOOL_PATHS[toolName] || toolName,
 
-  // R&D module — dashboard, projects (+ stage / feasibility), experiments, prototypes.
+  // R&D module — dashboard, projects (+ stage / feasibility).
   getDashboard: async () => {
     const { data } = await apiClient.get('/rnd/dashboard')
-    return data
-  },
-  lookupStoreItems: async (search?: string) => {
-    const { data } = await apiClient.get('/rnd/lookups/store-items', { params: search ? { search } : {} })
     return data
   },
 
@@ -3723,52 +3731,6 @@ export const rndApi = {
   },
   saveFeasibility: async (projectId: number, payload: Record<string, unknown>) => {
     const { data } = await apiClient.put(`/rnd/projects/${projectId}/feasibility`, payload)
-    return data
-  },
-
-  listExperiments: async (params: Record<string, unknown> = {}) => {
-    const { data } = await apiClient.get('/rnd/experiments', { params })
-    return data
-  },
-  getExperiment: async (id: number) => {
-    const { data } = await apiClient.get(`/rnd/experiments/${id}`)
-    return data
-  },
-  createExperiment: async (payload: Record<string, unknown>) => {
-    const { data } = await apiClient.post('/rnd/experiments', payload)
-    return data
-  },
-  updateExperiment: async (id: number, payload: Record<string, unknown>) => {
-    const { data } = await apiClient.patch(`/rnd/experiments/${id}`, payload)
-    return data
-  },
-  deleteExperiment: async (id: number) => {
-    const { data } = await apiClient.delete(`/rnd/experiments/${id}`)
-    return data
-  },
-
-  listPrototypes: async (params: Record<string, unknown> = {}) => {
-    const { data } = await apiClient.get('/rnd/prototypes', { params })
-    return data
-  },
-  getPrototype: async (id: number) => {
-    const { data } = await apiClient.get(`/rnd/prototypes/${id}`)
-    return data
-  },
-  createPrototype: async (payload: Record<string, unknown>) => {
-    const { data } = await apiClient.post('/rnd/prototypes', payload)
-    return data
-  },
-  updatePrototype: async (id: number, payload: Record<string, unknown>) => {
-    const { data } = await apiClient.patch(`/rnd/prototypes/${id}`, payload)
-    return data
-  },
-  deletePrototype: async (id: number) => {
-    const { data } = await apiClient.delete(`/rnd/prototypes/${id}`)
-    return data
-  },
-  releasePrototypeToProduction: async (id: number, payload: { product_item_id: number; base_quantity?: number; remarks?: string }) => {
-    const { data } = await apiClient.post(`/rnd/prototypes/${id}/release-to-production`, payload)
     return data
   },
 

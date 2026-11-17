@@ -10,6 +10,7 @@ import { poReportsApi } from '@/lib/api'
 import { TEXT } from '@/lib/theme'
 import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
+import ScopeNote from '@/components/shared/ScopeNote'
 import { inputStyle, pageBtnStyle, secondaryBtnStyle, smallSecondaryBtnStyle, RowCount, Pill, StatChip } from '@/components/shared/ui'
 import FilterMenu from '@/components/shared/FilterMenu'
 import DateField from '@/components/erp/DateField'
@@ -213,6 +214,7 @@ export default function POTrackingList({ lead }: { lead?: React.ReactNode }) {
 
       <div className="ui-cols" style={{ display: 'grid', gridTemplateColumns: split ? 'minmax(0, 1fr) minmax(400px, 460px)' : 'minmax(0, 1fr)', gap: 16, alignItems: 'start' }}>
         <div>
+          {!loading && <ScopeNote module="p2p" empty={rows.length === 0} />}
           <div data-tour="p2p-pot-table" style={{ ...PO_CARD, overflow: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>

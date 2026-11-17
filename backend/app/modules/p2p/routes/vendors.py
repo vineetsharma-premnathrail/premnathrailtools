@@ -45,8 +45,11 @@ def _lookup(user: User = Depends(get_current_user)) -> User:
     """Read access to the vendor master. Besides 'View' on Procurement ›
     Vendors, the Purchase desk (RFQ vendor slots, PO drafts pick vendors from
     here) and Accounts (the shared master, owned by Finance) keep reading it —
-    a cross-module lookup, so it is not tied to the Vendors tab alone."""
-    if can_view_tab(user, "p2p", "vendors") or {"purchase", "accounts"} & set(user.get_apps()):
+    a cross-module lookup, so it is not tied to the Vendors tab alone. 'View' on
+    R.F.Q or Purchase Orders reads it too (they pick vendors there; the tab
+    grant decides, not the desk — 2026-11-14)."""
+    if (can_view_tab(user, "p2p", "vendors") or can_view_tab(user, "p2p", "rfq") or can_view_tab(user, "p2p", "purchase_orders")
+            or {"purchase", "accounts"} & set(user.get_apps())):
         return user
     raise HTTPException(status_code=403, detail=f"You don't have 'View' permission on Procurement › Vendors. {GRANT_HINT}")
 

@@ -15,7 +15,7 @@ register_features(
     }, "The Technical specifications table on a product (parameter / value / unit)."),
     _feature("prices", "Prices & sales values", "sensitive", {
         "view": "view",
-    }, "Prices on a product page: its country prices. Without it the Pricing section is hidden."),
+    }, "Amounts in a product page's Pricing section (country prices). Without it the section still shows (Pricing › View) but prices read 'Hidden'."),
     _feature("pricing", "Pricing", "section", {
         "view": "view", "create": "create", "edit": "edit", "delete": "delete",
     }, "Country prices inside a product: see them, add (create), change (edit) and remove (delete) a price."),

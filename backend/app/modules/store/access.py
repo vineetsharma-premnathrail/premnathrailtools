@@ -38,7 +38,7 @@ def ensure_any_store_action(user: User, *grants: tuple[str, str]) -> None:
 # the row) that the central data scope filters on, so "Plant" / "Multiple
 # plants" scopes see the documents of their plants' stores. This replaces the
 # old Store › Settings › Plant Access list (see services/plant_access.py).
-from sqlalchemy import false, select  # noqa: E402
+from sqlalchemy import false, or_, select, true  # noqa: E402
 from sqlalchemy.orm import column_property, object_session  # noqa: E402
 
 from app.core.data_scope import register_scoped, user_branch_ids, user_scope  # noqa: E402
@@ -81,13 +81,54 @@ def _transfer_into_my_plants(user):
     return StoreStockTransfer.to_plant_id.in_(ids) if ids else false()
 
 
+def _transfer_into_my_stores(user):
+    """Transfers coming INTO a store the user receives for: the receiving
+    store's own manager, and whoever may receive (Store › Transfers ›
+    Receive a transfer › Edit) for the stores their Store access covers — the person who has
+    to confirm receipt must see what is coming (owner, 2026-11-14: the tick
+    decides)."""
+    from app.core.permission_registry import can_feature
+
+    parts = [StoreStockTransfer.to_location_id.in_(select(StoreLocation.id).where(StoreLocation.manager_user_id == user.id))]
+    db = object_session(user)
+    if db is not None and can_feature(user, "store", "transfers", "receive", "edit"):
+        from app.modules.store.services.plant_access import visible_location_ids
+
+        stores = visible_location_ids(db, user)
+        if stores is None:
+            return true()
+        if stores:
+            parts.append(StoreStockTransfer.to_location_id.in_(stores))
+    return or_(*parts)
+
+
+def _transfers_i_may_decide(user):
+    """Pending transfers the user may approve although they are not the
+    routed approver: holders of Store › Transfers › Approve are the stage's
+    "also allowed" approvers (services/approvals.py transfer_default_stages)."""
+    from app.core.permission_registry import can_perform
+
+    db = object_session(user)
+    if db is None or not can_perform(user, "store", "transfers", "approve"):
+        return false()
+    from app.modules.organization.models.approval import ApprovalRequest, ApprovalRequestStep
+
+    rows = (db.query(ApprovalRequest.entity_id, ApprovalRequestStep.escalated_to_ids)
+            .join(ApprovalRequestStep, ApprovalRequestStep.request_id == ApprovalRequest.id)
+            .filter(ApprovalRequest.entity_type == "stock_transfer", ApprovalRequest.status == "pending").all())
+    ids = {eid for eid, also in rows if user.id in (also or [])}
+    return StoreStockTransfer.id.in_(ids) if ids else false()
+
+
 register_scoped(StoreMaterialIssue, "store", owner=("issued_by_id", "requested_by_id"), branch="plant_id",
                 label="material issue")
 register_scoped(StoreMaterialReturn, "store", entity_type="material_return", owner=("returned_by_id",),
                 branch="plant_id", label="material return")
 register_scoped(StoreStockAdjustment, "store", entity_type="stock_adjustment", owner=("created_by_id",),
                 assigned=("approved_by_id",), branch="plant_id", label="stock adjustment")
-register_scoped(StoreStockTransfer, "store", owner=("transferred_by_id",), assigned=(_transfer_into_my_plants,),
+# entity_type: the routed approver (sending store's manager) sees what they approve.
+register_scoped(StoreStockTransfer, "store", entity_type="stock_transfer", owner=("transferred_by_id",),
+                assigned=(_transfer_into_my_plants, _transfer_into_my_stores, _transfers_i_may_decide),
                 branch="plant_id", label="stock transfer")
 register_scoped(StoreStockReservation, "store", owner=("reserved_by_id",), branch="plant_id", label="stock reservation")
 register_scoped(StoreStockTransaction, "store", owner=("created_by_id",), branch="plant_id", label="stock movement")

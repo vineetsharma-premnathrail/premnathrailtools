@@ -36,7 +36,7 @@ const config: TourConfig = {
       options: [
         { value: 'BD / CRM', meaning: 'From sales — linked to a CRM inquiry or tender.' },
         { value: 'Project', meaning: 'From a running project.' },
-        { value: 'R&D hand-over', meaning: 'A prototype from R&D to be turned into production drawings.' },
+        { value: 'R&D hand-over', meaning: 'A design handed over by an R&D project, to be turned into production drawings.' },
         { value: 'Internal', meaning: 'Design-initiated work.' },
       ],
     },

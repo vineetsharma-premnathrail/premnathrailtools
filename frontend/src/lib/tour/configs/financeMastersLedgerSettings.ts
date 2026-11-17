@@ -22,7 +22,7 @@ const config: TourConfig = {
         { value: 'Change to', meaning: 'Pick a new ledger; it saves immediately.' },
         { value: 'Reset to default', meaning: 'Puts the role back on the standard ledger.' },
       ],
-      after: 'A change affects new postings only — vouchers already posted stay where they are. Only a Finance Manager (or admin) can change these.',
+      after: 'A change affects new postings only — vouchers already posted stay where they are. Changing them needs Edit on Ledger Settings in your role.',
     },
   ],
 }

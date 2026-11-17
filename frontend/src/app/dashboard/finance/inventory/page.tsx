@@ -35,12 +35,11 @@ function qty(n: number | null | undefined): string {
 }
 
 export default function FinanceInventoryPage() {
-  const { isAuthorized, isLoading, user } = useRequireApp('accounts')
+  const { isAuthorized, isLoading } = useRequireApp('accounts')
   const [tab, setTab] = useState<Tab>('Stock Value')
   const { canFeature } = useCan()
-  const isFm = !!user?.is_finance_manager || user?.role === 'admin'
-  const canPost = isFm && canFeature('accounts', 'inventory', 'closing_stock', 'approve')
-  const canCancel = isFm && canFeature('accounts', 'inventory', 'closing_stock', 'cancel')
+  const canPost = canFeature('accounts', 'inventory', 'closing_stock', 'approve')
+  const canCancel = canFeature('accounts', 'inventory', 'closing_stock', 'cancel')
   // Stock Value is the tab's base view; the other two are features of it.
   const visibleTabs = TABS.filter((t) => (t !== 'Purchase / Sales Impact' || canFeature('accounts', 'inventory', 'purchase_sales_impact', 'view'))
     && (t !== 'Closing Stock' || canFeature('accounts', 'inventory', 'closing_stock', 'view')))
@@ -371,7 +370,7 @@ function ValuationDetail({ valuation, canPost, canCancel, onChange, onBack }: {
           <button data-tour="fin-inv-val-back" style={secondaryBtnStyle} onClick={onBack}>← Back</button>
         </div>
       </div>
-      {!canPost && !canCancel && valuation.status !== 'cancelled' && <InfoBanner>Only a Finance Manager can post or cancel a closing-stock valuation.</InfoBanner>}
+      {!canPost && !canCancel && valuation.status !== 'cancelled' && <InfoBanner>Posting or cancelling a closing-stock valuation needs &apos;Approve&apos; / &apos;Cancel&apos; on Finance &amp; Accounting › Inventory › Closing stock — ask an admin to tick it on your role.</InfoBanner>}
       {isDraft && <InfoBanner>Draft: correct any quantity from the physical count, or a rate (it becomes a manual rate), then post. Changes save when you leave the cell.</InfoBanner>}
       <ErrorBanner error={error} />
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>

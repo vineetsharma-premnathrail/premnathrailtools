@@ -7,9 +7,11 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.core.permissions import require_feature_action, require_tab_access, require_tab_action
+from app.core.permissions import require_feature_action, require_tab_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
+from app.modules.main.routes.auth import get_current_user
+from app.modules.store.access import ensure_any_store_action
 from app.modules.store.models.bin import StoreBin
 from app.modules.store.models.bin_move import StoreBinMove
 from app.modules.store.models.item import StoreItem
@@ -18,6 +20,13 @@ from app.modules.store.services.bins import BinError, move_between_bins, stock_b
 from app.modules.store.services.plant_access import ensure_location_allowed, visible_location_ids
 
 router = APIRouter(prefix="/store/bin-stock", tags=["Store"])
+
+
+def _stock_or_bins_viewer(user: User = Depends(get_current_user)) -> User:
+    """Bin stock is read from Stock (Inventory › Bin Stock) and from the Bins
+    page: 'View' on either opens it (the matrix tick decides)."""
+    ensure_any_store_action(user, ("stock", "view"), ("bins", "view"))
+    return user
 
 
 class StoreBinMoveCreate(BaseModel):
@@ -44,7 +53,7 @@ async def bin_stock(
     bin_id: int | None = Query(None),
     include_unassigned: bool = Query(True),
     db: Session = Depends(get_db),
-    user: User = Depends(require_tab_access("store", "stock")),
+    user: User = Depends(_stock_or_bins_viewer),
 ):
     """Stock per item × store × bin; the row with bin_id null is what is in
     the store but not in any bin ('Unassigned')."""
@@ -146,7 +155,7 @@ async def list_bin_moves(
     location_id: int | None = Query(None),
     item_id: int | None = Query(None),
     db: Session = Depends(get_db),
-    user: User = Depends(require_tab_access("store", "stock")),
+    user: User = Depends(_stock_or_bins_viewer),
 ):
     q = db.query(StoreBinMove)
     allowed = visible_location_ids(db, user)

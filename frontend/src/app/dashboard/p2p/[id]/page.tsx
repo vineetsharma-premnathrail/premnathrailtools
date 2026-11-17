@@ -194,7 +194,9 @@ export default function MyP2PRequestDetailPage() {
   // The requisition's timeline; an uploaded Tally PO keeps its own PDF on its entry.
   const [history, setHistory] = useState<AuditEntry[]>(vis.preview ? (sampleHistory as AuditEntry[]) : [])
 
-  const isPurchaseTeam = !!user?.apps?.includes('purchase')
+  // Purchase Desk is a requisition DATA-SCOPE right only (owner, 2026-11-14): it never gates a button —
+  // each button follows its own tab / feature tick, and the server checks the data scope on top.
+  const worksEveryPr = user?.role === 'admin' || !!user?.apps?.includes('purchase')
   const { can, canFeature } = useCan()
   // Working a PR (edit / cancel / close / stock decisions) needs 'Edit' on
   // Purchase Requisitions; named approvers act through routing with View only.
@@ -355,8 +357,7 @@ export default function MyP2PRequestDetailPage() {
   // per-line "Check Stock" button to click.
   useEffect(() => {
     if (!pr || !user) return
-    const canManage = (!!user.apps?.includes('purchase') || user.role === 'admin' || !!user.is_store_manager)
-      && seeStockCheck && pr.status !== 'submitted' && pr.status !== 'rejected' && pr.status !== 'cancelled'
+    const canManage = seeStockCheck && pr.status !== 'submitted' && pr.status !== 'rejected' && pr.status !== 'cancelled'
     if (!canManage) return
     for (const it of pr.items) {
       if (it.fulfillment_status !== 'pending' || stockCheckFetched.current.has(it.id)) continue
@@ -434,10 +435,9 @@ export default function MyP2PRequestDetailPage() {
 
   const hasAssignedHeads = approvalRoles.some((r) => r.id != null)
   const myPendingRole = approvalRoles.find((r) => r.id != null && r.id === user?.id && !r.approvedAt)
-  // No named approvers (legacy PR): a purchase-team decision, so the matrix
-  // Approve / Reject grant applies; named approvers need only View.
-  const canApproveOrReject = pr.status === 'submitted' && (hasAssignedHeads ? !!myPendingRole : isPurchaseTeam && can('p2p', 'purchase_requisitions', 'approve'))
-  const canRejectAccess = pr.status === 'submitted' && (hasAssignedHeads ? approvalRoles.some((r) => r.id != null && r.id === user?.id) : isPurchaseTeam && can('p2p', 'purchase_requisitions', 'reject'))
+  // No named approvers (legacy PR): the matrix Approve / Reject grant applies; named approvers need only View.
+  const canApproveOrReject = pr.status === 'submitted' && (hasAssignedHeads ? !!myPendingRole : can('p2p', 'purchase_requisitions', 'approve'))
+  const canRejectAccess = pr.status === 'submitted' && (hasAssignedHeads ? approvalRoles.some((r) => r.id != null && r.id === user?.id) : can('p2p', 'purchase_requisitions', 'reject'))
   // Approvals through the central approval engine (Organization › Approval
   // Workflows) are decided in the Approval panels below; the buttons in the
   // header stay only for requisitions / POs still on the old approval path.
@@ -460,18 +460,20 @@ export default function MyP2PRequestDetailPage() {
   // decide item-by-item whether to issue it from stock or send it to
   // procurement — not available once the request has been rejected/cancelled
   // (nothing left to decide) or before it's even approved (submitted).
-  const canManageStock = seeStockCheck && ((isPurchaseTeam && canEditPr) || canIssueStock) && !['draft', 'submitted', 'returned', 'rejected', 'cancelled', 'closed'].includes(pr.status)
-  // An approved PO already sits with the vendor: only Purchase can call it
-  // off (with a reason), and the PO is cancelled with the requisition.
+  const canManageStock = seeStockCheck && ((canEditPr && prFeature('fulfilment', 'edit')) || canIssueStock) && !['draft', 'submitted', 'returned', 'rejected', 'cancelled', 'closed'].includes(pr.status)
+  // Someone else's requisition: the requester, the Purchase desk, or a holder of Edit on Purchase Requisitions
+  // (the server also checks it is inside their data access).
+  const worksThisPr = pr.requested_by_id === user?.id || worksEveryPr || canEditPr
+  // An approved PO already sits with the vendor: calling it off (with a reason) also cancels the PO,
+  // so it needs Cancel on Purchase Orders as well.
   const cancelAfterPoApproval = pr.status === 'po_approved'
   const canCancel = can('p2p', 'purchase_requisitions', 'cancel') && (cancelAfterPoApproval
-    ? isPurchaseTeam
-    : (isPurchaseTeam || pr.requested_by_id === user?.id) && CANCELLABLE_STATUSES.includes(pr.status))
+    ? can('p2p', 'purchase_orders', 'cancel')
+    : worksThisPr && CANCELLABLE_STATUSES.includes(pr.status))
   // Partially received = short-close: the vendor won't supply the balance.
   const isShortClose = pr.status === 'partially_received'
   // Sent back by an approver (or withdrawn): the requester resubmits it.
-  const canResubmit = pr.status === 'returned' && can('p2p', 'purchase_requisitions', 'submit')
-    && (isPurchaseTeam || pr.requested_by_id === user?.id)
+  const canResubmit = pr.status === 'returned' && can('p2p', 'purchase_requisitions', 'submit') && worksThisPr
   // A draft is private to its requester: they submit it, edit it or throw it away.
   const isDraft = pr.status === 'draft'
   const isMyDraft = isDraft && pr.requested_by_id === user?.id
@@ -481,13 +483,13 @@ export default function MyP2PRequestDetailPage() {
   // Before an RFQ, saying why editing is locked helps; after, the status says it.
   const editLockNote = !pr.can_edit && pr.edit_block_reason && isDraft
     ? pr.edit_block_reason : null
-  const canClose = isPurchaseTeam && canEditPr && prFeature('close', 'edit') && (pr.status === 'received' || isShortClose)
+  const canClose = canEditPr && prFeature('close', 'edit') && (pr.status === 'received' || isShortClose)
   // Purchase's quick header edit — same lock as the full edit (no changes once an RFQ is raised).
   // An approver who came from an approval queue usually lacks the p2p app,
   // so Back must return to that queue, not the p2p-gated main list.
   const backHref = fromApproval ? '/dashboard/p2p/approval' : fromPoApproval ? '/dashboard/p2p/po-approval' : '/dashboard/p2p'
   const poLines = po?.items || []
-  const canLinkPoLines = !!po && isPurchaseTeam && can('p2p', 'purchase_orders', 'edit') && canFeature('p2p', 'purchase_orders', 'link_item', 'edit') && !['fulfilled', 'cancelled'].includes(po.status)
+  const canLinkPoLines = !!po && can('p2p', 'purchase_orders', 'edit') && canFeature('p2p', 'purchase_orders', 'link_item', 'edit') && !['fulfilled', 'cancelled'].includes(po.status)
   const saveLink = (lineId: number) => {
     if (!po) return
     if (!linkChoice) { setSheetError('Pick the Item Master item this PO line is.'); return }
@@ -498,20 +500,20 @@ export default function MyP2PRequestDetailPage() {
   // The server has the last word (403 names the owner); this only hides what would be refused.
   const procurementOpen = PROCUREMENT_OPEN.includes(pr.status)
   const allLines = isAdmin || canFeature('p2p', 'purchase_requisitions', 'all_lines', 'edit')
-  const canUploadPoRole = isPurchaseTeam && procurementOpen
+  const canUploadPoRole = procurementOpen
     && can('p2p', 'purchase_orders', 'create') && can('p2p', 'purchase_orders', 'submit')
     && canFeature('p2p', 'purchase_orders', 'po_document', 'create')
   const canUploadOnRfq = (r: RFQ) => canUploadPoRole && r.status === 'locked' && (allLines || r.buyer_id == null || r.buyer_id === user?.id)
-  const canRaiseRfq = isPurchaseTeam && procurementOpen && can('p2p', 'rfq', 'create')
+  const canRaiseRfq = procurementOpen && can('p2p', 'rfq', 'create')
     && pr.items.some((it) => it.fulfillment_status === 'sent_to_procurement')
-  const canOpenRfq = isPurchaseTeam && can('p2p', 'rfq', 'view')
+  const canOpenRfq = can('p2p', 'rfq', 'view')
   // An RFQ's quotes, comparison and files open for its own buyer (else whoever started it) and the Purchase head;
   // for anyone else the server answers 403, so those buttons and files are not shown (number, status, lines only).
   const rfqIsMine = (r: RFQ) => allLines || (r.buyer_id ?? r.created_by_id) == null || (r.buyer_id ?? r.created_by_id) === user?.id
   const mayOpenRfq = (r: RFQ) => canOpenRfq && rfqIsMine(r)
   // Discard a draft PO: the RFQ's own buyer or the Purchase head, with Edit on Purchase Orders (the server checks again).
   const draftPoRfq = po && po.status === 'draft' && po.rfq_id ? rfqs.find((x) => x.id === po.rfq_id) || null : null
-  const canDiscardPo = !!draftPoRfq && isPurchaseTeam && can('p2p', 'purchase_orders', 'edit') && rfqIsMine(draftPoRfq) && procurementOpen
+  const canDiscardPo = !!draftPoRfq && can('p2p', 'purchase_orders', 'edit') && rfqIsMine(draftPoRfq) && procurementOpen
   const poLinesTotal = po?.total_value ??(poLines.length ? poLines.reduce((sum, l) => sum + (l.line_total || 0), 0) : pr.po_value ?? null)
 
   const promptMeta: Record<PromptKind, { icon: SheetIconName; color: string; title: string; label: string; placeholder: string; hint?: string; submit: string; busy: string; required: boolean }> = {
@@ -854,7 +856,7 @@ export default function MyP2PRequestDetailPage() {
                                       {buyQty > 0 ? `Issue ${issueQty} & Buy ${buyQty}` : 'Issue from Stock'}
                                     </button>
                                   )}
-                                  {!fullyCovered && ((isPurchaseTeam && canEditPr) || isAdmin) && prFeature('fulfilment', 'edit') && (
+                                  {!fullyCovered && (canEditPr || isAdmin) && prFeature('fulfilment', 'edit') && (
                                     <button
                                       data-tour="pr-detail-send-procurement-btn"
                                       type="button"
@@ -892,8 +894,8 @@ export default function MyP2PRequestDetailPage() {
           </div>
         ) : (
         <PrTracker prId={pr.id} refreshKey={trackerKey} rfqLinkable={canOpenRfq} meId={user?.id} allLines={allLines} onChanged={load}
-          canReassign={isPurchaseTeam && allLines && procurementOpen && canEditPr && canFeature('p2p', 'purchase_requisitions', 'buyer', 'edit')}
-          canShortClose={isPurchaseTeam && procurementOpen && canEditPr && canFeature('p2p', 'purchase_requisitions', 'close', 'edit')} />
+          canReassign={allLines && procurementOpen && canEditPr && canFeature('p2p', 'purchase_requisitions', 'buyer', 'edit')}
+          canShortClose={procurementOpen && canEditPr && canFeature('p2p', 'purchase_requisitions', 'close', 'edit')} />
         )
       )}
       </VisSection>

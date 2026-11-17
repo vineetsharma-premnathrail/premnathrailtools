@@ -26,10 +26,9 @@ const STATUS_HEX: Record<string, string> = { posted: '#15803d', reversed: '#b91c
 const STATUS_LABELS: Record<string, string> = { posted: 'Posted', reversed: 'Cancelled' }
 
 export default function FinanceCurrenciesPage() {
-  const { isAuthorized, isLoading, user } = useRequireApp('accounts')
+  const { isAuthorized, isLoading } = useRequireApp('accounts')
   const { tabs, tab, setTab } = useFinanceSubTabs(TABS, TAB_KEYS)
   const { can, canFeature } = useCan()
-  const isFm = !!user?.is_finance_manager || user?.role === 'admin'
 
   if (isLoading || !isAuthorized) return null
 
@@ -39,7 +38,7 @@ export default function FinanceCurrenciesPage() {
       <PageHeader title="Currencies & FX" subtitle="Currency master, exchange rates by date, and the month-end revaluation of open foreign-currency bills (books are kept in INR)." />
       <SubTabs tabs={tabs} value={tab} onChange={setTab} />
       {tab === 'Currencies & Rates' && <RatesTab canCreate={can('accounts', 'currencies', 'create')} canAddRate={canFeature('accounts', 'currencies', 'exchange_rates', 'create')} canEdit={can('accounts', 'currencies', 'edit')} />}
-      {tab === 'Revaluation' && <RevaluationTab canRun={isFm && canFeature('accounts', 'currencies', 'revaluation', 'approve')} canCancel={isFm && canFeature('accounts', 'currencies', 'revaluation', 'cancel')} />}
+      {tab === 'Revaluation' && <RevaluationTab canRun={canFeature('accounts', 'currencies', 'revaluation', 'approve')} canCancel={canFeature('accounts', 'currencies', 'revaluation', 'cancel')} />}
     </div>
   )
 }

@@ -55,8 +55,7 @@ async def update_product_category(
     ).first()
     if not category:
         raise HTTPException(status_code=404, detail="Product category not found")
-    if not _can_modify(category, user):
-        raise HTTPException(status_code=403, detail="Only the creator or an admin can edit this product category.")
+    # CRM settings master: the Settings › Edit tick decides who edits it (owner, 2026-11-14).
     data = payload.model_dump(exclude_unset=True)
     if "name" in data and data["name"] is not None:
         name = data["name"].strip()

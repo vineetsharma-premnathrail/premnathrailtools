@@ -71,7 +71,8 @@ export default function OrganizationsPage() {
   const [hasLoadedOnce, setHasLoadedOnce] = useState(vis.preview)
   const [error, setError] = useState('')
 
-  const isAdmin = user?.role === 'admin'
+  // Duplicates report: whoever may edit organizations (owner, 2026-11-14: the tick decides, no admin-only gate).
+  const canReviewDuplicates = can('crm', 'organizations', 'edit')
   const [showExport, setShowExport] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [duplicateGroups, setDuplicateGroups] = useState<DuplicateOrgGroup[]>([])
@@ -130,11 +131,11 @@ export default function OrganizationsPage() {
   }, [isAuthorized])
 
   useEffect(() => {
-    if (!isAuthorized || !isAdmin || vis.preview) return
+    if (!isAuthorized || !canReviewDuplicates || vis.preview) return
     crmApi.getDuplicateOrganizations()
       .then((data) => setDuplicateGroups(data.groups || []))
       .catch(() => setDuplicateGroups([]))
-  }, [isAuthorized, isAdmin, vis.preview])
+  }, [isAuthorized, canReviewDuplicates, vis.preview])
 
   useEffect(() => {
     if (!isAuthorized || vis.preview) return
@@ -278,7 +279,7 @@ export default function OrganizationsPage() {
           <button type="button" onClick={clearFilters} data-tour="orgs-clear-btn" style={secondaryBtnStyle}>Clear</button>
           <div style={{ display: 'flex', gap: 8 }}>
             {can('crm', 'organizations', 'export') && <button type="button" data-tour="orgs-export-btn" onClick={() => setShowExport(true)} style={secondaryBtnStyle}>Export</button>}
-            {isAdmin && can('crm', 'organizations', 'import') && <button type="button" data-tour="orgs-import-btn" onClick={() => setShowImport(true)} style={secondaryBtnStyle}>Import</button>}
+            {can('crm', 'organizations', 'import') && <button type="button" data-tour="orgs-import-btn" onClick={() => setShowImport(true)} style={secondaryBtnStyle}>Import</button>}
           </div>
         </div>
         {showExport && (
@@ -288,7 +289,7 @@ export default function OrganizationsPage() {
             filterParams={{ search: search || undefined }} />
         )}
         {showImport && <CrmImportDialog onClose={() => setShowImport(false)} onImported={() => load()} />}
-        {isAdmin && duplicateGroups.length > 0 && (
+        {canReviewDuplicates && duplicateGroups.length > 0 && (
           <button
             onClick={() => setShowDuplicates(true)}
             data-tour="orgs-duplicate-btn"

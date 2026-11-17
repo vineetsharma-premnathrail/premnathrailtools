@@ -24,7 +24,7 @@ const config: TourConfig = {
       target: 'rnd-pd-delete-btn',
       title: 'Delete',
       purpose: 'Permanently deletes the project after you confirm.',
-      after: 'A project that still has attachments, experiments or prototypes cannot be deleted — remove those first.',
+      after: 'A project that still has attachments cannot be deleted — remove those first.',
     },
     {
       target: 'rnd-pd-tabs',

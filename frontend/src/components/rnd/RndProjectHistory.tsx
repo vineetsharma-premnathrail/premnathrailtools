@@ -17,6 +17,7 @@ const KIND: Record<string, { text: string; hex: string }> = {
   revision: { text: 'Revision', hex: '#2563EB' },
   review: { text: 'Review', hex: '#16A34A' },
   response: { text: 'Response', hex: '#0D9488' },
+  query: { text: 'Asked BD', hex: '#7C3AED' },
   offer: { text: 'Technical Offer', hex: '#D97706' },
   document: { text: 'Document', hex: '#475569' },
 }

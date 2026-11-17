@@ -78,7 +78,7 @@ export function ProjectBudgetCard({ load, emptyText, tour }: {
   const head = <p style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: '#64748b', margin: '0 0 10px' }}>Budget &amp; spend</p>
   if (error) return <DetailCard tour={tour}>{head}<p style={{ fontSize: 13, color: '#b91c1c', margin: 0 }}>{error}</p></DetailCard>
   if (!data) return null
-  if (data.hidden) return <DetailCard tour={tour}>{head}<p style={{ fontSize: 13, color: '#64748b', margin: 0 }}>Costs are hidden for your role (R&amp;D › Prototypes › BOM costs). Ask an admin if you need to see the budget.</p></DetailCard>
+  if (data.hidden) return <DetailCard tour={tour}>{head}<p style={{ fontSize: 13, color: '#64748b', margin: 0 }}>Costs are hidden for your role (R&amp;D › Prototype / Research › Budget &amp; costs). Ask an admin if you need to see the budget.</p></DetailCard>
   const s = data.summary
   if (!s) return <DetailCard tour={tour}>{head}<p style={{ fontSize: 13, color: '#64748b', margin: 0 }}>{emptyText}</p></DetailCard>
 

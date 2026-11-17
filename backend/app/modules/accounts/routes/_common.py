@@ -35,11 +35,6 @@ def service_errors(db: Session):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-def require_finance_manager(user: User, action: str) -> None:
-    if not (user.is_finance_manager or user.role == "admin"):
-        raise HTTPException(status_code=403, detail=f"Only a Finance Manager (or admin) can {action}. Ask an admin to tick 'Finance Manager' on your user.")
-
-
 def user_names(db: Session, ids) -> dict[int, str]:
     ids = {i for i in ids if i}
     if not ids:

@@ -55,6 +55,9 @@ class StoreItemCreate(BaseModel):
     preferred_warehouse_id: int | None = None
     preferred_supplier: str | None = None
     remarks: str | None = None
+    # Quick add from the Before-PO receipt form (2026-11-14): the item is flagged
+    # needs_review, and is never batch- or serial-controlled (that receipt can't book those).
+    from_inward: bool = False
 
 
 class StoreItemUpdate(BaseModel):
@@ -156,6 +159,7 @@ class StoreItemResponse(BaseModel):
     effective_sales_gl: str | None = None
     effective_sales_gl_source: str | None = None
     status: str
+    needs_review: bool = False
     has_photo: bool = False
     plant: str | None = None
     preferred_warehouse_id: int | None = None

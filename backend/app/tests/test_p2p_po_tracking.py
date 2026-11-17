@@ -189,9 +189,17 @@ def test_filters_sort_and_paging_are_server_side_with_real_totals(client, db):
     assert [b["id"] for b in opts["buyers"]] == [buyer.id]
 
 
-def test_tracking_needs_the_purchase_team(client, db):
-    outsider = _requester(db, "trk.req5@premnathrail.com")
+def test_tracking_needs_purchase_orders_view(client, db):
+    # 2026-11-14: 'View' on Procurement › Purchase Orders decides (no Purchase desk).
+    from app.modules.main.models.user import User
+    outsider = User(email="trk.req5@premnathrail.com", name="trk5", role="user", is_active=True, assigned_apps=[],
+                    granular_permissions=["p2p:purchase_requisitions:view", "p2p:purchase_requisitions:create"])
+    viewer = User(email="trk.req6@premnathrail.com", name="trk6", role="user", is_active=True, assigned_apps=[],
+                  granular_permissions=["p2p:purchase_orders:view"])
+    db.add_all([outsider, viewer])
+    db.commit()
     assert client.get(f"{REPORTS}/tracking", headers=auth_header(outsider)).status_code == 403
+    assert client.get(f"{REPORTS}/tracking", headers=auth_header(viewer)).status_code == 200
 
 
 def test_uploaded_po_is_a_row_with_its_vendor_stage_and_value_and_only_a_released_po_is_chased(client, db, setup):  # noqa: F811

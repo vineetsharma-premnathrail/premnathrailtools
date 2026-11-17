@@ -82,7 +82,7 @@ export const PURCHASE_INVOICE_FORM_STEPS: TourStep[] = [
     title: 'Record invoice',
     purpose: 'Saves the bill as Pending.',
     after:
-      'The bill appears in the list as Pending. A different finance user must then Post it (maker-checker). A bill with a 3-way-match variance needs a Finance Manager to approve the variance first. Posting creates the journal and the bill becomes payable.',
+      'The bill appears in the list as Pending. A different finance user must then Post it (maker-checker). A bill with a 3-way-match variance needs a variance approver (Purchase Invoices › Approve 3-way-match variance) first. Posting creates the journal and the bill becomes payable.',
   },
   {
     target: 'fin-pinv-close',

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { pmWorkApi } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
 import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 import { PmSubtask, PmTaskDetail } from '@/types'
 import { TEXT } from '@/lib/theme'
@@ -29,6 +30,7 @@ import { recordPath } from '@/lib/recordRef'
 export default function TaskDetailView({ taskId }: { taskId: number }) {
   const router = useRouter()
   const { user } = useAuth()
+  const { can } = useCan()
   const [d, setD] = useState<PmTaskDetail | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | string[]>('')
@@ -70,7 +72,11 @@ export default function TaskDetailView({ taskId }: { taskId: number }) {
 
   if (!d) return <><ErrorBanner error={error} />{!error && <p style={{ fontSize: 13, color: TEXT.muted }}>Loading…</p>}</>
   const t = d.task
-  const workable = t.is_assignee && t.project_status === 'active' && !['submitted', 'achieved', 'cancelled'].includes(t.milestone_status || '')
+  // The role tick decides, like the API (routes/work.py): the assignee's work
+  // needs My Tasks › Edit; unblock, comments and files take either tab's Edit.
+  const myEdit = can('projects', 'my_tasks', 'edit')
+  const anyEdit = myEdit || can('projects', 'department_work', 'edit')
+  const workable = myEdit && t.is_assignee && t.project_status === 'active' && !['submitted', 'achieved', 'cancelled'].includes(t.milestone_status || '')
   const isOpen = ['todo', 'in_progress', 'blocked'].includes(t.status)
   const openSubs = d.subtasks.filter((s) => s.status !== 'done').length
   const comments = d.updates.filter((u) => u.kind === 'comment')
@@ -85,7 +91,7 @@ export default function TaskDetailView({ taskId }: { taskId: number }) {
     if (!logDate || !h || h <= 0 || h > 24) { setError('Enter the date and the hours spent (more than 0, at most 24).'); return }
     if (await act(() => pmWorkApi.logTime(t.id, { work_date: logDate, hours: h, note: logNote.trim() || null }), 'Could not log the time.')) { setLogHours(''); setLogNote(''); setTimeOpen(false) }
   }
-  const canLog = t.is_assignee && t.project_status === 'active' && ['in_progress', 'blocked', 'done'].includes(t.status)
+  const canLog = myEdit && t.is_assignee && t.project_status === 'active' && ['in_progress', 'blocked', 'done'].includes(t.status)
   const upload = async (files: FileList | null) => {
     if (!files || files.length === 0) return
     const fd = new FormData()
@@ -130,7 +136,7 @@ export default function TaskDetailView({ taskId }: { taskId: number }) {
             {t.status === 'blocked' && <button data-tour="pm-task-unblock-btn" type="button" disabled={busy} onClick={() => act(() => pmWorkApi.unblockTask(t.id), 'Could not unblock the task.')} style={actionBtn('primary', busy)}>Unblocked — continue</button>}
           </div>
         )}
-        {!t.is_assignee && t.is_head && t.status === 'blocked' && (
+        {anyEdit && !t.is_assignee && t.is_head && t.status === 'blocked' && (
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
             <button data-tour="pm-task-head-unblock-btn" type="button" disabled={busy} onClick={() => act(() => pmWorkApi.unblockTask(t.id), 'Could not unblock the task.')} style={actionBtn('secondary', busy)}>Mark unblocked</button>
           </div>
@@ -163,7 +169,7 @@ export default function TaskDetailView({ taskId }: { taskId: number }) {
         <div data-tour="pm-task-files" style={{ ...sectionStyle, marginBottom: 0 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
             <h2 style={{ fontSize: 16, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Files &amp; drawings</h2>
-            {isOpen && (t.is_assignee || t.is_head) && (
+            {anyEdit && isOpen && (t.is_assignee || t.is_head) && (
               <>
                 <input ref={fileRef} type="file" multiple hidden onChange={(e) => upload(e.target.files)} />
                 <button data-tour="pm-task-attach-btn" type="button" disabled={busy} onClick={() => fileRef.current?.click()} style={actionBtn('secondary', busy)}>Attach files</button>
@@ -173,7 +179,7 @@ export default function TaskDetailView({ taskId }: { taskId: number }) {
           <AttachmentList
             files={d.files}
             onOpen={(id, name) => openAttachmentBlob(() => pmWorkApi.fileBlob(id), name).catch(() => setError(`Could not open ${name}.`))}
-            onDelete={isOpen ? (id) => act(() => pmWorkApi.deleteFile(id), 'Could not remove the file.') : undefined}
+            onDelete={anyEdit && isOpen ? (id) => act(() => pmWorkApi.deleteFile(id), 'Could not remove the file.') : undefined}
             canDelete={(f) => user?.role === 'admin' || f.uploaded_by_id === user?.id}
           />
         </div>
@@ -202,10 +208,10 @@ export default function TaskDetailView({ taskId }: { taskId: number }) {
 
       <div data-tour="pm-task-comments" style={{ ...sectionStyle, marginTop: 20 }}>
         <h2 style={{ fontSize: 16, fontWeight: 700, color: TEXT.heading, margin: '0 0 10px' }}>Comments</h2>
-        <div data-tour="pm-task-comment-input" style={{ marginBottom: 12 }}>
+        {anyEdit && <div data-tour="pm-task-comment-input" style={{ marginBottom: 12 }}>
           <MentionComposer sendLabel="Post" placeholder="Write a comment… type @ to tag someone"
             onSend={async (body, ids) => !!body && act(() => pmWorkApi.comment(t.id, body, ids), 'Could not post the comment.')} />
-        </div>
+        </div>}
         {comments.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No comments yet.</p> : comments.map((c) => (
           <div key={c.id} style={{ padding: '8px 0', borderTop: '1px solid rgba(0,0,0,0.05)' }}>
             <span style={{ fontSize: 12.5, fontWeight: 700, color: TEXT.heading }}>{c.user_name}</span>

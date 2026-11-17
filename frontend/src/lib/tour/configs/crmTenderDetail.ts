@@ -3,6 +3,23 @@ import activityConfig from './crmActivityForm'
 import momExportConfig from './crmMomExport'
 import torDialogConfig from './crmTorDialog'
 import { followUpListSteps } from './crmFollowUpList'
+import quotationConfig from './crmQuotationForm'
+
+// A tender's price bid is the same quotation document as an inquiry's, so the tour reuses the
+// quotation steps (card, status bar, form fields) with "inquiry" worded as "tender". The first
+// step (opening the inquiry's tab) is replaced by the tender tab step below.
+const tenderWording = (t?: string) => t
+  ?.replace(/an inquiry/g, 'a tender').replace(/inquiry/g, 'tender').replace(/Inquiry/g, 'Tender')
+  .replace(/its creator, BD owner and sales engineer/g, 'its creator and BD owner')
+const quotationSteps: TourStep[] = quotationConfig.steps.slice(1).map((st) => ({
+  ...st,
+  title: tenderWording(st.title) || st.title,
+  purpose: tenderWording(st.purpose),
+  whatToEnter: tenderWording(st.whatToEnter),
+  why: tenderWording(st.why),
+  after: tenderWording(st.after),
+  options: st.options?.map((o) => ({ ...o, meaning: tenderWording(o.meaning) || o.meaning })),
+}))
 
 const steps: TourStep[] = [
   {
@@ -81,6 +98,15 @@ const steps: TourStep[] = [
     title: 'Offer list',
     purpose: 'Offer number, title, who it is from (R&D released or BD upload), date, file, and the quotations that use it.',
   },
+  {
+    target: 'tender-tab-Quotations',
+    title: 'Quotations',
+    purpose: 'The priced offer (price bid) for this tender: item-wise or one lump-sum price, saved as numbered quotations (QT-TND-…) with revisions, an approval step, a managed Word document and a PDF. Shown only if your role includes Inquiries & Tenders › Quotations and the tender page shows the Quotations tab.',
+    why: 'A tender is won on its price bid. Keeping it here, with the same approval and revision trail as an inquiry quotation, means the submitted price is always the approved one and every change is recorded.',
+    after: 'Click "+ Create Quote" to open the form covered by the next steps.',
+    autoActivate: true,
+  },
+  ...quotationSteps,
   {
     target: 'tender-tab-Documents',
     title: 'Documents',

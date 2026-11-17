@@ -39,12 +39,9 @@ _PO_ROLE_FLAGS = {"purchase_head": "is_purchase_head", "director": "is_director"
 
 
 def _require_mis_access(user: User = Depends(get_current_user)) -> User:
-    """Purchase team, or any PO approver (purchase head/director/Partner — who may
-    not hold the "purchase" app at all, only the boolean flag), or admin —
-    AND 'View' on Procurement › M.I.S Report in the Permission Matrix."""
-    if not (user.role == "admin" or "purchase" in user.get_apps() or user.is_purchase_head or user.is_director or user.is_partner):
-        raise HTTPException(status_code=403, detail="MIS reports are for the Purchase team and PO approvers (Purchase Head / "
-                                                    "Director / Partner). Ask an admin to add you to the Purchase team or flag you as a PO approver.")
+    """'View' on Procurement › M.I.S Report decides alone (owner decision
+    2026-11-14 — no Purchase Desk / approver-flag gate). Every figure is still
+    limited to the requisitions in the viewer's data scope (_gather)."""
     ensure_tab_action(user, "p2p", "mis", "view")
     return user
 

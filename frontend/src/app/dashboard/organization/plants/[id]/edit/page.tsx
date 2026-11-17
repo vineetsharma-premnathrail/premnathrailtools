@@ -606,7 +606,7 @@ function WarehousesEditor({ branchId, warehouses, directory, onRefresh }: { bran
   const { can } = useCan()
   const canCreate = can('store', 'warehouses', 'create')
   const canEdit = can('store', 'warehouses', 'edit')
-  const canDelete = can('store', 'warehouses', 'view')
+  const canDelete = can('store', 'warehouses', 'delete')
   const [editingId, setEditingId] = useState<number | null>(null)
   const [form, setForm] = useState(emptyWarehouse())
   const [saving, setSaving] = useState(false)

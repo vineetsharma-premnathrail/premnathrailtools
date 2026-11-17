@@ -8,6 +8,7 @@ import '../../ui/form.dart';
 import '../../ui/format.dart';
 import '../../ui/widgets.dart';
 import 'rnd_common.dart';
+import 'rnd_machine_tasks.dart';
 import 'rnd_projects.dart';
 import 'rnd_requirements.dart';
 import 'rnd_task_board.dart';
@@ -75,7 +76,7 @@ class _RndTasksTabState extends State<RndTasksTab> {
       parents.addAll(
         p.map(
           (x) =>
-              Option('pm_project:${x['id']}', str(x, 'label') ?? '${x['project_code']} — ${x['name']}', subtitle: 'All Projects'),
+              Option('${x['kind'] == 'machine' ? 'machine' : 'pm_project'}:${x['id']}', str(x, 'label') ?? '${x['project_code']} — ${x['name']}', subtitle: 'All Projects'),
         ),
       );
     } catch (_) {}
@@ -99,6 +100,7 @@ class _RndTasksTabState extends State<RndTasksTab> {
       q[switch (parent[0]) {
             'requirement' => 'requirement_id',
             'project' => 'rnd_project_id',
+            'machine' => 'machine_id',
             _ => 'pm_project_id',
           }] =
           parent[1];
@@ -229,6 +231,8 @@ class _RndTasksTabState extends State<RndTasksTab> {
       );
     } else if (kind == 'pm_project') {
       screen = PmProjectTasksScreen(pmProjectId: intOf(parent['id']) ?? 0);
+    } else if (kind == 'machine') {
+      screen = MachineTasksScreen(machineId: intOf(parent['id']) ?? 0);
     } else {
       screen = ProjectDetailScreen(projectId: intOf(parent['id']) ?? 0, initialTab: 'Tasks');
     }
@@ -419,7 +423,7 @@ Future<bool> showCreateRndTask(BuildContext context) async {
         throw 'Pick the requirement this task is for (only accepted requirements are listed).';
       }
       if (m.type == 'prototype' && m.projectId == null) throw 'Pick the Prototype / Research project this task is for.';
-      if (m.type == 'project' && m.pmProjectId == null) throw 'Pick the project this task is for.';
+      if (m.type == 'project' && m.pmProjectKey == null) throw 'Pick the project this task is for.';
       if (m.title.text.trim().isEmpty) throw 'Give the task a title — what should be done.';
       if (m.assignee == null) throw 'Pick who should do this task.';
       if (m.due == null) throw 'Set the Due Date.';
@@ -433,7 +437,8 @@ Future<bool> showCreateRndTask(BuildContext context) async {
         if (m.type == 'requirement') 'source': parts.first,
         if (m.type == 'requirement') 'record_id': parts.last,
         if (m.type == 'prototype') 'rnd_project_id': m.projectId,
-        if (m.type == 'project') 'pm_project_id': m.pmProjectId,
+        if (m.type == 'project' && !(m.pmProjectKey ?? '').startsWith('machine:')) 'pm_project_id': (m.pmProjectKey ?? '').split(':').last,
+        if (m.type == 'project' && (m.pmProjectKey ?? '').startsWith('machine:')) 'machine_id': m.pmProjectKey!.split(':').last,
         'title': m.title.text.trim(),
         'remarks': m.remarks.text.trim(),
         'assigned_to_id': m.assignee,
@@ -453,7 +458,8 @@ class _CreateDraft {
   String type = 'requirement';
   String? reqKey;
   int? projectId;
-  int? pmProjectId;
+  /// Key "pm:ID" (Project Management project) or "machine:ID" (past machine).
+  String? pmProjectKey;
   final title = TextEditingController();
   final remarks = TextEditingController();
   int? assignee;
@@ -475,7 +481,7 @@ class _CreateFields extends StatefulWidget {
 class _CreateFieldsState extends State<_CreateFields> {
   List<Option<String>>? _reqs;
   List<Option<int>>? _projects;
-  List<Option<int>>? _pm;
+  List<Option<String>>? _pm;
   List<Json> _people = [];
   String? _peopleHint;
   String? _error;
@@ -514,7 +520,7 @@ class _CreateFieldsState extends State<_CreateFields> {
       if (d.type == 'project' && _pm == null) {
         final rows = jsonList(await Api.get('/rnd/tasks/pm-project-options'))
           ..sort((a, b) => (str(a, 'project_code') ?? '').compareTo(str(b, 'project_code') ?? ''));
-        _pm = [for (final p in rows) Option(intOf(p['id']) ?? 0, str(p, 'label') ?? '${p['project_code']} — ${p['name']}')];
+        _pm = [for (final p in rows) Option('${p['kind'] == 'machine' ? 'machine' : 'pm'}:${p['id']}', str(p, 'label') ?? '${p['project_code']} — ${p['name']}')];
       }
       if (mounted) setState(() => _error = null);
     } catch (e) {
@@ -540,11 +546,15 @@ class _CreateFieldsState extends State<_CreateFields> {
         if (!boolOf(a['can_manage'])) {
           hint = 'Only the project lead can give tasks on this project — pick another project or ask the lead.';
         }
-      } else if (d.type == 'project' && d.pmProjectId != null) {
-        final a = jsonMap(await Api.get('/rnd/pm-projects/${d.pmProjectId}/task-access'));
+      } else if (d.type == 'project' && d.pmProjectKey != null) {
+        final isMachine = d.pmProjectKey!.startsWith('machine:');
+        final pid = d.pmProjectKey!.split(':').last;
+        final a = jsonMap(await Api.get(isMachine ? '/rnd/machines/$pid/task-access' : '/rnd/pm-projects/$pid/task-access'));
         people = jsonList(a['people']);
         if (!boolOf(a['can_manage'])) {
-          hint = 'Only R&D heads or the project manager can give R&D tasks on this project — pick another project or ask them.';
+          hint = isMachine
+              ? 'Only R&D heads or management can give R&D tasks on a past machine — pick another project or ask them.'
+              : 'Only R&D heads or the project manager can give R&D tasks on this project — pick another project or ask them.';
         }
       }
       if (mounted && t == _token) {
@@ -566,7 +576,7 @@ class _CreateFieldsState extends State<_CreateFields> {
         ? d.reqKey != null
         : d.type == 'prototype'
         ? d.projectId != null
-        : d.pmProjectId != null;
+        : d.pmProjectKey != null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -587,7 +597,7 @@ class _CreateFieldsState extends State<_CreateFields> {
               d.type = v;
               d.reqKey = null;
               d.projectId = null;
-              d.pmProjectId = null;
+              d.pmProjectKey = null;
               d.assignee = null;
               _people = [];
               _peopleHint = null;
@@ -629,22 +639,22 @@ class _CreateFieldsState extends State<_CreateFields> {
             },
           ),
         if (d.type == 'project') ...[
-          AppSelect<int>(
+          AppSelect<String>(
             label: 'Project (All Projects)',
             required: true,
-            value: d.pmProjectId,
+            value: d.pmProjectKey,
             options: _pm ?? const [],
             enabled: _pm != null,
             onChanged: (o) {
               setState(() {
-                d.pmProjectId = o?.value;
+                d.pmProjectKey = o?.value;
                 d.assignee = null;
               });
               _loadPeople();
             },
           ),
           const Hint(
-            'Projects from Project Management › All Projects, by PEW code. The task stays R&D work — the assignee tracks '
+            'Every project in Project Management › All Projects — running projects and past machines — by PEW code. The task stays R&D work — the assignee tracks '
             'it in R&D › R&D Tasks.',
           ),
         ],

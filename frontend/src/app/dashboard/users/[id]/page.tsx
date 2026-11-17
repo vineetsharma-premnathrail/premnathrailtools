@@ -21,6 +21,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import { useSodGuard } from '@/components/organization/useSodGuard'
 import AccessGovernancePanel from '@/components/organization/AccessGovernancePanel'
+import AccessTruthNote, { EffectiveAccess } from '@/components/organization/AccessTruthNote'
 import { moduleWords } from '@/lib/permissionWords'
 import ApprovesInPanel from '@/components/organization/ApprovesInPanel'
 import { governedUsersApi } from '@/lib/basisApi'
@@ -445,7 +446,7 @@ const APPROVAL_ROLE_FLAGS: { key: string; label: string; hex: string; hint: stri
   { key: 'is_plant_head', label: 'Plant Head', hex: '#0f766e', hint: 'Flag-based stages. "Plant head" stages use the head set on the plant (Organization › Branches)' },
   { key: 'is_project_head', label: 'Project Head', hex: '#0f766e', hint: 'Flag-based approval stages' },
   { key: 'is_purchase_head', label: 'Purchase Head', hex: '#1d4ed8', hint: 'Purchase stage of NCR disposition and flag-based stages' },
-  { key: 'is_finance_manager', label: 'Finance Manager', hex: '#1d4ed8', hint: 'Purchase-invoice variances, period close, depreciation and year-end close' },
+  { key: 'is_finance_manager', label: 'Finance Manager', hex: '#1d4ed8', hint: 'Optional approver an admin can name in Organization › Approval Workflows — no longer gates any Finance button (the role matrix decides)' },
   { key: 'is_purchase_manager', label: 'Purchase Manager', hex: '#1d4ed8', hint: 'Flag-based approval stages' },
   { key: 'is_store_manager', label: 'Store Manager', hex: '#1d4ed8', hint: 'Flag-based approval stages (store-specific approvals use the store location manager)' },
   { key: 'is_production_manager', label: 'Production Manager', hex: '#b45309', hint: 'RRV build sign-off and flag-based stages' },
@@ -552,6 +553,12 @@ function RolesPermissionsTab({ user, registry, onRefresh }: { user: User; regist
               <span key={r.id} title={r.description || undefined} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 10, border: on ? `1px solid ${BRAND.primary}` : `1px solid ${BORDER.normal}`, background: on ? 'rgba(244,113,59,0.05)' : '#fff', fontSize: 12.5, fontWeight: 600, color: TEXT.heading, opacity: r.is_active ? 1 : 0.55 }}>
                 <Checkbox checked={on} onChange={() => setRoleIds((ids) => (on ? ids.filter((x) => x !== r.id) : [...ids, r.id]))} />
                 {r.name}{r.is_system && <span style={{ fontSize: 10, color: '#1d4ed8' }}>BUILT-IN</span>}
+                {!r.is_active && (
+                  <span title="An inactive role gives nothing — make it active again in Organization › Role & Permissions, or untick it here."
+                    style={{ fontSize: 10, fontWeight: 700, color: '#92400e', background: 'rgba(217,119,6,0.12)', border: '1px solid rgba(217,119,6,0.3)', borderRadius: 999, padding: '1px 7px', textTransform: 'uppercase', letterSpacing: 0.3 }}>
+                    Inactive
+                  </span>
+                )}
               </span>
             )
           })}
@@ -622,9 +629,10 @@ function RolesPermissionsTab({ user, registry, onRefresh }: { user: User; regist
       <div style={sectionStyle} data-tour="org-user-effective">
         <h2 style={{ fontSize: 14, fontWeight: 700, color: TEXT.heading, margin: '0 0 6px' }}>Effective access</h2>
         <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 12px' }}>
-          Everything {user.name} can do right now (saved roles + extras). Hover a tick to see which role gives it.
+          Everything {user.name} can do today (saved roles in their validity dates + everyone&apos;s roles + extras). Hover a tick to see which role gives it.
           Modules: {effective ? (effective.apps.length ? effective.apps.map((a) => moduleWords(registry, a)).join(', ') : 'none') : '…'}
         </p>
+        <AccessTruthNote effective={effective as EffectiveAccess | null} userName={user.name} />
         {effective && <PermissionMatrixEditor registry={registry} value={[]} inherited={effective.grants} readOnly onlyGranted />}
       </div>
     </div>

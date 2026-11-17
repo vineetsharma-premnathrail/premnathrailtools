@@ -1,13 +1,12 @@
 'use client'
 
-import { useRequireApp } from '@/hooks/useAuth'
 import { crmApi } from '@/lib/api'
 import ModuleSettingsPage from '@/components/shared/ModuleSettingsPage'
-import CrmNav from '@/components/crm/CrmNav'
+import CrmNav, { useCrmTabAccess } from '@/components/crm/CrmNav'
 import CrmListsSection from '@/components/crm/masters/CrmListsSection'
 
 export default function CrmSettingsPage() {
-  const { isAuthorized, isLoading } = useRequireApp('crm')
+  const { isAuthorized, isLoading } = useCrmTabAccess('settings')
   if (isLoading || !isAuthorized) return null
   return (
     <ModuleSettingsPage title="CRM settings" nav={<CrmNav />} backHref="/dashboard/crm"

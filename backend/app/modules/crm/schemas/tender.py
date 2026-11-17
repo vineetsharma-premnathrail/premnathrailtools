@@ -150,3 +150,6 @@ class TenderResponse(BaseModel):
     created_at: datetime | None = None
     updated_at: datetime | None = None
     is_deleted: bool = False
+    # Detail reads only: True when the record is inside the reader's CRM Edit scope
+    # (Role › Data access › Edit) — the screen shows Edit / stage / upload by it.
+    can_change: bool | None = None

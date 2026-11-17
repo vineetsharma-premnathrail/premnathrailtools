@@ -391,4 +391,5 @@ def po_document_target(db: Session, po_id: int, user: User, modify: bool) -> man
     )
 
 
-managed_documents.register(managed_documents.DocumentAdapter(entity_type=PO_ENTITY, app="purchase", load=po_document_target))
+# app="p2p": the Purchase Orders tab grant checked in po_document_target decides, not the Purchase Desk (2026-11-14).
+managed_documents.register(managed_documents.DocumentAdapter(entity_type=PO_ENTITY, app="p2p", load=po_document_target))

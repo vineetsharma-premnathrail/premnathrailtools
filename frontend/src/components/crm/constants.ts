@@ -40,7 +40,9 @@ export const RELATED_MODULES = [
 ]
 
 // Customer organization types depend on the scope chosen on the form.
-export const ORG_TYPES_DOMESTIC = ['PSU', 'Govt Department', 'Railway', 'Private', 'Joint Venture', 'Other']
+// One name per type in both lists (2026-11-17: "Private"/"Govt Department" merged into
+// "Private Company"/"Government Department"; old records moved by migration b2e6c4a8d1f7).
+export const ORG_TYPES_DOMESTIC = ['PSU', 'Government Department', 'Railway', 'Private Company', 'Joint Venture', 'Other']
 export const ORG_TYPES_INTERNATIONAL = ['Government Department', 'Railway', 'Private Company', 'Joint Venture', 'Public Enterprise', 'Other']
 /** Union of both lists, for filters and anything that is not scope-aware. */
 export const ORG_TYPES = Array.from(new Set([...ORG_TYPES_DOMESTIC, ...ORG_TYPES_INTERNATIONAL]))

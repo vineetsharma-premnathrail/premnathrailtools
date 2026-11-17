@@ -1,7 +1,6 @@
 """
 R&D review fixes: per-tool Permission Matrix gating on the calculators,
-create/edit/delete/approve action checks on projects / experiments /
-prototypes, PATCH explicit-null handling, history rename/error texts,
+create/edit/delete/approve action checks on projects, PATCH explicit-null handling, history rename/error texts,
 hydraulic error + file-name handling, and the safe document-content headers.
 """
 from app.auth.jwt_handler import create_access_token
@@ -85,16 +84,6 @@ def test_stage_move_to_closed_needs_approve(client, db):
     pid = _project(client, owner)["id"]
     editor = _h(_user(db, "stage-editor@premnathrail.com", ["rnd:projects:view", "rnd:projects:edit"]))
     r = client.post(f"{BASE}/projects/{pid}/stage", json={"stage": "closed"}, headers=editor)
-    assert r.status_code == 403 and "'Approve'" in r.json()["detail"]
-
-
-def test_experiment_and_prototype_actions_gated(client, db):
-    viewer = _h(_user(db, "ep-viewer@premnathrail.com", ["rnd:experiments:view", "rnd:prototypes:view"]))
-    r = client.post(f"{BASE}/experiments", json={"title": "T", "project_id": 1}, headers=viewer)
-    assert r.status_code == 403
-    r = client.post(f"{BASE}/prototypes", json={"name": "P", "project_id": 1}, headers=viewer)
-    assert r.status_code == 403
-    r = client.post(f"{BASE}/prototypes/1/release-to-production", json={}, headers=viewer)
     assert r.status_code == 403 and "'Approve'" in r.json()["detail"]
 
 

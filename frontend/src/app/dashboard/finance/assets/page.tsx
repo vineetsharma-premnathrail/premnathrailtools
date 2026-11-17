@@ -40,10 +40,10 @@ const STATUS_HEX: Record<string, string> = { active: '#15803d', disposed: '#6474
 const STATUS_LABELS: Record<string, string> = { active: 'Active', disposed: 'Disposed', posted: 'Posted', reversed: 'Reversed' }
 
 export default function FinanceAssetsPage() {
-  const { isAuthorized, isLoading, user } = useRequireApp('accounts')
+  const { isAuthorized, isLoading } = useRequireApp('accounts')
   const { tabs: visibleTabs, tab, setTab } = useFinanceSubTabs(TABS, TAB_KEYS)
   const { can, canFeature } = useCan()
-  const canManage = !!user?.is_finance_manager || user?.role === 'admin'
+  // The role matrix alone decides each button (owner, 2026-11-14) — no Finance Manager flag.
 
   if (isLoading || !isAuthorized) return null
 
@@ -52,10 +52,10 @@ export default function FinanceAssetsPage() {
       <FinanceNav />
       <PageHeader title="Fixed Assets" subtitle="Asset register, monthly depreciation (Companies Act 2013, Schedule II) and disposals." />
       <SubTabs tabs={visibleTabs} value={tab} onChange={setTab} />
-      {tab === 'Register' && <RegisterTab canManage={canManage && can('accounts', 'fixed_assets', 'edit')} />}
-      {tab === 'Depreciation' && <DepreciationTab canManage={canManage && can('accounts', 'depreciation', 'approve')} canRequest={can('accounts', 'depreciation', 'approve')} canReverse={canManage && canFeature('accounts', 'depreciation', 'reversal', 'cancel')} />}
+      {tab === 'Register' && <RegisterTab canManage={can('accounts', 'fixed_assets', 'edit')} />}
+      {tab === 'Depreciation' && <DepreciationTab canManage={can('accounts', 'depreciation', 'approve')} canRequest={can('accounts', 'depreciation', 'approve')} canReverse={canFeature('accounts', 'depreciation', 'reversal', 'cancel')} />}
       {tab === 'Capitalisation' && <CapitalisationTab canManage={canFeature('accounts', 'fixed_assets', 'capitalisation', 'create')} />}
-      {tab === 'Retirements' && <RetirementsTab canManage={canManage && canFeature('accounts', 'fixed_assets', 'retirements', 'create')} />}
+      {tab === 'Retirements' && <RetirementsTab canManage={canFeature('accounts', 'fixed_assets', 'retirements', 'create')} />}
       {tab === 'Reconciliation' && <AssetReconciliationTab />}
       {tab === 'Tax Depreciation' && <TaxDepreciationTab canEdit={can('accounts', 'tax_depreciation', 'edit')} />}
     </div>
@@ -441,7 +441,7 @@ function DepreciationTab({ canManage, canRequest, canReverse }: { canManage: boo
   const run = async () => {
     setConfirmRun(false); setRunning(true); setError(null); setDone(null)
     try {
-      // 202 = submitted to the approval workflow and waiting for a Finance Manager.
+      // 202 = submitted to the approval workflow and waiting for its approver.
       const r: DepreciationRun & { approval_status?: string; message?: string } = await accountsApi.runDepreciation(period)
       if (r.approval_status === 'pending') setDone(r.message || `Depreciation for ${period} was submitted for approval.`)
       else setDone(`Depreciation for ${r.accounting_period} posted: ${inr(r.total_amount)} across ${r.lines.length} asset(s).`)

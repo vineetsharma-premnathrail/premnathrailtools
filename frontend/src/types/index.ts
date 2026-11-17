@@ -52,6 +52,9 @@ export interface User {
   roles?: string[]
   /** module key -> tab keys this user may view. Non-admins get every module (empty list = no tab); admins get {} (unrestricted). */
   tab_access?: Record<string, string[]>
+  /** /auth/me only: effective data access per opened module — {"store": "plant", "store:edit": "assigned"}
+   * (backend core/data_scope.effective_scopes). Admins: "organization" everywhere. */
+  data_scopes?: Record<string, string>
   /** /auth/me only: effective visibility restrictions — "<module>:<tab>" or "<module>:<tab>.<feature>" ->
    * {hidden_sections, options (dropdown -> allowed values), hidden_columns (table -> columns)}. Only restricted keys;
    * {} for admins / partners (core/visibility.py). */
@@ -112,8 +115,12 @@ export interface Role {
 export interface EffectivePermissions {
   is_admin: boolean
   apps: string[]
-  /** grant -> where it comes from (role names, "Extra") */
+  /** grant -> where it comes from (role names, "Extra") — only what is in force today */
   grants: Record<string, string[]>
+  user_active?: boolean
+  /** would-be grants of off-window / inactive sources */
+  inactive_grants?: Record<string, string[]>
+  sources?: { kind: 'role' | 'everyone' | 'extra'; role_id: number | null; name: string; active: boolean; reason: string | null; valid_from: string | null; valid_to: string | null }[]
 }
 
 export interface AuditLogEntry {
@@ -582,6 +589,8 @@ export interface Organization {
 }
 
 export interface OrganizationDetail extends Organization {
+  /** Detail reads only: whether the caller may change this record (role Edit scope). */
+  can_change?: boolean | null
   contacts: OrgContact[]
   inquiry_count: number
   tender_count: number
@@ -603,6 +612,8 @@ export interface InquiryLineItemInput {
 }
 
 export interface Inquiry {
+  /** Detail reads only: whether the caller may change this record (role Edit scope). */
+  can_change?: boolean | null
   id: number
   /** Live sales order raised from this inquiry (detail view) — the inquiry is then read-only. */
   sales_order_number?: string | null
@@ -654,6 +665,8 @@ export interface Inquiry {
 }
 
 export interface Tender {
+  /** Detail reads only: whether the caller may change this record (role Edit scope). */
+  can_change?: boolean | null
   id: number
   universal_id: string
   org_id: number
@@ -1089,8 +1102,8 @@ export interface RndTaskApproval {
 
 export interface RndTask {
   id: number
-  /** pm_project = an R&D task on a Project Management (All Projects) project. */
-  source: 'inquiry' | 'tender' | 'project' | 'pm_project'
+  /** pm_project = an R&D task on a Project Management (All Projects) project; machine = on a past machine (record_id = machine id). */
+  source: 'inquiry' | 'tender' | 'project' | 'pm_project' | 'machine'
   record_id: number
   // Project tasks only: set on a sub-task (the parent's assignee split the work).
   parent_task_id?: number | null
@@ -1284,7 +1297,9 @@ export interface CrmQuotationLookup {
 
 export interface QuotationItem {
   id: number
-  inquiry_id: number
+  // Exactly one is set: the inquiry's quotation, or the tender's price bid.
+  inquiry_id: number | null
+  tender_id?: number | null
   quot_number?: string
   revision_number: number
   quotation_type: string
@@ -3644,6 +3659,8 @@ export interface StoreItem {
   last_receipt_rate?: number | null
   last_receipt_date?: string | null
   status: 'active' | 'inactive' | 'discontinued'
+  /** Added from the Before-PO receipt form; its details still need the Item Master owner's review (2026-11-14). */
+  needs_review?: boolean
   has_photo?: boolean
   plant?: string | null
   preferred_warehouse_id?: number | null
@@ -3663,6 +3680,20 @@ export interface StoreItem {
   effective_purchase_gl_source?: 'item' | 'category' | 'default' | 'none' | null
   effective_sales_gl?: string | null
   effective_sales_gl_source?: 'item' | 'category' | 'default' | 'none' | null
+}
+
+/** A look-alike Item Master item found before a quick add at inward (GET /store/items/similar). */
+export interface StoreItemSimilar {
+  id: number
+  item_code: string
+  item_name: string
+  item_type?: string | null
+  category?: string | null
+  uom?: string | null
+  specification?: string | null
+  match: 'bill_name' | 'same_name' | 'similar'
+  reason: string
+  score: number
 }
 
 export interface StoreItemMeta {
@@ -5563,7 +5594,7 @@ export interface PmBoard {
 
 
 // ---------------------------------------------------------------------------
-// R&D module — projects, experiments, prototypes, feasibility
+// R&D module — projects, feasibility
 // ---------------------------------------------------------------------------
 
 export type RndProjectType = 'new_product' | 'product_improvement' | 'process_development' | 'technology_research'
@@ -5575,10 +5606,6 @@ export type RndImprovementReason = 'customer_complaint' | 'ncr' | 'service_repor
 export interface RndProjectSourceOption { id: number; label: string; sub?: string | null }
 export type RndProjectStage = 'initiation' | 'research' | 'development' | 'feasibility' | 'handover' | 'closed'
 export type RndProjectStatus = 'active' | 'on_hold' | 'cancelled'
-export type RndExperimentType = 'research' | 'lab_test' | 'field_trial' | 'simulation' | 'validation'
-export type RndExperimentStatus = 'planned' | 'in_progress' | 'completed' | 'cancelled'
-export type RndExperimentResult = 'pass' | 'fail' | 'inconclusive'
-export type RndPrototypeStatus = 'design' | 'building' | 'testing' | 'validated' | 'rejected'
 export type RndFeasibilityRating = 'feasible' | 'conditional' | 'not_feasible'
 export type RndFeasibilityRecommendation = 'go' | 'conditional_go' | 'no_go'
 
@@ -5630,9 +5657,6 @@ export interface RndProject {
   lead_name?: string | null
   leads: { id: number; name: string }[]
   team_members: { id: number; name: string }[]
-  actual_cost: number | null
-  experiment_count: number
-  prototype_count: number
   /** CRM requirements the R&D head linked to this project. */
   linked_requirements?: { source: 'inquiry' | 'tender'; record_id: number; ref: string | null; title: string | null }[]
   origin?: RndProjectOrigin | null
@@ -5655,8 +5679,6 @@ export interface RndProject {
 }
 
 export interface RndProjectDetail extends RndProject {
-  experiments: { id: number; experiment_number: string; title: string; status: RndExperimentStatus; result?: RndExperimentResult | null; experiment_date?: string | null }[]
-  prototypes: { id: number; prototype_number: string; name: string; version: string; status: RndPrototypeStatus; bom_cost: number | null; production_bom_id?: number | null; production_bom_number?: string | null }[]
   has_feasibility: boolean
   feasibility_recommendation?: RndFeasibilityRecommendation | null
 }
@@ -5685,92 +5707,11 @@ export interface RndFeasibilityStudy {
   estimated_margin_pct?: number | null
 }
 
-export interface RndExperimentParameter {
-  parameter: string
-  specification?: string | null
-  measured?: string | null
-  unit?: string | null
-  result?: 'pass' | 'fail' | '' | null
-}
-
-export interface RndExperiment {
-  id: number
-  experiment_number: string
-  project_id: number
-  prototype_id?: number | null
-  title: string
-  experiment_type: RndExperimentType
-  status: RndExperimentStatus
-  result?: RndExperimentResult | null
-  objective?: string | null
-  method?: string | null
-  experiment_date?: string | null
-  conducted_by_id?: number | null
-  parameters: RndExperimentParameter[]
-  observations?: string | null
-  conclusion?: string | null
-  created_at?: string | null
-  updated_at?: string | null
-  project_number?: string | null
-  project_title?: string | null
-  prototype_number?: string | null
-  conducted_by_name?: string | null
-}
-
-export interface RndPrototypeBomItem {
-  id: number
-  store_item_id?: number | null
-  item_code?: string | null
-  item_name: string
-  quantity: number
-  uom?: string | null
-  unit_cost?: number | null
-  remarks?: string | null
-  line_cost: number | null
-}
-
-export interface RndPrototypeBomItemInput {
-  store_item_id?: number | null
-  item_code?: string | null
-  item_name: string
-  quantity: number
-  uom?: string | null
-  unit_cost?: number | null
-  remarks?: string | null
-}
-
-export interface RndPrototype {
-  id: number
-  prototype_number: string
-  project_id: number
-  name: string
-  version: string
-  status: RndPrototypeStatus
-  description?: string | null
-  build_date?: string | null
-  findings?: string | null
-  created_at?: string | null
-  updated_at?: string | null
-  bom_items: RndPrototypeBomItem[]
-  project_number?: string | null
-  project_title?: string | null
-  bom_cost: number | null
-  experiment_count: number
-  document_count: number
-  production_bom_id?: number | null
-  production_bom_number?: string | null
-  production_bom_status?: string | null
-  released_at?: string | null
-  released_by_name?: string | null
-}
-
 export type RndDocumentType = 'specification' | 'drawing' | 'test_report' | 'research_note' | 'process_document' | 'other'
 
 export interface RndDocument {
   id: number
   project_id: number
-  experiment_id?: number | null
-  prototype_id?: number | null
   doc_type: RndDocumentType
   title: string
   version?: string | null
@@ -5783,15 +5724,6 @@ export interface RndDocument {
   uploaded_by_name?: string | null
   created_at?: string | null
   project_number?: string | null
-  experiment_number?: string | null
-  prototype_number?: string | null
-}
-
-export interface RndStoreItemLookup {
-  id: number
-  item_code: string
-  item_name: string
-  uom?: string | null
 }
 
 // ============================================================

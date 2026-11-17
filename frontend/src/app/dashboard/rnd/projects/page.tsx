@@ -9,6 +9,7 @@ import { RndProject } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import { primaryBtnStyle, secondaryBtnStyle, RowCount, inputStyle as sharedInputStyle, pillStyle } from '@/components/shared/ui'
 import RndNav from '@/components/rnd/RndNav'
+import ScopeNote from '@/components/shared/ScopeNote'
 import { recordPath } from '@/lib/recordRef'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
@@ -130,6 +131,7 @@ function RndProjectList() {
         {activeFilterCount > 0 && <button type="button" onClick={clearFilters} style={secondaryBtnStyle}>Clear</button>}
       </div>
 
+      {!vis.preview && <ScopeNote module="rnd" empty={!loading && projects.length === 0} />}
       <div style={{
         borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
         border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)',
@@ -146,7 +148,7 @@ function RndProjectList() {
             {loading ? (
               <tr><td colSpan={columns.length} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : projects.length === 0 ? (
-              <tr><td colSpan={columns.length} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No R&amp;D projects found.</td></tr>
+              <tr><td colSpan={columns.length} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No R&amp;D projects to show{activeFilterCount > 0 ? ' for these filters — clear them to see all' : ' — you see the projects you created, lead or are on the team of, unless your data access is wider'}.</td></tr>
             ) : (
               projects.map((p) => {
                 return (

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { approvalsApi, pmWorkApi, projectsApi } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
 import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 import { PmDepartmentPerson, PmMilestoneWorkspace, PmProjectTask } from '@/types'
 import { TEXT } from '@/lib/theme'
@@ -14,7 +15,7 @@ import DateField from '@/components/erp/DateField'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import PromptDialog from '@/components/erp/PromptDialog'
 import {
-  AttachmentList, DOC_TYPE_LABELS, ErrorBanner, FlagPill, MILESTONE_HEX, MILESTONE_LABELS, Notice, PRIORITY_LABELS, PROJECT_LABELS, Pill,
+  AttachmentList, DOC_TYPE_LABELS, ErrorBanner, canOpenProjectPage, FlagPill, MILESTONE_HEX, MILESTONE_LABELS, Notice, PRIORITY_LABELS, PROJECT_LABELS, Pill,
   ProgressBar, actionBtn, smallActionBtn, inputStyle, sectionStyle, todayIso,
 } from './pmUi'
 import { useFormDraft } from '@/lib/formDraft'
@@ -40,6 +41,7 @@ const emptyTask = (priority = 'standard'): TaskForm => ({ title: '', description
 export default function MilestoneWorkspace({ milestoneId }: { milestoneId: number }) {
   const router = useRouter()
   const { user } = useAuth()
+  const { can } = useCan()
   const [ws, setWs] = useState<PmMilestoneWorkspace | null>(null)
   const [people, setPeople] = useState<PmDepartmentPerson[]>([])
   const [form, setForm] = useState<TaskForm | null>(null)
@@ -92,9 +94,12 @@ export default function MilestoneWorkspace({ milestoneId }: { milestoneId: numbe
   const m = ws.milestone
   const projectActive = m.project_status === 'active'
   const open = ['not_started', 'in_progress'].includes(m.status)
-  const canPlan = ws.can_plan && projectActive && open
+  // The role tick decides, like the API (routes/work.py): lead work needs
+  // Department Work › Edit, adding your own task needs My Tasks › Edit.
+  const leadEdit = can('projects', 'department_work', 'edit')
+  const canPlan = ws.can_plan && projectActive && open && leadEdit
   const full = ws.role === 'manage' || ws.role === 'lead'
-  const canAddOwn = (ws.role === 'member' || ws.can_plan) && projectActive && open
+  const canAddOwn = (ws.role === 'member' || ws.can_plan) && projectActive && open && can('projects', 'my_tasks', 'edit')
   const teamIds = [m.lead_user_id, ...(m.assistant_user_ids || [])].filter(Boolean) as number[]
   // Assignee list: the team first, then the rest of the department.
   const teamPeople = people.filter((p) => teamIds.includes(p.id))
@@ -108,7 +113,7 @@ export default function MilestoneWorkspace({ milestoneId }: { milestoneId: numbe
     : live.length === 0 ? 'Add tasks first — nothing to submit yet'
     : !allDone ? `${doneCount} of ${live.length} task(s) done — every task must be Done`
     : ''
-  const canOpenProject = !!user?.apps?.includes('projects')
+  const canOpenProject = canOpenProjectPage(user)
 
   const saveTask = async () => {
     if (!form) return
@@ -173,7 +178,7 @@ export default function MilestoneWorkspace({ milestoneId }: { milestoneId: numbe
         <div data-tour="pm-mw-team" style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 8, fontSize: 12.5, color: TEXT.secondary }}>
           <span><strong>Lead:</strong> {m.lead_name || '—'}</span>
           <span><strong>Assistants:</strong> {m.assistants.length ? m.assistants.map((a) => a.name).join(', ') : '—'}</span>
-          {ws.can_plan && !['achieved', 'cancelled'].includes(m.status) && teamEdit === null && (
+          {ws.can_plan && leadEdit && !['achieved', 'cancelled'].includes(m.status) && teamEdit === null && (
             <button type="button" onClick={() => setTeamEdit(m.assistant_user_ids || [])} style={{ ...smallActionBtn('secondary') }}>Edit team</button>
           )}
         </div>
@@ -209,7 +214,7 @@ export default function MilestoneWorkspace({ milestoneId }: { milestoneId: numbe
         {m.status === 'submitted' && <div style={{ marginTop: 12 }}><Notice tone="info">Submitted by {m.submitted_by_name}: {m.submission_note}</Notice></div>}
         {m.status === 'cancelled' && <div style={{ marginTop: 12 }}><Notice tone="bad">Cancelled: {m.cancel_reason}</Notice></div>}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12, justifyContent: 'flex-end', alignItems: 'center' }}>
-          {ws.can_manage && m.status === 'submitted' && engineRequest === false && (
+          {ws.can_manage && can('projects', 'milestones', 'edit') && m.status === 'submitted' && engineRequest === false && (
             <>
               <button data-tour="pm-mw-accept-btn" type="button" disabled={busy} onClick={() => { setAcceptDate(todayIso()); setAcceptOpen(true) }} style={actionBtn('primary', busy)}>Accept Milestone</button>
               <button data-tour="pm-mw-reject-btn" type="button" disabled={busy} onClick={() => setReasonFor({ kind: 'reject' })} style={actionBtn('danger', busy)}>Reject</button>

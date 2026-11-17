@@ -38,23 +38,21 @@ const fmtSize = (n?: number | null) => (n == null ? '' : n < 1024 * 1024 ? `${Ma
 
 /**
  * Documents list + upload for the R&D module. With `projectId` it's scoped
- * to that project (and optionally one experiment / prototype); without it
+ * to that project; without it
  * (the Documents tab) it lists everything matching the filters and the
  * upload form asks which project the file belongs to.
  */
 export default function RndDocumentsPanel({
-  projectId, experimentId, prototypeId, docTypeFilter, search, title = 'Documents', currentUserId, isAdmin, canManageFiles,
+  projectId, docTypeFilter, search, title = 'Documents', currentUserId, isAdmin, canManageFiles,
 }: {
   projectId?: number
-  experimentId?: number
-  prototypeId?: number
   docTypeFilter?: string
   search?: string
   title?: string
   currentUserId?: number
   isAdmin?: boolean
-  // Project pages pass whether the user is a project lead / admin — only they
-  // may delete a project's files (team members upload but can't remove).
+  // Project pages pass whether the user is a project lead / admin — they may
+  // delete anyone's file there; everyone else deletes only their own uploads.
   canManageFiles?: boolean
 }) {
   const [docs, setDocs] = useState<RndDocument[]>([])
@@ -84,8 +82,6 @@ export default function RndDocumentsPanel({
   useEffect(() => {
     const params: Record<string, unknown> = {}
     if (projectId) params.project_id = projectId
-    if (experimentId) params.experiment_id = experimentId
-    if (prototypeId) params.prototype_id = prototypeId
     if (docTypeFilter) params.doc_type = docTypeFilter
     if (search?.trim()) params.search = search.trim()
     let cancelled = false
@@ -94,7 +90,7 @@ export default function RndDocumentsPanel({
       .catch((err) => { if (!cancelled) setError(extractErrorMessages(err, 'Failed to load R&D documents.')) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [projectId, experimentId, prototypeId, docTypeFilter, search, reloadKey])
+  }, [projectId, docTypeFilter, search, reloadKey])
 
   useEffect(() => {
     if (projectId) return
@@ -113,8 +109,6 @@ export default function RndDocumentsPanel({
 
     const fd = new FormData()
     fd.append('project_id', String(targetProjectId))
-    if (experimentId) fd.append('experiment_id', String(experimentId))
-    if (prototypeId) fd.append('prototype_id', String(prototypeId))
     fd.append('doc_type', docType)
     fd.append('title', docTitle.trim())
     if (version.trim()) fd.append('version', version.trim())
@@ -241,10 +235,11 @@ export default function RndDocumentsPanel({
       ) : (
         <div data-tour="rnd-docpanel-list" style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 420, overflowY: 'auto' }}>
           {docs.map((d) => {
-            const links = [!projectId ? d.project_number : null, d.experiment_number, d.prototype_number].filter(Boolean).join(' · ')
-            const mayDelete = canManageFiles === undefined
-              ? canDelete('rnd', 'documents', d.uploaded_by_id ?? null)
-              : canManageFiles && can('rnd', 'documents', 'delete')
+            const links = [!projectId ? d.project_number : null].filter(Boolean).join(' · ')
+            // One rule on every page (backend routes/documents.py delete_document):
+            // R&D › Documents › Delete AND (your own upload, or you lead the project / are admin).
+            const mayDelete = canDelete('rnd', 'documents', d.uploaded_by_id ?? -1)
+              || (!!canManageFiles && can('rnd', 'documents', 'delete'))
             return (
               <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 10, border: `1px solid ${BORDER.light}`, background: 'rgba(255,255,255,.5)', flexWrap: 'wrap' }}>
                 <span style={pillStyle(TYPE_HEX[d.doc_type] || '#78716c')}>

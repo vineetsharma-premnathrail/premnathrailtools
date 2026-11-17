@@ -2,16 +2,18 @@
 
 import Link from 'next/link'
 import { navScrollRef } from '@/components/shared/navScroll'
-import { usePathname } from 'next/navigation'
-import { useAuth } from '@/hooks/useAuth'
-import { filterTabsByAccess } from '@/lib/tabAccess'
+import { usePathname, useRouter } from 'next/navigation'
+import { useEffect } from 'react'
+import { useAuth, useRequireApp } from '@/hooks/useAuth'
+import { canViewTab, filterTabsByAccess, firstViewableTab } from '@/lib/tabAccess'
+import type { User } from '@/types'
 import NotificationBell from '@/components/erp/NotificationBell'
 import TourButton from '@/components/tour/TourButton'
 import NavSettingsGear from '@/components/shared/NavSettingsGear'
 import { BRAND } from '@/lib/theme'
 import { Buildings, ChartBar, FileText, FolderOpen, Gear, Package, SquaresFour, UploadSimple, type Icon } from '@phosphor-icons/react'
 
-const TABS = [
+export const CRM_TABS = [
   { href: '/dashboard/crm', label: 'Dashboard', icon: 'grid', subtabKey: 'dashboard' },
   { href: '/dashboard/crm/organizations', label: 'Customer Organizations', icon: 'building', subtabKey: 'organizations' },
   { href: '/dashboard/crm/inquiries', label: 'Inquiries & Tenders', icon: 'file', subtabKey: 'inquiries_tenders' },
@@ -24,6 +26,34 @@ const TABS = [
   // (the old Masters and Bulk Import tabs were folded into Settings / the lists' Import button).
   { href: '/dashboard/crm/settings', label: 'Settings', icon: 'gear', subtabKey: 'settings' },
 ] as const
+const TABS = CRM_TABS
+
+/**
+ * Where "CRM" takes `user`: the Dashboard when their role may view it, else the
+ * first CRM tab they may open (owner, 2026-11-14: "permission di hai fir bhi show
+ * nahi hota" — a role without the Dashboard tick landed on a 403). Undefined when
+ * no CRM tab is viewable.
+ */
+export function crmHomeHref(user: User | null | undefined): string | undefined {
+  if (canViewTab('crm', 'dashboard', user)) return '/dashboard/crm'
+  return firstViewableTab('crm', CRM_TABS.filter((t) => t.subtabKey !== 'dashboard' && t.subtabKey !== 'settings'), user)?.href
+    ?? (canViewTab('crm', 'settings', user) ? '/dashboard/crm/settings' : undefined)
+}
+
+/**
+ * Page gate for one CRM tab: the CRM app plus View on `subtabKey`; anyone else
+ * goes to the CRM tab their role opens instead of a page that would render and
+ * then answer 403.
+ */
+export function useCrmTabAccess(subtabKey: string) {
+  const { user, isAuthorized: hasApp, isLoading } = useRequireApp('crm')
+  const router = useRouter()
+  const allowed = hasApp && canViewTab('crm', subtabKey, user)
+  useEffect(() => {
+    if (!isLoading && hasApp && !allowed) router.replace(crmHomeHref(user) || '/dashboard')
+  }, [isLoading, hasApp, allowed, router, user])
+  return { user, isAuthorized: allowed, isLoading }
+}
 
 // Tab icon key -> Phosphor icon (Regular weight). The key also feeds the
 // tab's data-tour id, so keys stay as they are.

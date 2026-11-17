@@ -12,6 +12,7 @@ import { erpApi } from '@/lib/api'
 import { formatDate } from '@/lib/format'
 import { Project, ServiceRequest, SRStatus } from '@/types'
 import ErpNav from '@/components/erp/ErpNav'
+import ScopeNote from '@/components/shared/ScopeNote'
 import FilterMenu from '@/components/shared/FilterMenu'
 import { inputStyle, secondaryBtnStyle, RowCount, Pill, pillStyle, StatChip } from '@/components/shared/ui'
 import MessageDialog from '@/components/erp/MessageDialog'
@@ -284,6 +285,7 @@ export default function ServiceRequestsPage() {
         </div>
       </div>
 
+      {!vis.preview && <ScopeNote module="erp" empty={!loading && visibleSrs.length === 0} />}
       <div style={{ borderRadius: 18, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', overflow: 'hidden', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <div style={{ overflow: 'auto', flex: 1, minHeight: 0 }}>
         <table data-tour="erp-sr-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 0 }}>

@@ -20,7 +20,7 @@ const config: TourConfig = {
       target: 'adjustment-approver',
       title: 'Approver',
       required: true,
-      purpose: 'Who must approve this correction before it changes stock. Search by name or email. You are left out of the list — you cannot approve your own adjustment.',
+      purpose: 'Who must approve this correction before it changes stock. Search by name or email. The list shows only people whose role ticks Store › Adjustments › Approve; you are left out — you cannot approve your own adjustment.',
       why: 'Writing stock up or down changes the value of inventory. A second person approving it stops one person from hiding a loss or theft.',
     },
     {

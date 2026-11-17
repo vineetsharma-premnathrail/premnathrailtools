@@ -6,9 +6,11 @@
 **Frontend Location:** `frontend/src/app/dashboard/rnd/`, shared components in `frontend/src/components/rnd/`
 **Prepared by:** Vineet Sharma
 **Date:** 7 October 2026
-**Status:** Live. It has two halves: the **R&D project workflow** (projects, feasibility, experiments, prototypes, documents, release of a prototype BOM to Production, and the CRM requirement inbox) and the **seven engineering calculators** with a shared calculation history. Three pages, Experiments, Prototypes and Documents, still exist and work, but the nav currently hides them (see 3.1). Whether they come back is a pending decision.
+**Status:** Live. It has two halves: the **R&D project workflow** (Prototype / Research projects, feasibility, documents, and the CRM requirement inbox) and the **seven engineering calculators** with a shared calculation history.
 
-This document replaces the 29 August 2026 version, which only covered the calculators and said every route was behind one gate. That is no longer true: most routers now also check a Permission Matrix subtab, and some do not (see 3.2).
+**Removed 2026-11-17 (owner decision).** R&D **Experiments & Tests** and **Prototypes** (prototype builds with a costed BOM, and "Release to Production") no longer exist: pages, routes, number series (`EXP-`, `PRT-`) and tables are gone (migration `b7e2d4f6a8c1`, see 4.7). "Prototype / Research" **projects** stay, and so does the R&D task type "prototype". Old sections of this file that described the removed features have been deleted; the decision record is `docs/agent-runs/2026-11-17-remove-rnd-experiments-prototypes/requirement.md`.
+
+This document replaces the 29 August 2026 version, which only covered the calculators and said every route was behind one gate. That is no longer true: most routers now also check a Permission Matrix subtab, and some do not (see 3.2). verify: parts of sections 4.1, 6.2 and 11 to 12 (project fields, stage approvals, Tasks / Settings tabs) were written before the 2026-10/11 R&D rework and were not re-checked line by line in the 2026-11-17 edit; only the experiments / prototypes parts were.
 
 ---
 
@@ -18,13 +20,10 @@ The R&D module answers four questions:
 
 1. **What has Sales/CRM asked R&D to look at, and have we answered?** This is the Requirements inbox. It shows CRM inquiries and tenders that were sent with "Send Technical Requirement to R&D".
 2. **Which development projects are running, at what stage, and against what budget?** This covers R&D projects, their stage gates, the feasibility study and the handover checklist.
-3. **What did we build and test, and did it pass?** This covers prototypes (with a costed BOM) and experiments (with measured parameters and a pass/fail result).
+3. **Where are the project's files?** Specifications, drawings, test reports and notes are attached to the project (Documents).
 4. **Does the design meet the numbers?** This is the seven engineering calculators: braking, hydraulic drive, Qmax, load distribution, tractive effort, vehicle performance and spline. Each produces a downloadable report and can be saved to a shared history.
 
-The module ends where Production begins. A validated prototype's BOM is released to Production as a **draft** Production BOM, and Production adds the routing and activates it (6.6).
-
-> **Engineering note: why R&D hands over a *draft* BOM and never an active one.**
-> In SAP PLM/PP, the engineering BOM (what R&D designed) and the manufacturing BOM (what the shop floor builds, with routing, scrap and operations) are separate objects, and only Production activates the manufacturing BOM. If R&D could create an active BOM, an untested part list could go straight into MRP and purchasing. Here R&D releases the part list it validated, Production checks it and adds operations, and only then does it become live. The prototype is frozen once released, so the source of record cannot change under Production's feet.
+The module ends at the project's **Handover** checklist. Since 2026-11-17 R&D no longer creates or releases any BOM: BOMs are made in Design / Production. Production BOMs that were earlier released from a prototype stay in Production (their remarks still read "Released from R&D PRT-...").
 
 ---
 
@@ -33,8 +32,8 @@ The module ends where Production begins. A validated prototype's BOM is released
 | Other module | What R&D uses | Direction |
 |---|---|---|
 | **CRM** | Inquiries and Tenders with `technical_offer_sent_at` set, the request assignment (`CrmRndRequest`), the send history (audit log `<source>_tor`), and CRM documents flagged `shared_via_tor`. | R&D reads the CRM record directly; nothing is copied. R&D's *response* (remarks, delay reason, files) is written back to CRM: files become `CrmDocument` rows under `CRM-media/…/rnd-response`, and an `rnd_responded` audit entry is logged on the CRM record. |
-| **Production** | `production_boms` / `production_bom_items`, and `generate_bom_number()`. | R&D **writes** one draft BOM per release (6.6). It reads the BOM back to show its number, version and status. Deleting that draft in Production un-freezes the prototype. |
-| **Store (Item Master)** | `store_items` for prototype BOM lines and for the finished product picked at release. | Read only, through R&D's own `GET /rnd/lookups/store-items` (R&D users usually don't have the `store` app). |
+| **Production** | Nothing. (Until 2026-11-17 R&D wrote a draft BOM on "Release to Production"; that flow is removed.) | None |
+| **Store (Item Master)** | Nothing. The R&D lookup `GET /rnd/lookups/store-items` was removed with the prototype BOM. | None |
 | **Project Management** | The **Project Work** tab is the shared `MyTasks` + `DepartmentWork` component (milestones given to the R&D department, and the user's tasks). | Display only. There is no link between PM projects and R&D projects. |
 | **SharePoint** | R&D documents are stored under `RnD-media/…/RnD/<project number>`. Requirement responses go under `CRM-media`. | Write |
 | **Design** | Nothing yet. Plan §13 item 3 (attach a calculation report to a Design document) is not built. | — |
@@ -52,15 +51,13 @@ The module is gated by the app key `rnd`. Fine-grained rights come from the Perm
 | `dashboard` | Dashboard | Yes | `GET /rnd/dashboard` |
 | `project_work` | Project Work | Yes | Nothing in R&D (the PM component has its own checks) |
 | `requirements` | Requirements | Yes | Whole `/rnd/requirements` router |
-| `projects` | R&D Projects | Yes ("Projects") | Whole `/rnd/projects` router, including feasibility |
-| `experiments` | Experiments & Tests | **Hidden, decision pending** | Whole `/rnd/experiments` router |
-| `prototypes` | Prototypes | **Hidden, decision pending** | Whole `/rnd/prototypes` router, including release to Production |
-| `documents` | Documents | **Hidden, decision pending** | Nothing; the documents router deliberately skips it (see 3.2) |
+| `projects` | Prototype / Research | Yes | Whole `/rnd/projects` router, including feasibility. Feature switch **Budget & costs** (`rnd:projects.costs:view`) shows the project budget card; people with `rnd:projects:edit` always see it. |
+| `documents` | Documents | Yes | `view` lists every project's files, `create` uploads, `delete` removes (see 3.2). The project page's Documents card works with `projects` view / edit instead. |
 | `all` | Engineering Tools | Yes | Nothing (frontend nav only). The key is the old calculator landing page, kept so existing grants still apply. |
 | `braking` … `spline` (7 keys) | One per calculator | Yes, as a second row inside Engineering Tools | Nothing (frontend nav only) |
 | `history` | History | Yes | Nothing (frontend nav only) |
 
-**Hidden pages.** `RndNav` no longer lists Experiments, Prototypes or Documents, and the project detail page no longer lists a project's experiments or prototypes either (the API still returns them in `GET /rnd/projects/{id}`). The pages under `/dashboard/rnd/experiments`, `/prototypes` and `/documents`, including the **Release to Production** panel, still work when opened by URL. Until a decision is taken, the only way to release a prototype BOM is to open `/dashboard/rnd/prototypes/<id>` directly. <!-- decision pending: bring back the three tabs, or fold experiments/prototypes/documents into the project page -->
+**Removed pages.** `/dashboard/rnd/experiments` and `/dashboard/rnd/prototypes` (list, new, detail) no longer exist, and `GET /rnd/projects/{id}` no longer returns experiment or prototype summaries. A role that still carried `rnd:experiments*` / `rnd:prototypes*` grants was rewritten by the migration (4.7).
 
 ## 3.2 What is and isn't gated (backend)
 
@@ -69,33 +66,30 @@ The module is gated by the app key `rnd`. Fine-grained rights come from the Perm
 | `/rnd/tools/*` (all seven calculators) | `rnd` app only, once on the parent router (`routes/calculations.py`). **No per-tool subtab check**: hiding "Braking" in the matrix hides the nav pill, but the API still answers. |
 | `/rnd/history/*` | `rnd` app only (recently added on the router). No `history` subtab check. Owner-or-admin checks on detail, rename and delete; admin-only on `/admin/*`. |
 | `/rnd/dashboard` | `rnd` app + `dashboard` subtab |
-| `/rnd/lookups/store-items` | `rnd` app only |
 | `/rnd/projects/*` | `rnd` app + `projects` subtab |
-| `/rnd/experiments/*` | `rnd` app + `experiments` subtab |
-| `/rnd/prototypes/*` | `rnd` app + `prototypes` subtab |
-| `/rnd/documents/*` | `rnd` app only, on purpose: documents appear inside experiment and prototype pages, and a subtab gate would 403 them there. Delete is uploader-or-admin. |
+| `/rnd/documents/*` | `rnd` app, then per action: list needs `documents:view` (or `projects:view` when filtered to one project), upload needs `documents:create` or `projects:edit`. Delete is uploader-or-admin. Documents attach to a project only (no experiment / prototype link any more). |
 | `/rnd/requirements/*` | `rnd` app + `requirements` subtab. Responding is further limited to the assigned engineer or an admin (checked in `crm/services/requirement_movement.mark_responded`). |
 
-**No action-level gates.** Nothing in R&D uses `require_tab_action`. Anyone who can *view* a subtab can also create, edit, delete, change stage, record the feasibility recommendation and release to Production. There is no separate "approve" right for the Go/No-Go decision or the release.
+**Action-level gates.** Projects use create / edit / delete actions, and moving a project to Handover or Closed needs `rnd:projects:approve` (`change_stage` in `routes/projects.py`). verify: the older statement "nothing in R&D uses `require_tab_action`" was not re-audited for the other routers in this edit.
 
-> **Engineering note: why the missing approve right matters.**
-> The feasibility recommendation and the BOM release are the two points where R&D commits the company to something: spending on production tooling, and a part list that purchasing will act on. In a stage-gate process these are signed off by someone other than the person doing the work (a gate review board; here, a partner or the R&D head). Today the system records *who* set the recommendation (`reviewed_by_id`) and *who* released (`released_by_id`), so it is auditable, but it does not stop the engineer approving their own work. If that separation is wanted, the fix is `require_tab_action("rnd", "projects", "approve")` on the stage and feasibility routes and `("prototypes", "approve")` on release.
+> **Engineering note: why the approve right matters.**
+> The feasibility recommendation is the point where R&D commits the company to something: spending on production tooling. In a stage-gate process this is signed off by someone other than the person doing the work (a gate review board; here, a partner or the R&D head). The system records *who* set the recommendation (`reviewed_by_id`), so it is auditable. The "release BOM to Production" approval that used to sit next to it was removed together with Prototypes (2026-11-17).
 
 ## 3.3 Typical roles
 
 | Role | Access needed |
 |---|---|
 | **R&D engineer** | `rnd` app; `requirements`, `projects`, the tools and `history`. Answers CRM requests assigned to them. |
-| **R&D head** | Everything above, plus the hidden `experiments` / `prototypes` subtabs while those pages are reached by URL. Sees all users' calculation history only if they are an admin (there is no "R&D lead" level for history). |
+| **R&D head** | Everything above, plus `rnd:projects:approve` for Handover / Closed and the Budget & costs switch. Sees all users' calculation history only if they are an admin (there is no "R&D lead" level for history). |
 | **CRM / BD** | Nothing in R&D. They send requests and read the response from the CRM side (`/crm/rnd-requests`, CRM-gated). |
 
 ---
 
 # 4. Data model
 
-All project-side tables use `TimestampMixin`; projects, experiments, prototypes and documents also use `SoftDeleteMixin`. Projects, experiments, prototypes, prototype BOM lines, feasibility studies and documents are registered in `core/audit_registry.py`, so field changes reach `audit_logs`. Choice lists are coded tuples in the model files (no admin-editable lookup tables).
+All project-side tables use `TimestampMixin`; projects and documents also use `SoftDeleteMixin`. Projects, feasibility studies and documents are registered in `core/audit_registry.py`, so field changes reach `audit_logs`. Choice lists are coded tuples in the model files (no admin-editable lookup tables).
 
-Migrations: `284fe3a833c2_add_rnd_module_projects_experiments_prototypes.py` and `a9691d4d422a_add_rnd_documents_and_prototype_release.py`.
+Migrations: `284fe3a833c2_add_rnd_module_projects_experiments_prototypes.py` and `a9691d4d422a_add_rnd_documents_and_prototype_release.py` created the tables that `b7e2d4f6a8c1_drop_rnd_experiments_prototypes.py` dropped on 2026-11-17 (4.7).
 
 ## 4.1 `rnd_projects` (`RndProject`), numbered `RND-YYYY-NNNN`
 
@@ -108,7 +102,7 @@ Migrations: `284fe3a833c2_add_rnd_module_projects_experiments_prototypes.py` and
 | `status` | `active`, `on_hold`, `cancelled`. A cancelled project can't change stage. |
 | `lead_id`, `team_member_ids` (JSON list of user ids) | Validated to exist; duplicates removed |
 | `start_date`, `target_end_date`, `actual_end_date` | Target can't be before start. `actual_end_date` is stamped on the move to Closed. |
-| `budget_amount` | Compared with actual spend = sum of live prototypes' BOM cost |
+| `budget_amount` | A typed budget, or a linked Finance budget (`internal_order_id`). The project page's budget card shows budget, committed (open POs), actual (posted vouchers) and available through `GET /rnd/projects/{id}/budget`; the old "sum of prototype BOM cost" actual spend is gone. The card is hidden unless the role has **Budget & costs** or can edit projects. |
 | `handover_specs_final`, `handover_bom_approved`, `handover_process_documented`, `handover_quality_standards`, `handover_notes` | The handover checklist. All four must be ticked to close. |
 | `handed_over_at` | Stamped the first time the project enters Handover |
 
@@ -116,31 +110,13 @@ Migrations: `284fe3a833c2_add_rnd_module_projects_experiments_prototypes.py` and
 
 Four checks, each with a rating (`feasible`, `conditional`, `not_feasible`) and notes: **costing** (`material_cost`, `labour_cost`, `overhead_cost`, `target_selling_price`), **sourcing**, **process** and **quality**. Then a `recommendation` (`go`, `conditional_go`, `no_go`), `decision_notes`, and `reviewed_by_id` / `reviewed_at`, which are stamped whenever the recommendation changes. The API adds `estimated_unit_cost` (sum of the three costs) and `estimated_margin_pct` = (price − unit cost) / price × 100.
 
-## 4.3 `rnd_experiments` (`RndExperiment`), numbered `EXP-YYYY-NNNN`
+## 4.3 and 4.4 Removed: experiments and prototypes
 
-| Column | Notes |
-|---|---|
-| `project_id` (required), `prototype_id` (optional, must belong to the same project) | |
-| `experiment_type` | `research`, `lab_test`, `field_trial`, `simulation`, `validation` |
-| `status` | `planned`, `in_progress`, `completed`, `cancelled`. Completed needs a `result`. |
-| `result` | `pass`, `fail`, `inconclusive` |
-| `objective`, `method`, `experiment_date`, `conducted_by_id` (defaults to the creator) | |
-| `parameters` (JSON) | Rows of `{parameter, specification, measured, unit, result}`; row `result` is `pass`, `fail` or blank, and every row needs a parameter name |
-| `observations`, `conclusion` | |
-
-## 4.4 `rnd_prototypes` (`RndPrototype`), numbered `PRT-YYYY-NNNN`, and `rnd_prototype_bom_items`
-
-| Column | Notes |
-|---|---|
-| `project_id`, `name`, `version` (default `v1`), `description`, `build_date`, `findings` | |
-| `status` | `design`, `building`, `testing`, `validated`, `rejected` |
-| `production_bom_id`, `released_at`, `released_by_id` | Set by the release to Production (6.6) |
-
-BOM lines: `store_item_id` (optional), `item_code`, `item_name` (required), `quantity` (> 0), `uom`, `unit_cost` (≥ 0), `remarks`. A line can be free text because R&D often uses parts that aren't in the Item Master yet, but only Item Master lines can be released. Line cost = quantity × unit cost; prototype BOM cost = sum of lines.
+`rnd_experiments` (`EXP-YYYY-NNNN`), `rnd_prototypes` (`PRT-YYYY-NNNN`) and `rnd_prototype_bom_items` were dropped on 2026-11-17 (4.7). Nothing replaces them. The number series and generators (`generate_experiment_number`, `generate_prototype_number`) and the cost helpers (`prototype_bom_cost`, `project_actual_cost`) no longer exist.
 
 ## 4.5 `rnd_documents` (`RndDocument`)
 
-Attached to a project, optionally narrowed to one of its experiments or prototypes. `doc_type`: `specification`, `drawing`, `test_report`, `research_note`, `process_document`, `other`. The bytes live in SharePoint; the row holds `sharepoint_path`, `sharepoint_url`, `file_name`, `file_size`, `mime_type`, `title`, `version` and the uploader. When an experiment or prototype is moved to another project, its documents move with it.
+Attached to a project only (`project_id`, or `pm_project_id` for files of an R&D task on a Project Management project; a check constraint needs one of the two). `experiment_id` and `prototype_id` were dropped. `doc_type`: `specification`, `drawing`, `test_report`, `research_note`, `process_document`, `other`; a newer `category` list (Customer Specification, Technical Specification, Drawing, Calculation, Test Report, Datasheet, ...) is also stored. The bytes live in SharePoint; the row holds `sharepoint_path`, `sharepoint_url`, `file_name`, `file_size`, `mime_type`, `title`, `version` and the uploader. Task files (`task_id` set) stay out of the project's Attachments list.
 
 ## 4.6 Calculation history
 
@@ -150,6 +126,14 @@ Attached to a project, optionally narrowed to one of its experiments or prototyp
 > **Engineering note: why typed snapshot columns as well as JSON.**
 > JSON is enough to replay a calculation, but you can't easily ask "every braking calculation over 20 t with GBR under 10%" of a JSON blob across seven different shapes. The typed tables are what a future report or an RRV-model link (plan §13 item 3) would query. Nothing reads them yet.
 
+## 4.7 Migration `b7e2d4f6a8c1` (2026-11-17, revises `d3f8b2e6a9c1`)
+
+- `rnd_documents`: drops `experiment_id`, `prototype_id` (foreign keys, indexes, columns). Files stay on their project.
+- Drops `rnd_experiments`, `rnd_prototype_bom_items`, `rnd_prototypes` (in that order). **Data is not recoverable** except from a backup; the downgrade only recreates empty tables and columns. Production BOMs that were released from a prototype stay in Production.
+- Rewrites role and user grants: `rnd:experiments*` and `rnd:prototypes*` are removed; an explicit `rnd:prototypes.costs:view` (the old "BOM costs" switch) becomes `rnd:projects.costs:view` ("Budget & costs"). Other prototype cost actions (for example edit) are not carried over.
+- Removes the "Assign experiment to" and "Prototype released" (`rnd.prototype_released`) rules from roles, and any visibility rules keyed to the two tabs.
+- Test: `backend/app/tests/test_rnd_experiments_prototypes_removed.py`.
+
 ---
 
 # 5. Number series
@@ -157,9 +141,6 @@ Attached to a project, optionally narrowed to one of its experiments or prototyp
 | Document | Format | Generator |
 |---|---|---|
 | R&D project | `RND-YYYY-NNNN` | `service.generate_project_number` |
-| Experiment | `EXP-YYYY-NNNN` | `service.generate_experiment_number` |
-| Prototype | `PRT-YYYY-NNNN` | `service.generate_prototype_number` |
-| Draft Production BOM from a release | Production's own series | `production.service.generate_bom_number` |
 
 The sequence restarts each calendar year. Concurrent saves are serialised with a Postgres advisory lock on the prefix (skipped on SQLite tests), the same pattern as Quality.
 
@@ -197,47 +178,19 @@ Stages can be skipped forward (Initiation straight to Feasibility is allowed); o
 
 `PUT /rnd/projects/{id}/feasibility` creates or updates the single study. Ratings and recommendation are checked against the coded lists; costs can't be negative. Changing the recommendation stamps the reviewer and time.
 
-## 6.4 Experiments
+## 6.4 to 6.6 Removed: experiments, prototypes, release to Production
 
-Created as `planned`. The user edits type, links, parameters and dates, and moves the status. **Completed requires an overall Result.** Delete is a soft delete with no other checks.
-
-## 6.5 Prototypes and BOM cost
-
-Created in `design` with an optional BOM. Saving with `bom_items` replaces the whole BOM. The BOM cost of every live prototype rolls up into the project's **Actual** spend, shown against budget on the project page.
-
-A prototype can't move to another project while experiments in its current project reference it. It can't be deleted while experiments reference it, or after its BOM was released.
-
-**Status is free.** Any status, including `validated`, can be set directly; the system does not check that a passing validation experiment exists, even though the release error message asks the user to "record the passing validation experiments".
-
-## 6.6 Release to Production (prototype → draft Production BOM)
-
-`POST /rnd/prototypes/{id}/release-to-production` with `product_item_id` (the finished product's Store item), `base_quantity` (default 1) and optional `remarks`. The UI is `ReleaseToProductionPanel` on the prototype page.
-
-Checks, in order, each with its own error message:
-
-1. Not already released (409, quoting the existing BOM number).
-2. Prototype status is `validated`.
-3. The BOM has at least one line.
-4. **Every line is an Item Master part** (free-text lines are listed by line number).
-5. Every linked Store item still exists.
-6. Every quantity is > 0, and base quantity is > 0.
-7. The product item exists and is not one of the BOM's own components.
-8. There is no other open **draft** BOM for that product (409; Production must activate or delete it first).
-
-Then it creates a `ProductionBom` with `status="draft"`, `version` = the product's highest BOM version + 1, the prototype's description, and remarks "Released from R&D PRT-… (v…), project RND-…". Lines that use the same part are **merged into one line with the summed quantity**; scrap is 0. The prototype stores `production_bom_id`, `released_at` and `released_by_id`.
-
-After release, the prototype's **BOM is frozen** (409 on BOM edits) and it can't be deleted. If Production deletes the draft BOM, the freeze lifts and the prototype can be released again.
-
-> **Engineering note: why free-text parts block the release.**
-> A Production BOM drives MRP, purchase requisitions and stock issues. All three need a real item code with a unit of measure, a reorder rule and a valuation. A free-text "M12 bolt, high tensile" can't be bought or issued. So R&D is free to sketch with free text during development, but before handover Store must create the items. That is also the moment the part gets reviewed for standardisation, which is cheaper than doing it after the first production order.
+These three workflows (experiment results, prototype BOM and cost roll-up, "Release to Production" into a draft Production BOM) were removed on 2026-11-17. Section numbers are kept so older references still land.
 
 ## 6.7 Handover and close
 
-On the project page, the **Handover to Production** section has the four checklist ticks and notes. Ticking "Approved BOM & routing" is a manual statement; it is not linked to a prototype actually being released, or to Production having activated the BOM.
+On the project page, the **Handover to Production** section has the four checklist ticks and notes. Ticking "Approved BOM & routing" is a manual statement; it is not linked to any BOM in Design or Production.
 
 ## 6.8 Documents
 
-`POST /rnd/documents` (multipart) uploads one or more files with a type, title, version and optional experiment or prototype link (which must belong to the same project). `GET /rnd/documents/{id}/content` streams the bytes through the app's Graph token. The raw SharePoint link is never handed out. Both return 503 with a clear message if `SHAREPOINT_SITE_ID` isn't set. A project can't be deleted while it has documents, experiments or prototypes.
+`POST /rnd/documents` (multipart) uploads one or more files with a type, title and version to a **project** (`project_id` is required; there is no experiment or prototype link any more). `GET /rnd/documents/{id}/content` streams the bytes through the app's Graph token. The raw SharePoint link is never handed out. Both return 503 with a clear message if `SHAREPOINT_SITE_ID` isn't set.
+
+**Project delete.** `DELETE /rnd/projects/{id}` is refused only while the project still has attachments / documents (400: "Can't delete [project number]: it still has [n] attachment(s)/document(s). Delete those first - attachments are in the project's Attachments section."). Experiments and prototypes no longer block it. Delete is a soft delete.
 
 ---
 
@@ -605,9 +558,7 @@ The whole router needs the `rnd` app, so a user who lost R&D access can no longe
 
 # 10. Dashboard (`GET /rnd/dashboard`)
 
-The API returns project counts by status and by stage (excluding cancelled), experiment open/completed/pass/fail/inconclusive counts and pass rate, prototype counts by status, total budget vs total spend (prototype BOM cost, excluding cancelled projects), and the six most recently updated projects and experiments.
-
-The page currently shows only **Active Projects**, **Projects by Stage** (each bar links to the filtered project list) and **Recently Updated Projects**. The experiment, prototype and budget figures are computed but not displayed, consistent with those pages being hidden.
+The API returns exactly three keys: `requirements`, `projects` and `recent_projects` (checked by `test_dashboard_keys`). The experiment, prototype and budget-total figures were removed on 2026-11-17. The page shows **Active Projects**, **Projects by Stage** (each bar links to the filtered project list) and **Recently Updated Projects**. verify: the exact contents of the `requirements` and `projects` blocks were not re-read for this edit.
 
 ---
 
@@ -618,23 +569,22 @@ All under `/api/v1/rnd`.
 **Projects**: `routes/projects.py`, router gate `rnd` + `projects`.
 | Method and path | Notes |
 |---|---|
-| `GET /projects?stage&status&priority&project_type&search` | Includes lead, team, actual cost, experiment and prototype counts |
+| `GET /projects?stage&status&priority&project_type&search` | Includes lead and team (no cost or experiment / prototype counts any more) |
 | `POST /projects` | Starts in Initiation / Active |
-| `GET /projects/{id}` | Detail plus experiment and prototype summaries (with released BOM number) and feasibility flag |
+| `GET /projects/{id}` | Project detail and feasibility flag (no experiment / prototype summaries) |
+| `GET /projects/{id}/budget` | Budget card: budget, committed, actual, available. Returns `hidden: true` without figures when the role lacks Budget & costs and cannot edit projects |
 | `PATCH /projects/{id}` | Fields including status and the handover ticks; **not** stage |
 | `POST /projects/{id}/stage` | Stage gates (6.2) |
-| `DELETE /projects/{id}` | Soft delete; refused while experiments, prototypes or documents exist |
+| `DELETE /projects/{id}` | Soft delete; refused only while attachments / documents exist |
 | `GET` / `PUT /projects/{id}/feasibility` | Read / upsert the study |
 
-**Experiments**: `routes/experiments.py`, gate `rnd` + `experiments`. `GET /experiments?project_id&prototype_id&status&result&experiment_type&search`, `POST /experiments`, `GET` / `PATCH` / `DELETE /experiments/{id}`.
+**Experiments and Prototypes**: routes removed 2026-11-17 (they answer 404 / 405). `GET /lookups/store-items` is removed too.
 
-**Prototypes**: `routes/prototypes.py`, gate `rnd` + `prototypes`. `GET /prototypes?project_id&status&search`, `POST /prototypes`, `GET` / `PATCH` / `DELETE /prototypes/{id}`, `POST /prototypes/{id}/release-to-production`.
-
-**Documents**: `routes/documents.py`, gate `rnd`. `GET /documents?project_id&experiment_id&prototype_id&doc_type&search`, `POST /documents` (multipart), `GET /documents/{id}/content`, `DELETE /documents/{id}` (uploader or admin; the SharePoint delete is best-effort).
+**Documents**: `routes/documents.py`, gate `rnd` plus the per-action checks in 3.2. `GET /documents?project_id&doc_type&search`, `POST /documents` (multipart), `GET /documents/{id}/content`, `DELETE /documents/{id}` (uploader or admin; the SharePoint delete is best-effort).
 
 **Requirements**: `routes/requirements.py`, gate `rnd` + `requirements`. `GET /requirements?search&source&mine`, `GET /requirements/{source}/{record_id}`, `POST /requirements/requests/{request_id}/respond` (multipart `remarks`, `delay_reason`, `files`).
 
-**Dashboard and lookups**: `routes/dashboard.py`. `GET /dashboard` (`rnd` + `dashboard`), `GET /lookups/store-items?search` (`rnd`; max 50 rows).
+**Dashboard and lookups**: `routes/dashboard.py`. `GET /dashboard` (`rnd` + `dashboard`).
 
 **Tools**: see 7.1. **History**: see 9.
 
@@ -647,15 +597,15 @@ All under `/api/v1/rnd`.
 | `/dashboard/rnd` | Dashboard | Yes |
 | `/dashboard/rnd/project-work` | PM milestones and my tasks (shared components) | Yes |
 | `/dashboard/rnd/requirements`, `/requirements/[source]/[id]` | CRM requirement inbox and detail, with Respond | Yes |
-| `/dashboard/rnd/projects`, `/projects/new`, `/projects/[id]` | Project list, create, detail (stage bar, budget vs actual, details, feasibility, handover) | Yes |
+| `/dashboard/rnd/projects`, `/projects/new`, `/projects/[id]` | Prototype / Research: project list, create, detail (stage bar, budget card, details, feasibility, handover, attachments) | Yes |
 | `/dashboard/rnd/tools` | Engineering Tools landing, with cards for the seven calculators | Yes |
 | `/dashboard/rnd/{braking,hydraulic,qmax,load-distribution,tractive-effort,vehicle-performance,spline}` | Calculators; second nav row inside Engineering Tools | Yes |
 | `/dashboard/rnd/history` | Saved calculations; admin all-users view | Yes |
-| `/dashboard/rnd/experiments`, `/new`, `/[id]` | Experiments with the parameter table and documents panel | **Hidden, decision pending** |
-| `/dashboard/rnd/prototypes`, `/new`, `/[id]` | Prototypes with the BOM editor, documents panel and **Release to Production** | **Hidden, decision pending** |
-| `/dashboard/rnd/documents` | All R&D documents by project | **Hidden, decision pending** |
+| `/dashboard/rnd/documents` | All R&D documents by project | Yes |
 
-Shared components in `components/rnd/`: `RndNav`, `ReleaseToProductionPanel`, `RndDocumentsPanel`, `TeamMemberPicker`, `TerminalPanel` (the text output panel on calculator pages), `ChartJsLineChart` (vehicle performance), `StatCard`, `toolStyles`. `ToolCalculatorPage` is unused. All pages use `useRequireApp('rnd')`; subtab hiding is done in the nav with `filterTabsByAccess`, so a hidden page still opens by URL if the backend allows it.
+The experiment and prototype pages were removed on 2026-11-17.
+
+Shared components in `components/rnd/`: `RndNav`, `RndDocumentsPanel`, `TeamMemberPicker`, `TerminalPanel` (the text output panel on calculator pages), `ChartJsLineChart` (vehicle performance), `StatCard`, `toolStyles`. `ToolCalculatorPage` is unused. All pages use `useRequireApp('rnd')`; subtab hiding is done in the nav with `filterTabsByAccess`, so a hidden page still opens by URL if the backend allows it.
 
 ---
 
@@ -669,7 +619,7 @@ Shared components in `components/rnd/`: `RndNav`, `ReleaseToProductionPanel`, `R
 | §13.4 Shared inputs from the RRV model master | **Not done.** Every input is typed or imported from CSV. |
 | §38 Settings (editable constants, report header block, history visibility, PDF safe mode) | Only "PDF safe mode" exists, and it is hard-coded on. Constants are in each tool's `constants.py`, not settings. |
 
-The project workflow (projects, feasibility, experiments, prototypes, release, requirements) was built beyond plan §13, which only described the calculators.
+The project workflow (projects, feasibility, documents, requirements) was built beyond plan §13, which only described the calculators.
 
 ---
 
@@ -692,8 +642,8 @@ The detail is in each section. These are listed for triage and are **not fixed**
 | 9 | Vehicle performance | Speed table uses the lowest gear past its rpm limit; `max_speed` unused; metadata not in report; physics duplicated |
 | 10 | Spline | "Diametral pitch" is really 1/module in mm; shear area uses tooth height; `/calculate` 500s on bad input |
 | 11 | All tools | No per-tool subtab gate on the API; history saves fail silently; several pages show generic error text |
-| 12 | Projects / prototypes | No action-level (approve) gates; prototype can be set Validated without a passing experiment; handover "BOM approved" tick isn't linked to a release |
-| 13 | Nav | Experiments, Prototypes, Documents hidden while their pages and the release flow still work by URL |
+| 12 | Projects | Handover "BOM approved" tick is a manual statement, not linked to a BOM in Design or Production |
+| 13 | Nav | (Closed 2026-11-17: Experiments and Prototypes were removed; Documents is back in the nav.) |
 | 14 | Dead code | `*/calculate.py`, `vehicle_performance/core.py`, `spline/validation.py`, the duplicate spline DOCX builder, `ToolCalculatorPage.tsx`, `GET /spline/` redirect |
 
 ---
@@ -701,9 +651,9 @@ The detail is in each section. These are listed for triage and are **not fixed**
 # 15. What this module does not do
 
 - It does not link a calculation to an R&D project, an RRV model or a Design document. Reports are downloaded and attached by hand.
-- It does not create active Production BOMs, routings or Item Master records. Release creates a draft BOM only; Store creates items; Production activates.
-- It does not book R&D spend to Accounts. "Actual" is the sum of prototype BOM cost (quantity × unit cost typed by R&D), not purchase or stock-issue cost. Labour and outside test costs are not captured.
-- It does not reserve or issue stock for prototype builds.
+- It does not create BOMs, routings or Item Master records (the prototype BOM and "Release to Production" were removed 2026-11-17).
+- It does not keep its own spend figure. The project budget card reads the budget, open POs and posted vouchers from Finance.
+- It does not track experiments or test results.
 - It does not keep a parts or materials library for the calculators; there are no editable engineering constants (plan §38).
 - It does not send notifications for R&D project events. The CRM request flow has its own notifications on the CRM side.
 
@@ -712,8 +662,6 @@ The detail is in each section. These are listed for triage and are **not fixed**
 # 16. Related documentation
 
 - [CRM overview](../crm/overview.md): Send Technical Requirement to R&D and the request assignment
-- [Production: RRV build](../production/rrv-build.md): where the released draft BOM is completed and activated
-- [Store overview](../store/overview.md): the Item Master that release requires
 - [Projects (PM) overview](../projects/overview.md): the Project Work tab
 - [Design overview](../design/overview.md): the document-control module the reports should eventually attach to
 - [Platform: access and permissions](../platform/access-and-permissions.md): app gate, subtab gate and the "unconfigured user passes" rule

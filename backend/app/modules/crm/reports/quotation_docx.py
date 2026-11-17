@@ -62,6 +62,8 @@ def build_quotation_docx(ctx: Mapping[str, Any]) -> io.BytesIO:
             write(left, transform(ctx[key]))
 
     meta_pairs = [("Quotation #", ctx.get("quot_number") or "-"), ("Quotation date", ctx.get("quote_date") or "-")]
+    if ctx.get("tender_number"):  # a tender's price bid names the tender it answers
+        meta_pairs.append(("Tender No.", ctx["tender_number"]))
     if ctx.get("technical_offer_number"):
         meta_pairs.append(("Technical offer #", ctx["technical_offer_number"]))
     if ctx.get("technical_offer_date"):

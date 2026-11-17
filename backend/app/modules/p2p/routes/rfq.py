@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, object_session, selectinload
 
 from app.core import assignee_rules
 from app.core.config import settings
-from app.core.permissions import ensure_can_delete, ensure_feature_action, ensure_tab_action, require_app_access
+from app.core.permissions import ensure_can_delete, ensure_feature_action, ensure_tab_action
 from app.modules.p2p.pricing import mask_for
 from app.db.session import get_db
 from app.modules.main.models.user import User
@@ -53,13 +53,13 @@ MAX_TALLY_PDF_BYTES = 15 * 1024 * 1024
 _EPS = 1e-6
 
 
-def _purchase_tab(tab: str, action: str):
-    """Purchase-team gate (the `purchase` desk) plus the Permission Matrix
-    action on Procurement › `tab` — RFQ work is the R.F.Q tab, the PO draft
-    built from it is the Purchase Orders tab."""
-    purchase_dep = require_app_access("purchase")
+def _p2p_tab(tab: str, action: str):
+    """The Permission Matrix action on Procurement › `tab` decides alone (owner
+    decision 2026-11-14): RFQ work is the R.F.Q tab, the PO draft built from it
+    is the Purchase Orders tab. Purchase Desk is not needed — it only widens
+    which requisitions someone works; which RFQs / POs is the data scope."""
 
-    def _dependency(user: User = Depends(purchase_dep)) -> User:
+    def _dependency(user: User = Depends(get_current_user)) -> User:
         ensure_tab_action(user, "p2p", tab, action)
         return user
 
@@ -375,7 +375,7 @@ def create_rfq(
     payload: RFQCreate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    user: User = Depends(_purchase_tab("rfq", "create")),
+    user: User = Depends(_p2p_tab("rfq", "create")),
 ):
     """One RFQ = one requisition + one buyer + that buyer's lines. Another buyer of the same
     requisition raises their own RFQ for their own lines. The buyer's still-open draft RFQ on the
@@ -439,7 +439,7 @@ def set_rfq_lines(
     rfq_id: int,
     payload: RFQLinesUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(_purchase_tab("rfq", "edit")),
+    user: User = Depends(_p2p_tab("rfq", "edit")),
 ):
     """Replace the line set of a DRAFT RFQ (same rules as create). A submitted RFQ's lines only
     leave it when the Purchase head moves them to another buyer."""
@@ -476,7 +476,7 @@ async def list_rfqs(
     skip: int = Query(0, ge=0),
     limit: int = Query(200, ge=1, le=1000),
     db: Session = Depends(get_db),
-    user: User = Depends(_purchase_tab("rfq", "view")),
+    user: User = Depends(_p2p_tab("rfq", "view")),
 ):
     # RFQs behind a Before-PO receipt's requisition are internal plumbing (RFQ.source): not in
     # the RFQ lists, but the requisition's own page still finds it (Upload PO needs it).
@@ -522,7 +522,7 @@ def _blank_unreadable_rows(db: Session, user: User, rfqs: list[RFQ], out: list[R
 async def get_rfq(
     rfq_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(_purchase_tab("rfq", "view")),
+    user: User = Depends(_p2p_tab("rfq", "view")),
 ):
     rfq = _get_rfq_or_404(db, rfq_id, user)
     ensure_rfq_readable(db, rfq, user)
@@ -534,7 +534,7 @@ async def update_rfq(
     rfq_id: int,
     payload: RFQUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(_purchase_tab("rfq", "edit")),
+    user: User = Depends(_p2p_tab("rfq", "edit")),
 ):
     rfq = _get_rfq_or_404(db, rfq_id, user)
     _assert_editable(rfq, user)
@@ -561,7 +561,7 @@ async def upload_rfq_attachments(
     vendor_id: int | None = Form(None),
     files: list[UploadFile] = File(...),
     db: Session = Depends(get_db),
-    user: User = Depends(_purchase_tab("rfq", "edit")),
+    user: User = Depends(_p2p_tab("rfq", "edit")),
 ):
     ensure_feature_action(user, "p2p", "rfq", "vendor_quotes", "create")
     rfq = _get_rfq_or_404(db, rfq_id, user)
@@ -613,7 +613,7 @@ async def update_rfq_attachment_vendor(
     attachment_id: int,
     payload: RFQAttachmentVendorUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(_purchase_tab("rfq", "edit")),
+    user: User = Depends(_p2p_tab("rfq", "edit")),
 ):
     ensure_feature_action(user, "p2p", "rfq", "vendor_quotes", "edit")
     rfq = _get_rfq_or_404(db, rfq_id, user)
@@ -658,7 +658,7 @@ async def delete_rfq_attachment(
     rfq_id: int,
     attachment_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(_purchase_tab("rfq", "view")),
+    user: User = Depends(_p2p_tab("rfq", "view")),
 ):
     ensure_feature_action(user, "p2p", "rfq", "vendor_quotes", "delete")
     rfq = _get_rfq_or_404(db, rfq_id, user)
@@ -678,7 +678,7 @@ async def get_rfq_attachment_content(
     rfq_id: int,
     attachment_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(_purchase_tab("rfq", "view")),
+    user: User = Depends(_p2p_tab("rfq", "view")),
 ):
     """Raw bytes for in-app preview, fetched via the app-only Graph token —
     never the raw SharePoint webUrl."""
@@ -705,7 +705,7 @@ async def get_rfq_attachment_content(
 async def submit_rfq(
     rfq_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(_purchase_tab("rfq", "edit")),
+    user: User = Depends(_p2p_tab("rfq", "edit")),
 ):
     """Locks the RFQ — no further edits except by an admin. Validates the
     single-quotation and commercial-terms rules before locking."""
@@ -813,7 +813,7 @@ def _gone() -> None:
 
 
 @router.post("/{rfq_id}/vendor-quotations", include_in_schema=False)
-def add_vendor_quotation(rfq_id: int, user: User = Depends(_purchase_tab("rfq", "edit"))):
+def add_vendor_quotation(rfq_id: int, user: User = Depends(_p2p_tab("rfq", "edit"))):
     _gone()
 
 
@@ -821,7 +821,7 @@ def add_vendor_quotation(rfq_id: int, user: User = Depends(_purchase_tab("rfq", 
 def list_vendor_quotations(
     rfq_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(_purchase_tab("rfq", "view")),
+    user: User = Depends(_p2p_tab("rfq", "view")),
 ):
     """Read-only list of the quotations recorded against this RFQ (old rows and line quotations),
     for the RFQ's own buyer / the Purchase head / anyone whose data scope covers the RFQ."""
@@ -832,32 +832,32 @@ def list_vendor_quotations(
 
 
 @router.patch("/{rfq_id}/vendor-quotations/{vq_id}", include_in_schema=False)
-def update_vendor_quotation(rfq_id: int, vq_id: int, user: User = Depends(_purchase_tab("rfq", "edit"))):
+def update_vendor_quotation(rfq_id: int, vq_id: int, user: User = Depends(_p2p_tab("rfq", "edit"))):
     _gone()
 
 
 @router.post("/{rfq_id}/start-technical-evaluation", include_in_schema=False)
-def start_technical_evaluation(rfq_id: int, user: User = Depends(_purchase_tab("rfq", "edit"))):
+def start_technical_evaluation(rfq_id: int, user: User = Depends(_p2p_tab("rfq", "edit"))):
     _gone()
 
 
 @router.post("/{rfq_id}/vendor-quotations/{vq_id}/technical-evaluation", include_in_schema=False)
-def evaluate_technical(rfq_id: int, vq_id: int, user: User = Depends(_purchase_tab("rfq", "view"))):
+def evaluate_technical(rfq_id: int, vq_id: int, user: User = Depends(_p2p_tab("rfq", "view"))):
     _gone()
 
 
 @router.post("/{rfq_id}/start-commercial-evaluation", include_in_schema=False)
-def start_commercial_evaluation(rfq_id: int, user: User = Depends(_purchase_tab("rfq", "edit"))):
+def start_commercial_evaluation(rfq_id: int, user: User = Depends(_p2p_tab("rfq", "edit"))):
     _gone()
 
 
 @router.post("/{rfq_id}/vendor-quotations/{vq_id}/commercial-evaluation", include_in_schema=False)
-def evaluate_commercial(rfq_id: int, vq_id: int, user: User = Depends(_purchase_tab("rfq", "view"))):
+def evaluate_commercial(rfq_id: int, vq_id: int, user: User = Depends(_p2p_tab("rfq", "view"))):
     _gone()
 
 
 @router.post("/{rfq_id}/select-vendor-quotation", include_in_schema=False)
-def select_vendor_quotation(rfq_id: int, user: User = Depends(_purchase_tab("rfq", "edit"))):
+def select_vendor_quotation(rfq_id: int, user: User = Depends(_p2p_tab("rfq", "edit"))):
     _gone()
 
 
@@ -1076,7 +1076,7 @@ async def upload_po(
     details: str = Form(...),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    user: User = Depends(_purchase_tab("purchase_orders", "create")),
+    user: User = Depends(_p2p_tab("purchase_orders", "create")),
 ):
     """Upload PO on the requisition (owner, 2026-10-30): the PO is made in Tally,
     not in the portal. The buyer uploads the Tally PO (number + PDF) with ONE vendor,
@@ -1319,7 +1319,7 @@ async def update_po_draft(
     po_id: int,
     payload: P2PPurchaseOrderDraftUpdatePayload,
     db: Session = Depends(get_db),
-    user: User = Depends(_purchase_tab("purchase_orders", "edit")),
+    user: User = Depends(_p2p_tab("purchase_orders", "edit")),
 ):
     rfq = _get_rfq_or_404(db, rfq_id, user)
     ensure_rfq_owner(db, rfq, user, "edit the PO draft of")
@@ -1466,7 +1466,7 @@ async def upload_po_document(
     tally_po_no: str = Form(...),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    user: User = Depends(_purchase_tab("purchase_orders", "edit")),
+    user: User = Depends(_p2p_tab("purchase_orders", "edit")),
 ):
     """The Tally PO (owner, 2026-10-27): every portal PO is also made in Tally,
     and its Tally PO number + the Tally print (PDF) must be on the draft before
@@ -1506,7 +1506,7 @@ async def get_po_document_content(
     rfq_id: int,
     po_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(_purchase_tab("purchase_orders", "view")),
+    user: User = Depends(_p2p_tab("purchase_orders", "view")),
 ):
     ensure_feature_action(user, "p2p", "purchase_orders", "po_document", "view")
     rfq = _get_rfq_or_404(db, rfq_id, user)
@@ -1533,7 +1533,7 @@ async def submit_po_draft(
     po_id: int,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    user: User = Depends(_purchase_tab("purchase_orders", "submit")),
+    user: User = Depends(_p2p_tab("purchase_orders", "submit")),
 ):
     """Finalizes the draft PO and sends it into PO approval — the "Purchase
     order" workflow of the central approval engine (Organization › Approval
@@ -1577,7 +1577,7 @@ def discard_po_draft(
     po_id: int,
     payload: P2PPurchaseOrderDiscardPayload,
     db: Session = Depends(get_db),
-    user: User = Depends(_purchase_tab("purchase_orders", "edit")),
+    user: User = Depends(_p2p_tab("purchase_orders", "edit")),
 ):
     """Discard a DRAFT PO - one returned for changes or withdrawn from approval that the buyer no longer
     wants. The PO is cancelled (its Tally number is free again), the quantity on it is open to order again

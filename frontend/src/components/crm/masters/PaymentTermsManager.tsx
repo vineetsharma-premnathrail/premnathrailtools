@@ -161,7 +161,7 @@ export default function PaymentTermsManager() {
                   <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 600 }}>{t.label}</td>
                   <td style={{ padding: '10px 14px', fontSize: 13 }}>{t.description || '—'}</td>
                   <td style={{ padding: '10px 14px', display: 'flex', gap: 8 }}>
-                    {canRemove(t.created_by_id) && <button onClick={() => startEdit(t)} data-tour={rowIdx === 0 ? 'pt-row-edit-btn' : undefined} style={{ ...smallSecondaryBtnStyle }}>Edit</button>}
+                    {canEditList && <button onClick={() => startEdit(t)} data-tour={rowIdx === 0 ? 'pt-row-edit-btn' : undefined} style={{ ...smallSecondaryBtnStyle }}>Edit</button>}
                     {canRemove(t.created_by_id) && <button onClick={() => setPendingDelete(t)} data-tour={rowIdx === 0 ? 'pt-row-delete-btn' : undefined} style={{ ...smallDangerBtnStyle }}>Delete</button>}
                   </td>
                 </tr>

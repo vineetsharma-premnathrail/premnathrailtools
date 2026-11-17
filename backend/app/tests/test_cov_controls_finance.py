@@ -229,8 +229,13 @@ def test_c04_variance_cannot_be_approved_by_invoice_maker(books, client):
     inv = _po_bill(books, po, "INV-C04-8", qty=10, rate=100)
     own = client.post(f"{VI}/{inv.id}/approve-variance", json={"note": "ok"}, headers=_h(books["maker"]))
     assert own.status_code == 403
-    clerk = client.post(f"{VI}/{inv.id}/approve-variance", json={"note": "ok"}, headers=_h(books["clerk"]))
-    assert clerk.status_code == 403  # not a Finance Manager
+    # No Approve 3-way-match variance grant -> refused (the Finance Manager flag no longer matters, 2026-11-14).
+    viewer = User(email="cov.viewer@premnathrail.com", name="cov.viewer", role="user", is_active=True, assigned_apps=[],
+                  granular_permissions=["accounts:purchase_invoices:view"], is_finance_manager=True)
+    books["db"].add(viewer)
+    books["db"].commit()
+    denied = client.post(f"{VI}/{inv.id}/approve-variance", json={"note": "ok"}, headers=_h(viewer))
+    assert denied.status_code == 403 and "Approve 3-way-match variance" in denied.json()["detail"]
     ok = client.post(f"{VI}/{inv.id}/approve-variance", json={"note": "short-shipped, balance due"}, headers=_h(books["checker"]))
     assert ok.status_code == 200 and ok.json()["matching_status"] == "approved_variance"
 

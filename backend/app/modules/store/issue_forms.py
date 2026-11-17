@@ -54,7 +54,8 @@ FIELDS: dict[str, dict] = {
 #   "required" · "optional" · "one_of:<group>" (at least one of the group)
 #   · "if:<field>=<value>" (required when that field has that value)
 #   · "unless:sales_order" (required unless a Sales Order / schedule row is given).
-# leaves_factory → challan required. manager_only → only a Store Manager / admin posts it.
+# leaves_factory → challan required. manager_only → a write-off: the form warns about it (since
+# 2026-11-14 it is NOT a gate — Store › Issues › Create plus the role's Issue Type list decide).
 # remarks_label → remarks are required, with this prompt.
 ISSUE_FORMS: dict[str, dict] = {
     # Every project / machine (past projects too) can be picked on a production issue (owner, 2026-11-06).

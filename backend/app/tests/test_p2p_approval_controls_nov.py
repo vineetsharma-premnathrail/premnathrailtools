@@ -469,13 +469,14 @@ def test_a_po_released_before_the_engine_is_not_moved(client, db, team):
     assert _legacy_pos_in_flight(db, pr) == []
 
 
-def test_approved_requisition_can_still_be_rejected_by_the_purchase_team_only(client, db, team):
+def test_approved_requisition_can_still_be_rejected_with_the_reject_grant_only(client, db, team):
+    # 2026-11-14: the 'Reject' grant (plus the requisition in the user's Edit scope) decides, not the purchase team.
     pr = _legacy_pr(db, team, status="approved")
     pr.approval_scheme = "engine"
     db.commit()
-    # An approver without the purchase team role: refused with the reason.
+    # An approver without the Reject grant: refused with the reason.
     r = client.post(f"{BASE}/{pr.id}/reject", json={"reason": "Not needed"}, headers=_h(team["a1"]))
-    assert r.status_code == 403 and "purchase team" in r.json()["detail"]
+    assert r.status_code == 403 and "'Reject' permission" in r.json()["detail"]
     # The purchase team without the Reject grant: refused.
     r = client.post(f"{BASE}/{pr.id}/reject", json={"reason": "Not needed"}, headers=_h(team["buyer"]))
     assert r.status_code == 403

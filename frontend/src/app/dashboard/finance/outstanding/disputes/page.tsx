@@ -241,7 +241,7 @@ function ResolveDialog({ dispute, onClose, onDone }: { dispute: ARDispute; onClo
           )}
           {resolution === 'write_off' && (
             <p style={{ fontSize: 12.5, color: SHEET.BODY, margin: '0 0 14px', lineHeight: 1.6 }}>
-              Posts Dr deduction ledger / Cr Debtors for the disputed amount (up to what is still due). Above the small-difference tolerance in Finance › Settings only a Finance Manager can do this.
+              Posts Dr deduction ledger / Cr Debtors for the disputed amount (up to what is still due). Above the small-difference tolerance in Finance › Settings it needs Approve on Finance &amp; Accounting › Payments &amp; Receipts.
               A reduction of the taxable value (price/rate) should go by credit note instead, so GST is reversed.
             </p>
           )}

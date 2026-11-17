@@ -25,7 +25,7 @@ const projBase = {
   project_type: 'new_product', stage: 'research', status: 'active', lead_ids: [-1], team_member_ids: [-2], leads: [{ id: -1, name: 'Sample lead' }],
   team_members: [{ id: -2, name: 'Sample engineer' }], lead_name: 'Sample lead', start_date: '2026-11-01', target_end_date: '2027-03-31',
   handover_specs_final: false, handover_bom_approved: false, handover_process_documented: false, handover_quality_standards: false,
-  actual_cost: null, experiment_count: 0, prototype_count: 0, created_at: '2026-11-01T09:00:00',
+  created_at: '2026-11-01T09:00:00',
   remarks: 'Sample remarks — only here to show the section.', scope: 'Sample scope: frame, bogie interface, test plan.',
 }
 

@@ -26,13 +26,16 @@ Approvals — one transaction type per approvable finance document / process:
     accounts.depreciation_run  run depreciation for a month
     accounts.year_end_close    close a financial year
 
-Default stages reproduce what the code enforced before the engine: the tab's
-approve permission (documents, any one holder; maker-checker = no self
-approval, exactly like service._ensure_not_maker) and, for the period-end
-processes, a Finance Manager who also holds the tab's approve permission
-(the closer used to be the same person, so self approval is allowed and the
-Finance Manager's click still closes at once). The GL effect (posting,
-numbering, closing) happens in on_decided("approved").
+Default stages: the holders of the tab's approve permission (documents, any
+one holder; maker-checker = no self approval, exactly like
+service._ensure_not_maker) and, for the period-end processes, the holders of
+that process tab's approve permission (Period Close / Depreciation / Year-end
+Close › Approve; self approval allowed, so a holder's own click closes at
+once). The 3-way-match variance stage goes to holders of Purchase Invoices ›
+Approve 3-way-match variance. The role matrix decides (owner, 2026-11-14) —
+the per-user "Finance Manager" flag is no longer a default approver; an admin
+can still name flag holders in Organization › Approval Workflows. The GL
+effect (posting, numbering, closing) happens in on_decided("approved").
 """
 from __future__ import annotations
 
@@ -271,8 +274,8 @@ def submit_process(db: Session, key: str, *, entity_id: int, actor: User, title:
                    context: dict, comment: str | None = None) -> ApprovalRequest:
     """Period-end processes (close a month, run depreciation, close a year):
     submit, and if the person who clicked is themselves an approver of the
-    first stage (a Finance Manager, as before), approve at once — so their
-    one click still runs it. Otherwise it waits for a Finance Manager."""
+    first stage (by default: holds the process tab's Approve), approve at
+    once — so their one click still runs it. Otherwise it waits for them."""
     tt = engine.get_type(key)
     req = pending_request(db, tt.entity_type, entity_id)
     if req is None:
@@ -478,10 +481,6 @@ def _validate_vendor_invoice_decision(db: Session, req: ApprovalRequest, step: A
         ensure_feature_action(user, MODULE, "purchase_invoices", "variance_approval", "approve")
 
 
-def _finance_manager(label: str = "Finance Manager") -> StageDef:
-    return StageDef(label, "user_flag", {"flag": "is_finance_manager"}, approval_mode="any")
-
-
 _DOC = dict(module_key=MODULE, require_permission=True, allow_self_approval=False, distinct_approvers=False)
 
 register_transaction(TransactionType(
@@ -498,13 +497,14 @@ register_transaction(TransactionType(
     key=KEY_VENDOR_INVOICE, subtab_key="purchase_invoices", label="Purchase invoice", entity_type=ET_VENDOR_INVOICE,
     url="/dashboard/finance/purchase",
     description="A recorded vendor bill is posted to the books once approved. Bills outside 3-way-match tolerance "
-                "first need a Finance Manager's variance approval.",
+                "first need a variance approval (Purchase Invoices › Approve 3-way-match variance).",
     context_fields={"has_variance": {"label": "Outside 3-way-match tolerance", "type": "bool"},
                     "invoice_type": {"label": "Invoice type", "type": "choice", "choices": ["po", "direct", "opening"],
                                      "choice_labels": {"po": "Against a PO", "direct": "Direct (no PO)",
                                                        "opening": "Opening balance"}}},
     default_stages=[
-        StageDef("3-way-match variance (Finance Manager)", "user_flag", {"flag": "is_finance_manager"},
+        StageDef("3-way-match variance", "permission",
+                 {"permission": f"{MODULE}:purchase_invoices.variance_approval:approve"},
                  conditions=[{"field": "has_variance", "op": "true"}]),
         _approve_holders("purchase_invoices", "Posting approver"),
     ],
@@ -533,21 +533,21 @@ _PROCESS = dict(module_key=MODULE, require_permission=True, allow_self_approval=
 
 register_transaction(TransactionType(
     key=KEY_PERIOD_CLOSE, subtab_key="period_close", label="Accounting period close", entity_type=ET_PERIOD_CLOSE,
-    url="/dashboard/finance/ledger", description="Locks a month's books. Runs when a Finance Manager approves.",
+    url="/dashboard/finance/ledger", description="Locks a month's books. Runs when a holder of Period Close › Approve approves.",
     context_fields={"period": {"label": "Period (YYYY-MM)", "type": "text"}},
-    default_stages=[_finance_manager()], on_decided=_period_close_decided, **_PROCESS,
+    default_stages=[_approve_holders("period_close", "Period close approver")], on_decided=_period_close_decided, **_PROCESS,
 ))
 register_transaction(TransactionType(
     key=KEY_DEPRECIATION, subtab_key="depreciation", label="Depreciation run", entity_type=ET_DEPRECIATION,
-    url="/dashboard/finance/assets", description="Posts a month's depreciation. Runs when a Finance Manager approves.",
+    url="/dashboard/finance/assets", description="Posts a month's depreciation. Runs when a holder of Depreciation › Approve approves.",
     context_fields={"period": {"label": "Period (YYYY-MM)", "type": "text"}},
-    default_stages=[_finance_manager()], on_decided=_depreciation_decided, **_PROCESS,
+    default_stages=[_approve_holders("depreciation", "Depreciation approver")], on_decided=_depreciation_decided, **_PROCESS,
 ))
 register_transaction(TransactionType(
     key=KEY_YEAR_END, subtab_key="year_end_close", label="Financial year close", entity_type=ET_YEAR_END,
-    url="/dashboard/finance/reports", description="Transfers the year's profit to reserves and closes the FY. Runs when a Finance Manager approves.",
+    url="/dashboard/finance/reports", description="Transfers the year's profit to reserves and closes the FY. Runs when a holder of Year-end Close › Approve approves.",
     context_fields={"fy_code": {"label": "Financial year", "type": "text"}},
-    default_stages=[_finance_manager()], on_decided=_year_end_decided, **_PROCESS,
+    default_stages=[_approve_holders("year_end_close", "Year-end close approver")], on_decided=_year_end_decided, **_PROCESS,
 ))
 
 

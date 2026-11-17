@@ -27,6 +27,7 @@ export type PriceItemKind = 'product' | 'spare' | 'service' | 'any'
 
 const TYPE_HEX: Record<string, string> = { price: '#2563eb', discount: '#16a34a', freight: '#7c3aed' }
 const TYPE_LABELS: Record<string, string> = { price: 'Price', discount: 'Discount', freight: 'Freight' }
+const HIDDEN_AMOUNT_HINT = "Prices are hidden for your role — ask an admin to switch on CRM › Products › Prices & sales values in Organization › Role & Permissions."
 
 interface FormState {
   id?: number
@@ -197,8 +198,11 @@ export default function PriceConditionsPanel({ productId, itemKinds, emptyText }
   // A product takes prices only (the server refuses product discounts / customer prices).
   const types = useMemo(() => (meta ? meta.condition_types.filter((t) => (!productId || t.value === 'price') && kindsFor(t.value, meta.item_kinds).length > 0) : []), [meta, kindsFor, productId])
 
+  // On a product page the "Prices & sales values" switch (crm:products.prices) hides the amounts only;
+  // the Pricing feature decides whether the section shows at all (owner, 2026-11-14).
+  const hideAmounts = !!productId && !canFeature('crm', 'products', 'prices', 'view')
   const canCreate = canFeature('crm', 'products', 'pricing', 'create')
-  const canEdit = canFeature('crm', 'products', 'pricing', 'edit')
+  const canEdit = canFeature('crm', 'products', 'pricing', 'edit') && !hideAmounts
   const canDel = canFeature('crm', 'products', 'pricing', 'delete')
   const showKindPicker = kinds.length > 1
   const showForCol = !productId
@@ -255,8 +259,8 @@ export default function PriceConditionsPanel({ productId, itemKinds, emptyText }
                 {showForCol && <td style={tdStyle}>{c.item_label}</td>}
                 {!productId && <td style={tdStyle}>{c.customer_name || <span style={{ color: '#a8a29e' }}>{c.country ? 'All in country' : 'All (list)'}</span>}</td>}
                 <td style={tdStyle}>{c.country || <span style={{ color: '#a8a29e' }}>{productId ? 'All countries (list price)' : '—'}</span>}</td>
-                <td style={{ ...tdStyle, whiteSpace: 'nowrap', fontWeight: 600 }}>{valueText(c)}</td>
-                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{c.min_price == null ? '—' : formatMoney(c.min_price, c.currency)}</td>
+                <td style={{ ...tdStyle, whiteSpace: 'nowrap', fontWeight: 600 }} title={hideAmounts ? HIDDEN_AMOUNT_HINT : undefined}>{hideAmounts ? 'Hidden' : valueText(c)}</td>
+                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }} title={hideAmounts ? HIDDEN_AMOUNT_HINT : undefined}>{hideAmounts ? 'Hidden' : c.min_price == null ? '—' : formatMoney(c.min_price, c.currency)}</td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatDate(c.valid_from)}</td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{c.valid_to ? formatDate(c.valid_to) : 'Open'}</td>
                 <td style={{ ...tdStyle, maxWidth: 240 }}>{c.remarks || ''}</td>

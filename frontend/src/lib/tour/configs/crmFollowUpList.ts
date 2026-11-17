@@ -20,7 +20,7 @@ export function followUpListSteps(kind: 'inquiry' | 'tender'): TourStep[] {
     {
       target: 'activity-row-edit-btn',
       title: 'Edit',
-      purpose: 'Opens this follow-up in the form above so you can correct or add to it.',
+      purpose: 'Opens this follow-up in the form above so you can correct or add to it. Shown when your role has Follow-ups › Edit and the follow-up is inside the Edit scope of your role (Organization › Role & Permissions › Data access › Edit; by default records you created or are assigned to) — by default its creator and the person it is assigned to.',
     },
     {
       target: statusTarget,

@@ -72,12 +72,16 @@ def _requirement_ref(db: Session, task: RndRequirementTask, cache: dict) -> str:
 
 def _project_ref(db: Session, task: RndProjectTask, cache: dict) -> tuple[str, str, int] | None:
     """(reference text, notification entity type, entity id) — the bell opens the R&D page."""
-    key = (task.project_id, task.pm_project_id)
+    key = (task.project_id, task.pm_project_id, task.machine_id)
     if key not in cache:
         if task.project_id:
             from app.modules.rnd.models.project import RndProject
             p = db.get(RndProject, task.project_id)
             cache[key] = (f"project {p.project_number}", "rnd_project", p.id) if p else None
+        elif task.machine_id:
+            from app.modules.erp.models.project import Project as ErpMachine
+            m = db.get(ErpMachine, task.machine_id)
+            cache[key] = (f"project {m.serial_number}", "rnd_machine", m.id) if m and not m.is_deleted else None
         else:
             from app.modules.projects.models.project import PmProject
             p = db.get(PmProject, task.pm_project_id)

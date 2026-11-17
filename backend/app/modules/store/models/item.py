@@ -130,6 +130,10 @@ class StoreItem(Base, TimestampMixin):
     sales_gl_account_id: Mapped[int | None] = mapped_column(ForeignKey("gl_accounts.id"), nullable=True)
 
     status: Mapped[str] = mapped_column(String(20), default="active", nullable=False)
+    # Added in a hurry from the Before-PO receipt form (owner, 2026-11-14): usable at once,
+    # but its planning / quality / accounting details still need the Item Master owner's
+    # review. Cleared by "Mark reviewed" on the item page (audited).
+    needs_review: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
     # Item photo in SharePoint (see routes/item_photo.py).
     photo_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     photo_content_type: Mapped[str | None] = mapped_column(String(100), nullable=True)

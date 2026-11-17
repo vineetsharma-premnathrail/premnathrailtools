@@ -180,7 +180,7 @@ async def submit_vendor_invoice_route(
     user: User = Depends(require_tab_action("accounts", "purchase_invoices", "submit")),
 ):
     """Send a recorded bill to its approvers (Organization › Approval Workflows,
-    'Purchase invoice'): a Finance Manager first when it is outside 3-way-match
+    'Purchase invoice'): a variance approver first when it is outside 3-way-match
     tolerance, then the posting approver. It posts on the last approval."""
     invoice = _load_in_scope(db, user, vendor_invoice_id)
     _ensure_pending(invoice)
@@ -209,7 +209,7 @@ async def approve_variance_route(
     user: User = Depends(require_feature_action("accounts", "purchase_invoices", "variance_approval", "approve")),
 ):
     """Kept for the old button: approves the invoice's current approval stage
-    (the Finance Manager's variance stage) through the approval engine."""
+    (the 3-way-match variance stage) through the approval engine."""
     invoice = _load_in_scope(db, user, vendor_invoice_id)
     if invoice.matching_status != "variance":
         raise HTTPException(status_code=400, detail=f"This invoice isn't awaiting variance approval (current matching status: '{invoice.matching_status}').")

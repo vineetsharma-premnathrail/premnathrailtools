@@ -14,9 +14,6 @@ from app.modules.rnd.scope import apply_scope, ensure_in_scope
 from app.modules.rnd.models.project import (
     RndProject, RND_PROJECT_TYPES, RND_PROJECT_STATUSES,
 )
-from app.modules.rnd.models.experiment import RndExperiment
-from app.modules.rnd.models.prototype import RndPrototype
-from app.modules.production.models.bom import ProductionBom
 from app.modules.rnd.models.document import RndDocument
 from app.modules.rnd.models.requirement_work import RndRequirementProjectLink
 from app.modules.rnd.models.feasibility import (
@@ -24,7 +21,7 @@ from app.modules.rnd.models.feasibility import (
 )
 from app.modules.rnd.schemas.project import (
     RndProjectCreate, RndProjectUpdate, RndProjectStagePayload, RndProjectResponse, RndProjectDetailResponse,
-    RndProjectMember, RndProjectExperimentSummary, RndProjectPrototypeSummary,
+    RndProjectMember,
 )
 from app.modules.rnd.services import project_origin
 from app.modules.rnd.schemas.feasibility import RndFeasibilityStudyUpdate, RndFeasibilityStudyResponse
@@ -32,7 +29,7 @@ from app.modules.accounts.models.internal_order import InternalOrder
 from app.modules.accounts.services import project_budget
 from app.modules.rnd.internal_order_link import is_auto_order
 from app.modules.rnd.service import (
-    generate_project_number, hide_costs, project_actual_cost, prototype_bom_cost, check_stage_gate, user_names, STAGE_LABELS,
+    generate_project_number, hide_costs, check_stage_gate, user_names, STAGE_LABELS,
 )
 
 router = APIRouter(
@@ -122,48 +119,75 @@ def _validate_dates(start, target) -> None:
         raise HTTPException(status_code=400, detail="Target end date can't be before the start date.")
 
 
-def _to_response(db: Session, project: RndProject, schema=RndProjectResponse):
+class _PageLookups:
+    """Everything `_to_response` reads besides the project row, fetched once for a whole page
+    (user names, linked requirements, internal orders, origin display) so a list does not run
+    four queries per project."""
+
+    def __init__(self, db: Session, projects: list[RndProject]):
+        ids: list[int] = []
+        for p in projects:
+            ids += [*_lead_list(p), *(p.team_member_ids or [])]
+        self.names = user_names(db, ids)
+        self.linked = _linked_requirements_many(db, [p.id for p in projects])
+        order_ids = {p.internal_order_id for p in projects if p.internal_order_id}
+        self.orders = {o.id: o for o in db.query(InternalOrder).filter(InternalOrder.id.in_(order_ids)).all()} if order_ids else {}
+        self.origin = project_origin.display_many(db, projects)
+
+
+def _to_response(db: Session, project: RndProject, schema=RndProjectResponse, lookups: "_PageLookups | None" = None):
     resp = schema.model_validate(project)
     member_ids = list(project.team_member_ids or [])
     lead_ids = _lead_list(project)
-    names = user_names(db, [*lead_ids, *member_ids])
+    names = lookups.names if lookups else user_names(db, [*lead_ids, *member_ids])
     resp.lead_ids = lead_ids
     resp.leads = [RndProjectMember(id=i, name=names[i]) for i in lead_ids if i in names]
     resp.lead_name = ", ".join(m.name for m in resp.leads) or None
     resp.team_members = [RndProjectMember(id=i, name=names[i]) for i in member_ids if i in names]
-    resp.actual_cost = project_actual_cost(db, project.id)
-    resp.experiment_count = db.query(func.count(RndExperiment.id)).filter(
-        RndExperiment.project_id == project.id, RndExperiment.is_deleted == False  # noqa: E712
-    ).scalar() or 0
-    resp.prototype_count = db.query(func.count(RndPrototype.id)).filter(
-        RndPrototype.project_id == project.id, RndPrototype.is_deleted == False  # noqa: E712
-    ).scalar() or 0
-    resp.linked_requirements = _linked_requirements(db, project.id)
-    io = db.get(InternalOrder, project.internal_order_id) if project.internal_order_id else None
+    resp.linked_requirements = lookups.linked.get(project.id, []) if lookups else _linked_requirements(db, project.id)
+    if project.internal_order_id:
+        io = lookups.orders.get(project.internal_order_id) if lookups else db.get(InternalOrder, project.internal_order_id)
+    else:
+        io = None
     if io is not None:
         resp.internal_order_code, resp.internal_order_name = io.code, io.name
         if not is_auto_order(io):
             resp.budget_from_finance = True
             resp.budget_amount = io.budgeted_amount
-    for key, val in project_origin.display(db, project).items():
+    origin = lookups.origin[project.id] if lookups else project_origin.display(db, project)
+    for key, val in origin.items():
         setattr(resp, key, val)
     return resp
 
 
-def _linked_requirements(db: Session, project_id: int) -> list[dict]:
-    """CRM requirements the R&D head linked to this project (R&D › Requirements)."""
+def _linked_requirements_many(db: Session, project_ids: list[int]) -> dict[int, list[dict]]:
+    """project id -> CRM requirements the R&D head linked to it (R&D › Requirements); two queries
+    per source kind however many projects."""
     from app.modules.crm.models.inquiry import Inquiry
     from app.modules.crm.models.tender import Tender
-    links = db.query(RndRequirementProjectLink).filter(RndRequirementProjectLink.project_id == project_id).order_by(RndRequirementProjectLink.id).all()
-    out = []
+    if not project_ids:
+        return {}
+    links = (db.query(RndRequirementProjectLink).filter(RndRequirementProjectLink.project_id.in_(project_ids))
+             .order_by(RndRequirementProjectLink.id).all())
+    records: dict[tuple[str, int], object] = {}
+    for source, model in (("inquiry", Inquiry), ("tender", Tender)):
+        ids = {k.record_id for k in links if k.source == source}
+        if ids:
+            for rec in db.query(model).filter(model.id.in_(ids), model.is_deleted == False).all():  # noqa: E712
+                records[(source, rec.id)] = rec
+    out: dict[int, list[dict]] = {}
     for link in links:
-        model = Inquiry if link.source == "inquiry" else Tender
-        rec = db.query(model).filter(model.id == link.record_id, model.is_deleted == False).first()  # noqa: E712
+        rec = records.get((link.source, link.record_id))
         if rec:
-            out.append({"source": link.source, "record_id": rec.id,
-                        "ref": rec.technical_offer_number or rec.universal_id,
-                        "title": rec.product if link.source == "inquiry" else rec.tender_name})
+            out.setdefault(link.project_id, []).append({
+                "source": link.source, "record_id": rec.id, "ref": rec.technical_offer_number or rec.universal_id,
+                "title": rec.product if link.source == "inquiry" else rec.tender_name})
     return out
+
+
+def _linked_requirements(db: Session, project_id: int) -> list[dict]:
+    """CRM requirements the R&D head linked to this project (R&D › Requirements)."""
+    return _linked_requirements_many(db, [project_id]).get(project_id, [])
 
 
 def _get_or_404(db: Session, project_id: int, user: User | None = None) -> RndProject:
@@ -183,6 +207,8 @@ async def list_projects(
     project_type: str | None = None,
     origin: str | None = Query(None, description="An origin key, or 'not_recorded' for projects saved before origin existed"),
     search: str | None = None,
+    limit: int = Query(500, ge=1, le=2000, description="Page size (max 2000)"),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("rnd")),
 ):
@@ -205,11 +231,10 @@ async def list_projects(
         query = query.filter(
             (RndProject.title.ilike(like, escape="\\")) | (RndProject.project_number.ilike(like, escape="\\")) | (RndProject.objective.ilike(like, escape="\\"))
         )
-    out = [_to_response(db, p) for p in query.order_by(RndProject.created_at.desc()).all()]
-    if hide_costs(user):  # R&D › Prototypes › BOM costs
-        for r in out:
-            r.actual_cost = None
-    return out
+    # Project number ascending (RND-YYYY-NNNN sorts correctly as text); id breaks ties.
+    projects = query.order_by(RndProject.project_number.asc(), RndProject.id.asc()).offset(offset).limit(limit).all()
+    lookups = _PageLookups(db, projects)
+    return [_to_response(db, p, lookups=lookups) for p in projects]
 
 
 @router.get("/source-options")
@@ -305,38 +330,9 @@ async def get_project(project_id: int, db: Session = Depends(get_db), user: User
     project = _get_or_404(db, project_id, user=user)
     resp = _to_response(db, project, RndProjectDetailResponse)
 
-    experiments = db.query(RndExperiment).filter(
-        RndExperiment.project_id == project.id, RndExperiment.is_deleted == False  # noqa: E712
-    ).order_by(RndExperiment.created_at.desc()).all()
-    resp.experiments = [
-        RndProjectExperimentSummary(
-            id=e.id, experiment_number=e.experiment_number, title=e.title,
-            status=e.status, result=e.result, experiment_date=e.experiment_date,
-        ) for e in experiments
-    ]
-    prototypes = db.query(RndPrototype).filter(
-        RndPrototype.project_id == project.id, RndPrototype.is_deleted == False  # noqa: E712
-    ).order_by(RndPrototype.created_at.desc()).all()
-    bom_ids = [p.production_bom_id for p in prototypes if p.production_bom_id]
-    released = {
-        b.id: f"{b.bom_number} (v{b.version})"
-        for b in db.query(ProductionBom).filter(ProductionBom.id.in_(bom_ids), ProductionBom.is_deleted == False).all()  # noqa: E712
-    } if bom_ids else {}
-    resp.prototypes = [
-        RndProjectPrototypeSummary(
-            id=p.id, prototype_number=p.prototype_number, name=p.name,
-            version=p.version, status=p.status, bom_cost=prototype_bom_cost(p),
-            production_bom_id=p.production_bom_id if p.production_bom_id in released else None,
-            production_bom_number=released.get(p.production_bom_id),
-        ) for p in prototypes
-    ]
     study = db.query(RndFeasibilityStudy).filter(RndFeasibilityStudy.project_id == project.id).first()
     resp.has_feasibility = study is not None
     resp.feasibility_recommendation = study.recommendation if study else None
-    if hide_costs(user):  # R&D › Prototypes › BOM costs
-        resp.actual_cost = None
-        for p in resp.prototypes:
-            p.bom_cost = None
     return resp
 
 
@@ -414,7 +410,7 @@ def _apply_budget_change(db: Session, project: RndProject, updates: dict) -> Non
 async def project_budget_spend(project_id: int, db: Session = Depends(get_db), user: User = Depends(require_app_access("rnd"))):
     """Budget, committed (open POs), actual (posted vouchers) and available for the project."""
     project = _get_or_404(db, project_id, user=user)
-    if hide_costs(user):  # same switch as prototype costs: R&D › Prototypes › BOM costs
+    if hide_costs(user):  # R&D › Prototype / Research › Budget & costs
         return {"linked": bool(project.internal_order_id), "hidden": True, "summary": None, "commitments": [], "recent_lines": [], "line_count": 0}
     out = project_budget.budget_spend(db, project.internal_order_id, ledger_detail=project_budget.can_see_ledger(user))
     if not out["linked"] and project.budget_amount is not None:
@@ -454,21 +450,14 @@ async def change_stage(
 async def delete_project(project_id: int, db: Session = Depends(get_db), user: User = Depends(_CAN_DELETE)):
     project = _get_or_404(db, project_id, user=user)
     ensure_can_delete(user, project, "rnd", "projects", what="R&D project")
-    exp_count = db.query(func.count(RndExperiment.id)).filter(
-        RndExperiment.project_id == project.id, RndExperiment.is_deleted == False  # noqa: E712
-    ).scalar() or 0
-    proto_count = db.query(func.count(RndPrototype.id)).filter(
-        RndPrototype.project_id == project.id, RndPrototype.is_deleted == False  # noqa: E712
-    ).scalar() or 0
     doc_count = db.query(func.count(RndDocument.id)).filter(
         RndDocument.project_id == project.id, RndDocument.is_deleted == False  # noqa: E712
     ).scalar() or 0
-    if exp_count or proto_count or doc_count:
+    if doc_count:
         raise HTTPException(
             status_code=400,
             detail=(
-                f"Can't delete {project.project_number}: it still has {exp_count} experiment(s), "
-                f"{proto_count} prototype(s) and {doc_count} attachment(s)/document(s). Delete those first — attachments are in the project's Attachments section."
+                f"Can't delete {project.project_number}: it still has {doc_count} attachment(s)/document(s). Delete those first — attachments are in the project's Attachments section."
             ),
         )
     # Soft delete — R&D records are retained for audit; the delete itself is

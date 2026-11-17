@@ -24,6 +24,7 @@ import { itemOptionDetail } from '@/lib/itemOptions'
 import { useVisibility } from '@/lib/visibility'
 import { VisColumns } from '@/components/quality/VisColumns'
 import { VisOptionValues, VisSection, VisTd, VisTh } from '@/lib/visibilityComponents'
+import StorePlantNote from '@/components/store/StorePlantNote'
 
 const inputStyle = sheetInput
 const smallBtn = (): React.CSSProperties => ({ ...sheetBtn('secondary', SHEET.INK), padding: '6px 12px', minHeight: 30, fontSize: 12 })
@@ -82,8 +83,6 @@ const LINE_HIDEABLE: Record<string, string> = { 'Available in store': 'available
 export default function MaterialIssueForm({ challan = false }: { challan?: boolean }) {
   const { isAuthorized, isLoading, user } = useRequireApp('store')
   const router = useRouter()
-  // Store Manager authority: may issue project stock held for another vehicle, with a reason.
-  const storeManager = !!user && (user.role === 'admin' || !!user.is_store_manager)
   const [orderProject, setOrderProject] = useState<OrderProjectValue | null>(null)
   const [overrideReason, setOverrideReason] = useState('')
   const isChallan = challan
@@ -94,10 +93,16 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
 
   const [items, setItems] = useState<StoreItem[]>([])
   const [locations, setLocations] = useState<StoreLocation[]>([])
+  const [locsLoaded, setLocsLoaded] = useState(false)
   const [issueTypes, setIssueTypes] = useState<StoreDocType[]>([])
   const [issueType, setIssueType] = useState(isChallan ? JOB_WORK : '')
 
   const [locationId, setLocationId] = useState('')
+  // Project-stock override: the same people the server lets through (services/project_stock.is_store_manager) —
+  // an admin, a user with the Store Manager flag, or the picked store's own manager. There is no matrix tick
+  // for it yet, so the server still decides by this rule; the field only shows to whoever it will accept.
+  const pickedStore = locations.find((l) => String(l.id) === locationId)
+  const storeManager = !!user && (user.role === 'admin' || !!user.is_store_manager || (!!pickedStore?.manager_user_id && pickedStore.manager_user_id === user.id))
   const [standard, setStandard] = useState<StoreIssueFormStandard>({})
   const [vals, setVals] = useState<Record<string, Val>>({})
   const [lookups, setLookups] = useState<Record<string, Option[]>>({})
@@ -126,7 +131,7 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
   useEffect(() => {
     if (!isAuthorized) return
     storeApi.listItems().then(setItems).catch(() => setItems([]))
-    storeApi.listLocations().then(setLocations).catch(() => setLocations([]))
+    storeApi.listLocations().then((l) => { setLocations(l); setLocsLoaded(true) }).catch(() => setLocations([]))
     storeApi.listDocTypes('issue').then(setIssueTypes).catch(() => setIssueTypes([]))
     storeApi.getIssueFormStandard().then(setStandard).catch(() => setStandard({}))
     storeApi.listDispatchProjects().then(setProjects).catch(() => setProjects([]))
@@ -396,6 +401,7 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
               <option value="">— Select —</option>
               {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
             </Select>
+            <StorePlantNote count={locations.length} loading={!locsLoaded} />
           </Field>
           {!isChallan && (
             <Field label={<>Issue Type <Req /></>}>
@@ -471,7 +477,7 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
                 <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 10px' }}>This material leaves the factory, so it travels on a delivery challan.</p>
               )}
               {spec?.manager_only && (
-                <p style={{ fontSize: 12.5, color: '#b45309', margin: '0 0 10px' }}>A write-off — only a Store Manager or admin can post it.</p>
+                <p style={{ fontSize: 12.5, color: '#b45309', margin: '0 0 10px' }}>A write-off — the stock leaves the books for good. Who may use this issue type is set per role (Store › Issues › Visibility › Issue Type).</p>
               )}
               {isDispatch && (
                 <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 10px' }}>

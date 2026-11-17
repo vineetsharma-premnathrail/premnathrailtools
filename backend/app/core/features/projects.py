@@ -63,9 +63,9 @@ register_features(
 register_features(
     "projects", "overview",
     _feature("milestones", "Milestones", "subtab", {
-        "view": "view", "create": "view", "edit": "view", "delete": "view",
-    }, "The Milestones sub-tab of a project: see the plan; add, edit and delete milestones "
-       "(also limited to the project manager / management and whoever created the milestone)."),
+        "view": "view", "create": "edit", "edit": "edit", "delete": "edit",
+    }, "The Milestones sub-tab of a project: see the plan; add, edit and delete milestones on projects "
+       "inside the role's Edit scope (the tick decides, 2026-11-14; the project manager and management always may)."),
     _feature("milestone_status", "Achieve, reopen & cancel milestones", "action", {
         "view": "view", "approve": "view", "edit": "view", "cancel": "view",
     }, "Approve = Mark achieved, Edit = Reopen an achieved milestone, Cancel = cancel an open one "

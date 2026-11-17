@@ -10,11 +10,11 @@ from sqlalchemy.orm import Session, selectinload
 from app.core import visibility
 from app.core.config import settings
 
-from app.core.data_scope import apply_scope, ensure_in_scope
-from app.core.permission_registry import can_view_tab
+from app.core.data_scope import ensure_in_scope, scope_filter
+from app.core.permission_registry import can_feature, can_perform, can_view_tab
 from app.core.permissions import (
-    GRANT_HINT, PermissionDenied, _tab_label, ensure_feature_action, ensure_tab_action, require_app_access, require_feature_action,
-    require_tab_action,
+    GRANT_HINT, PermissionDenied, _feature_label, _tab_label, ensure_feature_action, ensure_tab_action, require_app_access,
+    require_feature_action, require_tab_action,
 )
 from app.db.session import get_db
 from app.modules.main.models.user import User
@@ -119,14 +119,53 @@ def _to_responses(db: Session, lots: list[QualityInspectionLot], detail: bool = 
     return out
 
 
+def _may_pick_up_lots(user: User) -> bool:
+    """Inspectors who may take an unassigned open lot from My Inspections:
+    Edit on Inspection Lots or on My Inspections, or the Inspection results
+    feature (owner, 2026-11-14 — the matrix tick decides)."""
+    return (can_perform(user, "quality", "inspection_lots", "edit") or can_perform(user, "quality", "my_inspections", "edit")
+            or can_feature(user, "quality", "inspection_lots", "results", "edit"))
+
+
+def _pickup_expr():
+    """Open lots nobody is assigned to yet — anyone who inspects may pick them up."""
+    return QualityInspectionLot.assigned_to_id.is_(None) & QualityInspectionLot.status.in_(QUALITY_LOT_OPEN_STATUSES)
+
+
+def _is_pickup(lot: QualityInspectionLot) -> bool:
+    return lot.assigned_to_id is None and lot.status in QUALITY_LOT_OPEN_STATUSES
+
+
 def _get_or_404(db: Session, lot_id: int, user: User | None = None, lock: bool = False) -> QualityInspectionLot:
     q = db.query(QualityInspectionLot).options(selectinload(QualityInspectionLot.results)).filter(QualityInspectionLot.id == lot_id)
     lot = (q.with_for_update() if lock else q).first()
     if not lot:
         raise HTTPException(status_code=404, detail=f"Inspection lot #{lot_id} not found — it may have been removed. Reload the list.")
-    if user is not None:
+    if user is not None and not (_is_pickup(lot) and _may_pick_up_lots(user)):
         ensure_in_scope(db, user, lot)
     return lot
+
+
+def _ensure_lot_work(user: User, lot: QualityInspectionLot, feature: tuple[str, str] | None = None) -> None:
+    """Inspector work on a lot (start, attach checklist, sampling, test
+    certificate, results). Allowed by Inspection Lots › Edit (or the given
+    Inspection Lots feature), OR by My Inspections › Edit for a lot assigned
+    to the user or still unassigned (pickup) — owner, 2026-11-14."""
+    if feature:
+        if can_feature(user, "quality", "inspection_lots", feature[0], feature[1]):
+            return
+    elif can_perform(user, "quality", "inspection_lots", "edit"):
+        return
+    if can_perform(user, "quality", "my_inspections", "edit") and (lot.assigned_to_id == user.id or _is_pickup(lot)):
+        return
+    if feature:
+        what = f"Quality › Inspection Lots › {_feature_label('quality', 'inspection_lots', feature[0])} › {feature[1].capitalize()}"
+        key = f"quality:inspection_lots.{feature[0]}:{feature[1]}"
+    else:
+        what, key = "Quality › Inspection Lots › Edit", "quality:inspection_lots:edit"
+    raise PermissionDenied(
+        f"You need {what} to work on lot {lot.lot_number} — or My Inspections › Edit when the lot is assigned to you "
+        f"or not yet assigned to anyone. {GRANT_HINT}", key)
 
 
 def _detail(db: Session, lot_id: int) -> QualityInspectionLotResponse:
@@ -202,7 +241,12 @@ async def list_lots(
     _ensure_lot_list_view(user, mine=mine, inspection_type=inspection_type, status_filter=status_filter)
     if view is not None and view not in LOT_VIEWS:
         raise HTTPException(status_code=422, detail=f"Unknown lot view '{view}' — use one of: {', '.join(LOT_VIEWS)}.")
-    q = apply_scope(db.query(QualityInspectionLot).options(selectinload(QualityInspectionLot.results)), user, QualityInspectionLot)
+    q = db.query(QualityInspectionLot).options(selectinload(QualityInspectionLot.results))
+    scope = scope_filter(db, user, QualityInspectionLot)
+    if scope is not None:
+        # My Inspections: unassigned open lots are open to every inspector to
+        # pick up, whatever their data scope (owner, 2026-11-14).
+        q = q.filter(scope | _pickup_expr() if mine and _may_pick_up_lots(user) else scope)
     if status_filter:
         q = q.filter(QualityInspectionLot.status == status_filter)
     if open_only:
@@ -243,6 +287,9 @@ async def create_manual_lot(payload: QualityInspectionLotCreate, db: Session = D
         raise HTTPException(status_code=422, detail="Pick the store whose Free stock should be held for this inspection.")
     if payload.location_id and not db.query(StoreLocation.id).filter(StoreLocation.id == payload.location_id).first():
         raise HTTPException(status_code=404, detail=f"Store #{payload.location_id} not found")
+    if payload.assigned_to_id:
+        # Naming the inspector on a new lot = Inspection Lots › Assign inspector › Create.
+        ensure_feature_action(user, "quality", "inspection_lots", "assign", "create")
     authz.ensure_may_assign(db, user, authz.LOT_INSPECTOR_RULE, payload.assigned_to_id)
     try:
         op_project, op_element = opi.resolve_link(db, payload.order_project_id, payload.order_project_element_id)
@@ -280,21 +327,25 @@ async def lot_report_xlsx(lot_id: int, db: Session = Depends(get_db), user: User
 
 
 @router.post("/{lot_id}/refresh-plan",response_model=QualityInspectionLotResponse)
-async def refresh_plan(lot_id: int, db: Session = Depends(get_db), _user: User = Depends(_CAN_EDIT)):
+async def refresh_plan(lot_id: int, db: Session = Depends(get_db), _user: User = Depends(require_app_access("quality"))):
     lot = _get_or_404(db, lot_id, _user, lock=True)
+    _ensure_lot_work(_user, lot)
     _run(db, lambda: lot_service.refresh_plan(db, lot))
     return _detail(db, lot_id)
 
 
 @router.post("/{lot_id}/sampling", response_model=QualityInspectionLotResponse)
-async def set_sampling(lot_id: int, payload: QualityLotSeverityPayload, db: Session = Depends(get_db), _user: User = Depends(_CAN_EDIT)):
+async def set_sampling(lot_id: int, payload: QualityLotSeverityPayload, db: Session = Depends(get_db), _user: User = Depends(require_app_access("quality"))):
     lot = _get_or_404(db, lot_id, _user, lock=True)
+    _ensure_lot_work(_user, lot)
     _run(db, lambda: lot_service.set_sampling_severity(db, lot, payload.sampling_severity))
     return _detail(db, lot_id)
 
 
 @router.post("/{lot_id}/assign", response_model=QualityInspectionLotResponse)
-async def assign_lot(lot_id: int, payload: QualityLotAssignPayload, db: Session = Depends(get_db), user: User = Depends(_CAN_EDIT)):
+async def assign_lot(lot_id: int, payload: QualityLotAssignPayload, db: Session = Depends(get_db),
+                     user: User = Depends(require_feature_action("quality", "inspection_lots", "assign", "edit"))):
+    # Assigning / reassigning the inspector = the Assign inspector feature (Edit), not the tab's Edit.
     lot = _get_or_404(db, lot_id, user, lock=True)
     authz.ensure_may_assign(db, user, authz.LOT_INSPECTOR_RULE, payload.user_id, lot.assigned_to_id)
     _run(db, lambda: lot_service.assign(db, lot, payload.user_id, user))
@@ -302,29 +353,33 @@ async def assign_lot(lot_id: int, payload: QualityLotAssignPayload, db: Session 
 
 
 @router.post("/{lot_id}/start", response_model=QualityInspectionLotResponse)
-async def start_lot(lot_id: int, db: Session = Depends(get_db), user: User = Depends(_CAN_EDIT)):
+async def start_lot(lot_id: int, db: Session = Depends(get_db), user: User = Depends(require_app_access("quality"))):
     lot = _get_or_404(db, lot_id, user, lock=True)
+    _ensure_lot_work(user, lot)
     _run(db, lambda: lot_service.start(db, lot, user))
     return _detail(db, lot_id)
 
 
 @router.post("/{lot_id}/results", response_model=QualityInspectionLotResponse)
-async def record_results(lot_id: int, payload: QualityLotRecordResultsPayload, db: Session = Depends(get_db), user: User = Depends(require_feature_action("quality", "inspection_lots", "results", "edit"))):
+async def record_results(lot_id: int, payload: QualityLotRecordResultsPayload, db: Session = Depends(get_db), user: User = Depends(require_app_access("quality"))):
     lot = _get_or_404(db, lot_id, user, lock=True)
+    _ensure_lot_work(user, lot, ("results", "edit"))
     _run(db, lambda: lot_service.record_results(db, lot, [e.model_dump() for e in payload.entries], user))
     return _detail(db, lot_id)
 
 
 @router.post("/{lot_id}/submit-results", response_model=QualityInspectionLotResponse)
-async def submit_results(lot_id: int, db: Session = Depends(get_db), user: User = Depends(require_feature_action("quality", "inspection_lots", "results", "submit"))):
+async def submit_results(lot_id: int, db: Session = Depends(get_db), user: User = Depends(require_app_access("quality"))):
     lot = _get_or_404(db, lot_id, user, lock=True)
+    _ensure_lot_work(user, lot, ("results", "submit"))
     _run(db, lambda: lot_service.submit_results(db, lot, user))
     return _detail(db, lot_id)
 
 
 @router.post("/{lot_id}/test-certificate", response_model=QualityInspectionLotResponse)
-async def set_certificate(lot_id: int, payload: QualityLotCertificatePayload, db: Session = Depends(get_db), _user: User = Depends(_CAN_EDIT)):
+async def set_certificate(lot_id: int, payload: QualityLotCertificatePayload, db: Session = Depends(get_db), _user: User = Depends(require_app_access("quality"))):
     lot = _get_or_404(db, lot_id, _user, lock=True)
+    _ensure_lot_work(_user, lot)
     _run(db, lambda: lot_service.set_test_certificate(db, lot, payload.received, payload.reference))
     return _detail(db, lot_id)
 

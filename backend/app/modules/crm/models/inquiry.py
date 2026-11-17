@@ -1,13 +1,14 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
 from datetime import date, datetime
-from sqlalchemy import String, Integer, Text, Float, Date, DateTime, ForeignKey
+from sqlalchemy import String, Integer, Text, Float, Date, DateTime, ForeignKey, CheckConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 from app.db.mixins import TimestampMixin, SoftDeleteMixin
 
 if TYPE_CHECKING:
     from app.modules.crm.models.organization import Organization
+    from app.modules.crm.models.tender import Tender
 
 # Coded inquiry statuses — mirrors INQUIRY_STATUSES in frontend/src/components/crm/constants.ts.
 # Lives on the model so the routes AND the visibility catalogue (core/features/crm.py) share one list.
@@ -124,9 +125,14 @@ class InquiryLineItem(Base):
 
 class Quotation(Base):
     __tablename__ = "crm_quotations"
+    # A quotation belongs to exactly one parent: an inquiry OR a tender (price bid).
+    __table_args__ = (
+        CheckConstraint("(inquiry_id IS NULL) <> (tender_id IS NULL)", name="ck_crm_quotations_one_parent"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    inquiry_id: Mapped[int] = mapped_column(Integer, ForeignKey("crm_inquiries.id"), nullable=False, index=True)
+    inquiry_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("crm_inquiries.id"), nullable=True, index=True)
+    tender_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("crm_tenders.id"), nullable=True, index=True)
     quot_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
     # Base number ("QT-<inquiry-suffix>-<seq>") — never changes once assigned. The displayed
     # quot_number appends "-r<revision_number>" on top of this each time the quote is revised.
@@ -175,7 +181,8 @@ class Quotation(Base):
     created_by_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
-    inquiry: Mapped["Inquiry"] = relationship("Inquiry", back_populates="quotations")
+    inquiry: Mapped["Inquiry | None"] = relationship("Inquiry", back_populates="quotations")
+    tender: Mapped["Tender | None"] = relationship("Tender", back_populates="quotations")
     items: Mapped[list["QuotationLineItem"]] = relationship(
         "QuotationLineItem", back_populates="quotation", cascade="all, delete-orphan", order_by="QuotationLineItem.sort_order"
     )

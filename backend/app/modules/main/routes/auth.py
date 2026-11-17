@@ -25,7 +25,9 @@ from app.modules.organization.services.provisioning import sync_user_org_links
 from app.modules.hr.services.employee_sync import is_org_locked
 from app.modules.hr.services.exit_guard import is_exited, exited_login_message
 from app.core.config import settings
-from app.core.permission_registry import legacy_erp_permissions, restricted_subtabs
+from app.core.permission_registry import MODULES, legacy_erp_permissions, restricted_subtabs
+from app.core.data_scope import effective_scopes
+from app.modules.main.services.grc import active_role_names
 from app.core import visibility
 
 logger = logging.getLogger(__name__)
@@ -649,9 +651,10 @@ async def get_current_user_info(user: User = Depends(get_current_user), db: Sess
         tab_access=restricted_subtabs(user),
         # Admins too: their real grants decide approve / reject (has_grant, 2026-11-04).
         permissions=sorted(user.effective_permissions),
-        roles=sorted(r.name for r in user.roles or [] if r.is_active),
+        roles=active_role_names(db, user),
         # Role-wise UI visibility: only the effective restrictions (core/visibility.py).
         visibility=visibility.effective(user),
+        data_scopes=effective_scopes(user, [m for m in MODULES if m != "organization" and m in user.get_apps()]),
     )
 
 

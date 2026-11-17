@@ -16,6 +16,7 @@ import { RowCount } from '@/components/shared/ui'
 import { useVisibility } from '@/lib/visibility'
 import { VisTd, VisTh } from '@/lib/visibilityComponents'
 import { sampleLots } from '@/lib/qualityPreviewSamples'
+import ScopeNote from '@/components/shared/ScopeNote'
 
 // Inspection types that can exist while Quality is live for incoming inspection only (qualityLive.ts).
 const LIVE_LOT_TYPES = ['incoming', 'stock_reinspection', 'sales_return']
@@ -95,6 +96,7 @@ export default function LotList({ mine = false, initialType = '', initialView = 
           </Select>
         )}
       </div>
+      {!vis.preview && <ScopeNote module="quality" empty={!loading && lots.length === 0} />}
       <div style={tableWrapStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
           <thead><tr>{cols.map(([h, k], i) => {
@@ -106,7 +108,7 @@ export default function LotList({ mine = false, initialType = '', initialView = 
               <tr><td colSpan={colCount} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>Loading…</td></tr>
             ) : lots.length === 0 ? (
               <tr><td colSpan={colCount} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>
-                {mine ? 'Nothing waiting for you — open lots assigned to you or unassigned show here.' : 'No inspection lots found.'}
+                {mine ? 'Nothing waiting for you — open lots assigned to you, and open lots nobody is assigned to yet, show here.' : 'No inspection lots found.'}
               </td></tr>
             ) : lots.map((l) => {
               const open = ['created', 'in_inspection', 'results_recorded'].includes(l.status)

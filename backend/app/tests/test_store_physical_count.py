@@ -73,12 +73,18 @@ def test_count_without_differences_closes_at_once_and_cancel_lifts_freeze(client
     assert _on_hand(db, env) == 6
 
 
-def test_submit_needs_a_store_manager_other_than_yourself(client, db, env):
+def test_submit_needs_an_approve_tick_holder_other_than_yourself(client, db, env):
     _seed_stock(client, env, 3)
     count = _start(client, env)
     client.put(f"{PC}/{count['id']}/counts", json={"lines": [{"line_id": count["items"][0]["id"], "counted_quantity": 1}]},
                headers=_h(env["keeper"]))
     own = client.post(f"{PC}/{count['id']}/submit", json={"approver_id": env["keeper"].id}, headers=_h(env["keeper"]))
     assert own.status_code == 400
-    clerk = client.post(f"{PC}/{count['id']}/submit", json={"approver_id": env["clerk"].id}, headers=_h(env["keeper"]))
-    assert clerk.status_code == 400 and "Store Manager" in clerk.json()["detail"]
+    # The approver must hold Store › Adjustments › Approve (the matrix tick decides, 2026-11-14).
+    from app.modules.main.models.user import User
+    no_tick = User(email="pc.notick@premnathrail.com", name="notick", role="user", is_active=True,
+                   granular_permissions=["store:adjustments:view"])
+    db.add(no_tick)
+    db.commit()
+    clerk = client.post(f"{PC}/{count['id']}/submit", json={"approver_id": no_tick.id}, headers=_h(env["keeper"]))
+    assert clerk.status_code == 400 and "Store › Adjustments › Approve" in clerk.json()["detail"]

@@ -65,6 +65,12 @@ const config: TourConfig = {
       why: 'Fastest way to load the existing item list when starting on the ERP.',
     },
     {
+      target: 'items-needs-review',
+      title: 'Needs review (added at inward)',
+      purpose: 'Items the store added in a hurry from a Before PO receipt. They can be used at once, but their stock levels, quality check, HSN / GST and ledgers still need completing. Click the count to list only these; click again to see every item.',
+      after: 'Open one, complete it with Edit, then press Mark reviewed on the item page.',
+    },
+    {
       target: 'items-add-btn',
       title: '+ Add Item',
       purpose: 'Opens the Add Item form to create a new Item Master record.',

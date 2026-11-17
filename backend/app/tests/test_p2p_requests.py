@@ -219,6 +219,9 @@ def test_requester_only_sees_own_prs_in_list(client, db):
     req_b = _requester(db, "reqb@premnathrail.com")
     pr_a = _create_pr(client, req_a)
     _create_pr(client, req_b)
+    # 2026-11-14: the tick decides and the data scope narrows; the suite's org-wide default is set to the production default here.
+    req_a.data_access_scopes = {"p2p": "assigned"}
+    db.commit()
 
     response = client.get(BASE, headers=auth_header(req_a))
     assert response.status_code == 200
@@ -255,6 +258,9 @@ def test_requester_cannot_view_others_pr_detail(client, db):
     req_a = _requester(db, "reqf@premnathrail.com")
     req_b = _requester(db, "reqg@premnathrail.com")
     pr = _create_pr(client, req_a)
+    # 2026-11-14: the tick decides and the data scope narrows; the suite's org-wide default is set to the production default here.
+    req_b.data_access_scopes = {"p2p": "assigned"}
+    db.commit()
 
     response = client.get(f"{BASE}/{pr['id']}", headers=auth_header(req_b))
     assert response.status_code == 403
@@ -717,24 +723,32 @@ def test_close_success(client, db):
     assert response.json()["closed_at"] is not None
 
 
-def test_close_requires_purchase_app(client, db):
+def test_close_requires_the_edit_grant(client, db):
+    # 2026-11-14: Edit + Close / short-close on Purchase Requisitions decide (not the Purchase desk).
     requester = _requester(db, "reqaj@premnathrail.com")
     pr = _create_pr(client, requester, items=[{"item_name": "Cable", "quantity": 1, "unit": "mtr", "project_inhouse": "Project"}])
     buyer = _purchaser(db, "buyeraj@premnathrail.com")
     _approve_and_raise_po(client, db, pr, buyer)
     assert _receive(client, pr["id"], buyer, 1).status_code == 200
+    requester.assigned_apps = []
+    requester.granular_permissions = ["p2p:purchase_requisitions:view", "p2p:purchase_requisitions:create", "p2p:purchase_requisitions:submit", "p2p:purchase_requisitions:cancel"]
+    db.commit()
 
     response = client.post(f"{BASE}/{pr['id']}/close", headers=auth_header(requester))
-    assert response.status_code == 403
+    assert response.status_code == 403 and "'Edit' permission" in response.json()["detail"]
 
 
 # ── Manual update (purchase-only header edit) ───────────────────────────────
 
-def test_update_requires_purchase_app(client, db):
+def test_update_requires_the_edit_grant(client, db):
+    # 2026-11-14: Edit on Purchase Requisitions decides (not the Purchase desk).
     requester = _requester(db, "reqak@premnathrail.com")
     pr = _create_pr(client, requester)
+    requester.assigned_apps = []
+    requester.granular_permissions = ["p2p:purchase_requisitions:view", "p2p:purchase_requisitions:create", "p2p:purchase_requisitions:submit", "p2p:purchase_requisitions:cancel"]
+    db.commit()
     response = client.patch(f"{BASE}/{pr['id']}", json={"remarks": "hello"}, headers=auth_header(requester))
-    assert response.status_code == 403
+    assert response.status_code == 403 and "'Edit' permission" in response.json()["detail"]
 
 
 def test_update_header_fields(client, db):
@@ -981,15 +995,19 @@ def test_po_pricing_only_for_purchase_and_po_approvers(client, db):
 
 # ── Cancel after PO approval / short-close ──────────────────────────────────
 
-def test_cancel_after_po_approval_is_purchase_only_and_cancels_the_po(client, db):
+def test_cancel_after_po_approval_needs_po_cancel_and_cancels_the_po(client, db):
+    # 2026-11-14: Cancel on Purchase Orders decides (the PO is cancelled with the requisition), not the Purchase desk.
     requester = _requester(db, "reqcx@premnathrail.com")
     pr = _create_pr(client, requester)
     buyer = _purchaser(db, "buyercx@premnathrail.com")
     _approve_and_raise_po(client, db, pr, buyer)
+    requester.assigned_apps = []
+    requester.granular_permissions = ["p2p:purchase_requisitions:view", "p2p:purchase_requisitions:create", "p2p:purchase_requisitions:submit", "p2p:purchase_requisitions:cancel"]
+    db.commit()
 
     refused = client.post(f"{BASE}/{pr['id']}/cancel", json={"reason": "No longer needed"}, headers=auth_header(requester))
     assert refused.status_code == 403
-    assert "only Purchase" in refused.json()["detail"]
+    assert "'Cancel' on Procurement › Purchase Orders" in refused.json()["detail"]
     assert client.post(f"{BASE}/{pr['id']}/cancel", json={}, headers=auth_header(buyer)).status_code == 400
 
     ok = client.post(f"{BASE}/{pr['id']}/cancel", json={"reason": "Vendor cannot supply"}, headers=auth_header(buyer))

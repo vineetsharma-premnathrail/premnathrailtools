@@ -6,13 +6,13 @@ import { useRouter } from 'next/navigation'
 import { useAuth, useRequireApp } from '@/hooks/useAuth'
 import { erpApi } from '@/lib/api'
 import { ServiceRequest } from '@/types'
-import ErpNav from '@/components/erp/ErpNav'
+import ErpNav, { erpHomeHref, seesErpDashboard } from '@/components/erp/ErpNav'
+import ScopeNote from '@/components/shared/ScopeNote'
 import { Section, StatChip, RowCount } from '@/components/shared/ui'
 import { BarChart, PieChart } from '@/components/shared/charts'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
 import { formatDate } from '@/lib/format'
-import { canViewTab } from '@/lib/tabAccess'
 
 const PRIORITY_COLORS: Record<string, string> = {
   urgent: '#dc2626',
@@ -65,16 +65,13 @@ export default function ErpDashboardPage() {
   // Clicking what is already applied clears it, so every chip is a toggle.
   const applyFilter = (next: TicketFilter) => setFilter((cur) => (sameFilter(cur, next) ? NO_FILTER : next))
 
-  // Role & Permissions › Service Module › Dashboard decides who sees this page; anyone without it lands on
-  // the first Service tab they may open. The figures themselves come from the Service Requests list
-  // (server-gated by Service Requests › View and data access).
-  const seeDashboard = canViewTab('erp', 'dashboard', user)
+  // Role & Permissions › Service Module › Dashboard decides who sees this page; the figures come from the
+  // Service Requests list (server-gated by Service Requests › View and data access), so the page also needs
+  // that tick. Anyone else lands on the first Service tab they may open (owner, 2026-11-14).
+  const seeDashboard = seesErpDashboard(user)
   useEffect(() => {
     if (!isAuthorized || seeDashboard) return
-    const next = ([['service_requests', '/dashboard/erp/service-requests'], ['service_contracts', '/dashboard/erp/service-contracts'],
-      ['reports', '/dashboard/erp/reports'], ['recycle_bin', '/dashboard/erp/recycle-bin']] as const)
-      .find(([key]) => canViewTab('erp', key, user))
-    router.replace(next ? next[1] : '/dashboard')
+    router.replace(erpHomeHref(user) || '/dashboard')
   }, [isAuthorized, seeDashboard, user, router])
 
   useEffect(() => {
@@ -135,6 +132,7 @@ export default function ErpDashboardPage() {
       <p style={{ fontSize: 13, color: '#78716c', margin: 0 }}>
         Welcome back, {user?.name || 'there'}. Here is the current state of your service requests.
       </p>
+      <ScopeNote module="erp" style={{ margin: '10px 0 0' }} />
       <div data-tour="erp-dash-stats" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '10px 0 18px' }}>
         <StatChip label="Service requests" value={stats.totalSrs} color="#ea580c" onClick={() => setFilter(NO_FILTER)} active={!isFiltered} />
         <StatChip label="Active tickets" value={stats.activeTickets} color="#ca8a04" onClick={() => applyFilter({ ...NO_FILTER, active: true })} active={sameFilter(filter, { ...NO_FILTER, active: true })} />

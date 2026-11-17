@@ -14,7 +14,7 @@ from app.modules.accounts.schemas.fx import (
     CurrencyResponse, ExchangeRateResponse, FxRevaluationResponse,
 )
 from app.modules.accounts.services import fx
-from app.modules.accounts.routes._common import write_audit, who, service_errors, require_finance_manager, require_any_accounts_tab
+from app.modules.accounts.routes._common import write_audit, who, service_errors, require_any_accounts_tab
 
 router = APIRouter(prefix="/accounts/fx", tags=["Accounts"])
 
@@ -118,7 +118,6 @@ async def list_revaluations(db: Session = Depends(get_db), _user: User = Depends
 @router.post("/revaluations", response_model=FxRevaluationResponse, status_code=201)
 async def run_revaluation_route(payload: FxRevaluationCreate, db: Session = Depends(get_db),
                                 user: User = Depends(require_feature_action("accounts", "currencies", "revaluation", "approve"))):
-    require_finance_manager(user, "post the month-end foreign-currency revaluation")
     with service_errors(db):
         run = fx.run_revaluation(db, accounting_period=payload.accounting_period, rates=payload.rates, user_id=user.id)
     write_audit(db, "fx_revaluation", run.id, "posted", user,
@@ -130,7 +129,6 @@ async def run_revaluation_route(payload: FxRevaluationCreate, db: Session = Depe
 @router.post("/revaluations/{revaluation_id}/cancel", response_model=FxRevaluationResponse)
 async def cancel_revaluation_route(revaluation_id: int, payload: FxRevaluationCancelPayload, db: Session = Depends(get_db),
                                    user: User = Depends(require_feature_action("accounts", "currencies", "revaluation", "cancel"))):
-    require_finance_manager(user, "cancel a foreign-currency revaluation")
     with service_errors(db):
         run = fx.cancel_revaluation(db, revaluation_id=revaluation_id, reason=payload.reason, user_id=user.id)
     write_audit(db, "fx_revaluation", run.id, "reversed", user, f"{who(user)} cancelled the FX revaluation for {run.accounting_period}: {payload.reason}")

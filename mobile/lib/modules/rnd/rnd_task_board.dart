@@ -11,24 +11,42 @@ import 'rnd_common.dart';
 import 'rnd_task_detail.dart';
 
 /// Task board shared by requirement tasks, Prototype / Research project tasks
-/// and R&D tasks on a Project Management project (portal: TasksBoard.tsx).
-/// The three backends return the same task shape; [RndTaskApi] picks the paths.
+/// and R&D tasks on a Project Management project or a past machine (portal: TasksBoard.tsx).
+/// The backends return the same task shape; [RndTaskApi] picks the paths.
 
-enum TaskOwner { requirement, project, pmProject }
+enum TaskOwner { requirement, project, pmProject, machine }
 
 class RndTaskApi {
   RndTaskApi.requirement(String this.source, int this.recordId)
     : owner = TaskOwner.requirement,
       projectId = null,
+      pmProjectId = null,
+      machineId = null;
+  RndTaskApi.project(int this.projectId)
+    : owner = TaskOwner.project,
+      source = null,
+      recordId = null,
+      pmProjectId = null,
+      machineId = null;
+  RndTaskApi.pmProject(int this.pmProjectId)
+    : owner = TaskOwner.pmProject,
+      source = null,
+      recordId = null,
+      projectId = null,
+      machineId = null;
+  RndTaskApi.machine(int this.machineId)
+    : owner = TaskOwner.machine,
+      source = null,
+      recordId = null,
+      projectId = null,
       pmProjectId = null;
-  RndTaskApi.project(int this.projectId) : owner = TaskOwner.project, source = null, recordId = null, pmProjectId = null;
-  RndTaskApi.pmProject(int this.pmProjectId) : owner = TaskOwner.pmProject, source = null, recordId = null, projectId = null;
 
   final TaskOwner owner;
   final String? source;
   final int? recordId;
   final int? projectId;
   final int? pmProjectId;
+  final int? machineId;
 
   bool get _req => owner == TaskOwner.requirement;
 
@@ -37,13 +55,16 @@ class RndTaskApi {
       TaskOwner.requirement => '/rnd/requirement-work/$source/$recordId/tasks',
       TaskOwner.project => '/rnd/projects/$projectId/tasks',
       TaskOwner.pmProject => '/rnd/pm-projects/$pmProjectId/tasks',
+      TaskOwner.machine => '/rnd/machines/$machineId/tasks',
     }),
   );
 
   Future<Json> _access() async => jsonMap(
-    await Api.get(
-      owner == TaskOwner.project ? '/rnd/projects/$projectId/task-access' : '/rnd/pm-projects/$pmProjectId/task-access',
-    ),
+    await Api.get(switch (owner) {
+      TaskOwner.project => '/rnd/projects/$projectId/task-access',
+      TaskOwner.machine => '/rnd/machines/$machineId/task-access',
+      _ => '/rnd/pm-projects/$pmProjectId/task-access',
+    }),
   );
 
   /// Who a top-level task can be assigned to.
@@ -61,6 +82,7 @@ class RndTaskApi {
             TaskOwner.requirement => '/rnd/requirement-work/$source/$recordId/tasks',
             TaskOwner.project => '/rnd/projects/$projectId/tasks',
             TaskOwner.pmProject => '/rnd/pm-projects/$pmProjectId/tasks',
+            TaskOwner.machine => '/rnd/machines/$machineId/tasks',
           };
     return jsonMap(await postForm(path, fields, files: files));
   }

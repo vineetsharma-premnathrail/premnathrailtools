@@ -54,7 +54,9 @@ def inquiry7(db):
 
 
 def make_user(db, email):
-    user = User(email=email, name=email.split("@")[0], role="user", is_active=True, assigned_apps=["crm"])
+    # Uploading onto an inquiry is changing it: these users' CRM Edit scope covers every inquiry.
+    user = User(email=email, name=email.split("@")[0], role="user", is_active=True, assigned_apps=["crm"],
+                data_access_scopes={"crm": "organization", "crm:edit": "organization"})
     db.add(user)
     db.commit()
     db.refresh(user)

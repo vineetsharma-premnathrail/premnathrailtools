@@ -26,7 +26,7 @@ const config: TourConfig = {
     {
       target: 'rfq-list-table',
       title: 'RFQ Number / Purchase Requisition Number / Status / Vendors / Created',
-      purpose: 'On top, approved requisitions waiting for quotations show as "RFQ pending": click the row or Start RFQ (purchase team only) to open the Raise RFQ form with that requisition selected. Below, every RFQ raised so far, its linked requisition, whether it is still a Draft or Closed (vendor chosen), and whether it went to several vendors or to one vendor only. Click a row to open this RFQ\'s full detail: vendor quotations, commercial terms, and the PO drafting workflow.',
+      purpose: 'On top, approved requisitions waiting for quotations show as "RFQ pending": click the row or Start RFQ (needs Create on Procurement › R.F.Q) to open the Raise RFQ form with that requisition selected. Below, every RFQ raised so far, its linked requisition, whether it is still a Draft or Closed (vendor chosen), and whether it went to several vendors or to one vendor only. Click a row to open this RFQ\'s full detail: vendor quotations, commercial terms, and the PO drafting workflow.',
     },
   ],
 }

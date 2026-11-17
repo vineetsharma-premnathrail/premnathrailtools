@@ -6,7 +6,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { Paperclip, UploadSimple } from '@phosphor-icons/react'
 import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp, hasErpPermission } from '@/hooks/useAuth'
-import { PermissionAction, useCan } from '@/lib/permissions'
+import { PermissionAction, canChangeRecord, useCan } from '@/lib/permissions'
 import { useAttachmentBlobUrl } from '@/hooks/useAttachmentBlobUrl'
 import { erpApi, storeApi } from '@/lib/api'
 import { formatDate, formatDateTime } from '@/lib/format'
@@ -119,12 +119,12 @@ export default function ServiceRequestDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthorized, srId])
 
-  // Mirrors the backend's `_can_edit`/`_can_delete` in service_requests.py —
-  // admins always pass, the assigned engineer passes (each tab still checks its
-  // own feature permission), everyone else must both own the SR and hold the
-  // matching granular permission.
-  const isEngineer = !!sr && !!user && !!sr.assigned_service_person_id && sr.assigned_service_person_id === user.id
-  const canEdit = !!sr && !!user && (user.role === 'admin' || isEngineer || (sr.created_by_id === user.id && hasErpPermission(user, 'sr_edit')))
+  // Mirrors the backend's `_can_edit` in service_requests.py: the SR must be inside the role's Service Edit
+  // scope (Role › Data access › Edit; default = SRs you raised or are the assigned engineer of) — owner,
+  // 2026-11-03 / 11-14. Each tab still checks its own tick (Materials › Create …); the SR's own fields and
+  // status also need Service Requests › Edit.
+  const canEdit = !!sr && canChangeRecord(user, 'erp', { ownerIds: [sr.created_by_id], assignedIds: [sr.assigned_service_person_id] })
+  const canEditFields = canEdit && hasErpPermission(user, 'sr_edit')
   const { canDelete: canDeleteOwn, canFeature } = useCan()
   const feat = (key: string, action: PermissionAction = 'view') => canFeature('erp', 'service_requests', key, action)
   const visibleTabs = vis.preview ? (['Overview'] as typeof TABS[number][]) : TABS.filter((t) => !TAB_FEATURE[t] || feat(TAB_FEATURE[t]!))
@@ -186,7 +186,7 @@ export default function ServiceRequestDetailPage() {
         </div>
         {!vis.preview && (
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          {canEdit && (
+          {canEditFields && (
             <Link
               href={`/dashboard/erp/service-requests/${ref}/edit`}
               data-tour="erp-srd-edit-btn"
@@ -225,7 +225,7 @@ export default function ServiceRequestDetailPage() {
         </div>
       )}
       <VisSection vis={vis} k="detail_workflow">
-        <WorkflowSteps status={sr.status} canModify={canEdit && !sr.is_locked} onRequestChange={setPendingStatus} />
+        <WorkflowSteps status={sr.status} canModify={canEditFields && !sr.is_locked} onRequestChange={setPendingStatus} />
       </VisSection>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 20, borderBottom: '1px solid rgba(0,0,0,0.08)', flexWrap: 'wrap' }}>
@@ -252,9 +252,9 @@ export default function ServiceRequestDetailPage() {
         ))}
       </div>
 
-      {tab === 'Overview' && <OverviewTab sr={sr} project={project} projectError={projectError} canModify={canEdit} onPatch={patch} onRequestStatus={setPendingStatus}
+      {tab === 'Overview' && <OverviewTab sr={sr} project={project} projectError={projectError} canModify={canEditFields} onPatch={patch} onRequestStatus={setPendingStatus}
         showCharges={showCharges} invoiceView={feat('invoice')} invoiceCreate={feat('invoice', 'create')} />}
-      {tab === 'Visits' && <ServiceVisitsTab srId={sr.id} srStatus={sr.status} assignedId={sr.assigned_service_person_id ?? null} onChanged={load} />}
+      {tab === 'Visits' && <ServiceVisitsTab srId={sr.id} srStatus={sr.status} assignedId={sr.assigned_service_person_id ?? null} srChangeable={canEdit} onChanged={load} />}
       {tab === 'Diagnostics & RCA' && <RcaTab sr={sr} canModify={canEdit && !sr.is_locked && feat('rca', 'edit')} onPatch={patch} />}
       {tab === 'Materials' && <MaterialsTab srId={sr.id} canEdit={canEdit && !sr.is_locked && feat('materials', 'edit')}
         canAdd={canEdit && !sr.is_locked && feat('materials', 'create')} canDelete={canEdit && !sr.is_locked && feat('materials', 'delete')}

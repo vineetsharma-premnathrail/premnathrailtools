@@ -18,7 +18,7 @@ const config: TourConfig = {
     {
       target: 'erp-srd-edit-btn',
       title: 'Edit',
-      purpose: 'Opens the full SR form to change title, description, reporter, dates or notes. Only the SR\'s creator (with edit rights) or an admin sees this.',
+      purpose: 'Opens the full SR form to change title, description, reporter, dates or notes. Shown when your role has Service Requests › Edit and the SR is inside its Edit scope (Organization › Role & Permissions › Data access › Edit; by default SRs you raised or are the assigned engineer of).',
     },
     {
       target: 'erp-srd-delete-btn',

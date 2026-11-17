@@ -55,8 +55,9 @@ class LocalProblem extends Error {}
 export default function CreatePurchaseOrderPage() {
   const { user, isLoading } = useAuth()
   const router = useRouter()
-  const isPurchase = !!user?.apps?.includes('purchase') || user?.role === 'admin'
   const { can, canFeature } = useCan()
+  // The PO draft is Procurement › Purchase Orders work: its View tick opens the page (2026-11-14); each button checks its own action.
+  const isPurchase = can('p2p', 'purchase_orders', 'view')
   // Read live from the URL: moving between POs on this same page (Continue PO,
   // split POs) changes ?rfq= without remounting it.
   const searchParams = useSearchParams()
@@ -158,7 +159,7 @@ export default function CreatePurchaseOrderPage() {
   useEffect(() => { if (isPurchase) Promise.resolve().then(load) }, [isPurchase, load])
 
   if (isLoading || !user) return null
-  if (!isPurchase) return <div><P2PNav /><p style={{ fontSize: 13, color: TEXT.muted }}>Only the purchase team creates purchase orders.</p></div>
+  if (!isPurchase) return <div><P2PNav /><p style={{ fontSize: 13, color: TEXT.muted }}>You can&apos;t open purchase order drafts: your role has no &apos;View&apos; on Procurement › Purchase Orders. Ask an admin to add it in Organization › Role &amp; Permissions.</p></div>
   if (linkError) return (<div><P2PNav /><InvalidRecordLink message={linkError} listHref="/dashboard/p2p/purchase-orders" listLabel="Back to purchase orders" /></div>)
 
   const run = async (fn: () => Promise<unknown>, fallback: string) => {

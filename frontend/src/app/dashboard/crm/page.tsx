@@ -6,7 +6,9 @@ import { useRouter } from 'next/navigation'
 import { useAuth, useRequireApp } from '@/hooks/useAuth'
 import { crmApi } from '@/lib/api'
 import { CrmDashboard } from '@/types'
-import CrmNav from '@/components/crm/CrmNav'
+import CrmNav, { crmHomeHref } from '@/components/crm/CrmNav'
+import ScopeNote from '@/components/shared/ScopeNote'
+import { canViewTab } from '@/lib/tabAccess'
 import { stripHtml } from '@/components/RichTextEditor'
 import { extractErrorMessages } from '@/lib/validation'
 import { getRecentVisits, RecentKind, RecentVisit } from '@/lib/crmShortcuts'
@@ -21,16 +23,24 @@ export default function CrmDashboardPage() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string[]>([])
   const [recent, setRecent] = useState<Record<RecentKind, RecentVisit[]>>({ organization: [], inquiry: [], tender: [] })
+  // A role without CRM › Dashboard › View goes to the first CRM tab it may open
+  // instead of a dashboard that would only answer 403 (owner, 2026-11-14).
+  const seesDashboard = canViewTab('crm', 'dashboard', user)
+  const home = isAuthorized && !seesDashboard ? crmHomeHref(user) : undefined
 
   useEffect(() => {
-    if (!isAuthorized) return
+    if (home) router.replace(home)
+  }, [home, router])
+
+  useEffect(() => {
+    if (!isAuthorized || !seesDashboard) return
     crmApi.getDashboard()
       .then(setData)
       .catch((err) => setLoadError(extractErrorMessages(err, 'Could not load the CRM dashboard. Reload the page; if it persists, check your connection and that you still have CRM access.')))
       .finally(() => setLoading(false))
 
     setRecent({ organization: getRecentVisits('organization'), inquiry: getRecentVisits('inquiry'), tender: getRecentVisits('tender') })
-  }, [isAuthorized])
+  }, [isAuthorized, seesDashboard])
 
   const openRecent = (v: RecentVisit) => {
     const base = v.kind === 'organization' ? 'organizations' : v.kind === 'inquiry' ? 'inquiries' : 'tenders'
@@ -38,7 +48,18 @@ export default function CrmDashboardPage() {
     router.push(v.ref ? `/dashboard/crm/${base}/${v.ref}` : (v.kind === 'tender' ? '/dashboard/crm/inquiries?type=tender' : `/dashboard/crm/${base}`))
   }
 
-  if (isLoading || !isAuthorized) return null
+  if (isLoading || !isAuthorized || home) return null
+  if (!seesDashboard) {
+    return (
+      <div>
+        <CrmNav />
+        <p role="alert" style={{ fontSize: 13, color: '#b91c1c' }}>
+          Your role opens the CRM app but no CRM tab (Dashboard, Customer Organizations, Inquiries &amp; Tenders, Products, Knowledge Hub or Reports).
+          Ask an admin to tick View on the tabs you need in Organization › Role &amp; Permissions › CRM.
+        </p>
+      </div>
+    )
+  }
 
   return (
     <div>
@@ -61,6 +82,7 @@ export default function CrmDashboardPage() {
         <p style={{ fontSize: 13, color: '#78716c' }}>Loading…</p>
       ) : (
         <>
+          <ScopeNote module="crm" />
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gridAutoRows: '1fr', alignItems: 'stretch', gap: 14, marginBottom: 20 }}>
             <StatCard tourId="dash-stat-organizations" label="Organizations" value={data.total_organizations} color="#3b82f6" href="/dashboard/crm/organizations" />
             <StatCard tourId="dash-stat-inquiries" label="Inquiries" value={data.total_inquiries} color="#FF7A45" href="/dashboard/crm/inquiries?type=inquiry" />

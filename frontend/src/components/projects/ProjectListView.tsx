@@ -10,8 +10,8 @@ import { TEXT } from '@/lib/theme'
 import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
-import { hasErpPermission, useAuth } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
+import ScopeNote from '@/components/shared/ScopeNote'
 import { useVisibility } from '@/lib/visibility'
 import { VisTd, VisTh } from '@/lib/visibilityComponents'
 import { sampleMachines, sampleProjects } from '@/lib/projectsPreviewSamples'
@@ -67,14 +67,14 @@ function compareCode(a: string, b: string): number {
 
 function ProjectListViewInner({ showProjects, showMachines }: { showProjects: boolean; showMachines: boolean }) {
   const router = useRouter()
-  const { user } = useAuth()
   const { can } = useCan()
   const vis = useVisibility('projects:all_projects')
   // The preview draws every column (hidden ones dimmed, with a toggle); normal use drops the hidden ones.
   const showCol = (key: string) => !HIDEABLE.has(key) || vis.preview || vis.showColumn('all_projects', key)
   const columns = COLUMNS.filter((c) => showCol(c.key))
   const canExport = showMachines && can('projects', 'all_projects', 'export')
-  const canImport = showMachines && can('projects', 'all_projects', 'import') && hasErpPermission(user, 'project_create')
+  // The Import tick alone decides (owner, 2026-11-14).
+  const canImport = showMachines && can('projects', 'all_projects', 'import') && can('projects', 'all_projects', 'create') // the sheet registers new machines, so the server also needs Create
   // ?due=soon | passed comes from the Projects Dashboard KPI cards (closing date filter).
   const due = useSearchParams().get('due')
   // Role editor preview: made-up rows, nothing is loaded.
@@ -225,9 +225,10 @@ function ProjectListViewInner({ showProjects, showMachines }: { showProjects: bo
           dateLabel="Dispatch date"
           filterParams={{ search: search.trim() || undefined }} />
       )}
+      {showProjects && !vis.preview && !loading && <ScopeNote module="projects" empty={rows.length === 0 && !(filtered || due)} />}
       {loading ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>Loading…</p> : rows.length === 0 ? (
         <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>
-          {filtered || due ? 'No project matches this search or filter — clear it to see every project.' : 'No projects yet — use + Create Project to start one.'}
+          {filtered || due ? 'No project matches this search or filter — clear it to see every project.' : 'No projects to show.'}
         </p>
       ) : (
         <div data-tour="pm-all-table" style={{ overflowX: 'auto' }}>

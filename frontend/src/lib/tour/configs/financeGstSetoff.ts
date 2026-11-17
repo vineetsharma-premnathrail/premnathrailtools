@@ -24,7 +24,7 @@ const config: TourConfig = {
     {
       target: 'fin-gst-setoff-post',
       title: 'Post set-off',
-      purpose: 'Finance Manager only. Posts one journal on the period end debiting output tax and crediting input credit for the steps shown.',
+      purpose: 'Needs Approve on GST › ITC set-off. Posts one journal on the period end debiting output tax and crediting input credit for the steps shown.',
       after: 'Shows the journal number. The button then reads "Set-off already posted" — reverse that journal first if you must redo it. The cash portion still has to be paid via Payments → Expense payment.',
     },
     {

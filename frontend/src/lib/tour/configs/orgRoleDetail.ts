@@ -36,7 +36,29 @@ const config: TourConfig = {
       why: 'Ticking any action also ticks View; unticking View clears the row. Click a tab name to tick or untick its whole row.',
       after: 'Delete only ever lets a user delete records they created themselves — admins can delete anything.',
     },
-    { target: 'org-role-save', title: 'Save Role', purpose: 'Saves name, flags and permissions.', after: 'People holding the role get the change on their next page load; it is recorded in the audit log.' },
+    {
+      target: 'perm-matrix-customised-note',
+      title: 'Customised tab',
+      purpose: 'Once you tick or untick a single feature inside a tab, that tab is "customised": its features no longer follow the tab on their own.',
+      why: 'Ticking a tab action there still ticks the features that follow that action, but unticking does not untick them — open the features to check, or click "Reset to follow the tab".',
+    },
+    {
+      target: 'org-role-scope-default-summary',
+      title: 'Records: default',
+      purpose: 'Modules this role opens without a Data access level fall back to the default (usually Own + assigned): holders see only their own and assigned records there.',
+      after: 'Open the Data access tab and pick a wider level if they should see more — the most common reason for "I have the permission but the list is empty".',
+    },
+    {
+      target: 'org-role-scopes',
+      title: 'Data access: see and change',
+      purpose: 'Per module: which records holders see, and which of those they may change (edit, upload, move a stage).',
+      options: [
+        { value: 'Which records they see', meaning: 'Own · Own + assigned · Department · Plant · Multiple plants · Entire organization.' },
+        { value: 'Which records may they change?', meaning: 'Default = Own + assigned. Never wider than what they see — narrowing the first column narrows this one too.' },
+      ],
+    },
+    { target: 'org-role-unsaved', title: 'Unsaved changes', purpose: 'Save Role and Save Users are separate: this note says when the other tab still has changes that are not saved.' },
+    { target: 'org-role-save', title: 'Save Role', purpose: 'Saves name, flags, permissions, data access and notifications — not who holds the role (Users tab has its own Save Users).', after: 'Each holder gets a bell "Your access changed" and their open pages pick up the change within a minute; it is recorded in the audit log. Old permissions for screens that no longer exist are removed and listed in the Saved message.' },
     {
       target: 'org-role-for-user',
       title: 'Settings for (one holder)',

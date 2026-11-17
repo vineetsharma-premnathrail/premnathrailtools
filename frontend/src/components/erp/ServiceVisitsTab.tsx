@@ -51,12 +51,22 @@ const EMPTY: Form = { engineer_id: '', visit_date: '', travel_start: '', arrive_
 /** IW41 service confirmations: every engineer visit on this SR with hours,
  * travel, expenses, work done and the customer's sign-off. Visit costs and
  * hours roll up into the SR bill; each visit has a Word service report. */
-export default function ServiceVisitsTab({ srId, srStatus, assignedId, onChanged }: { srId: number; srStatus: string; assignedId: number | null; onChanged: () => void }) {
-  const { can } = useCan()
+export default function ServiceVisitsTab({ srId, srStatus, assignedId, srChangeable = true, onChanged }: {
+  srId: number; srStatus: string; assignedId: number | null
+  /** The SR is inside the user's Service Edit scope (Role › Data access › Edit) — the SR page works it out. */
+  srChangeable?: boolean
+  onChanged: () => void
+}) {
+  const { can, canFeature } = useCan()
   const me = useAuthStore((s) => s.user)
-  const canEditAll = can('erp', 'service_requests', 'edit')
+  // Mirrors service_visits.py _ensure_can_log: your own visit (you are its engineer, or the SR's assigned
+  // engineer for a new one) — or Service Requests › Edit with the SR inside your Edit scope for anyone else's.
+  const canEditAll = can('erp', 'service_requests', 'edit') && srChangeable
+  const visitFeat = (action: 'create' | 'edit' | 'delete') => canFeature('erp', 'service_requests', 'visits', action)
+  const ownVisit = (v: ServiceVisit) => v.engineer_id === me?.id || (v.engineer_id == null && assignedId === me?.id)
+  const mayTouch = (v: ServiceVisit) => canEditAll || ownVisit(v)
   const open = VISIT_STATUSES.includes((srStatus || '').toLowerCase())
-  const canLog = open && (canEditAll || assignedId === me?.id)
+  const canLog = open && visitFeat('create') && (canEditAll || assignedId === me?.id)
   const [data, setData] = useState<ServiceVisitSummary | null>(null)
   const [users, setUsers] = useState<{ value: string; label: string }[]>([])
   const [error, setError] = useState<string | string[]>('')
@@ -179,10 +189,12 @@ export default function ServiceVisitsTab({ srId, srStatus, assignedId, onChanged
                 <td style={tdStyle}>{v.customer_signed_at ? `${v.customer_sign_name}, ${formatDateTime(v.customer_signed_at)}` : 'Not signed'}</td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
                   <button type="button" style={{ ...btn, marginRight: 6 }} onClick={() => setDocFor(docFor === v.id ? null : v.id)}>Report</button>
-                  {open && (canEditAll || v.engineer_id === me?.id) && <>
+                  {open && mayTouch(v) && visitFeat('edit') && (
                     <button type="button" style={{ ...btn, marginRight: 6 }} onClick={() => startEdit(v)}>Edit</button>
+                  )}
+                  {open && mayTouch(v) && visitFeat('delete') && (
                     <button type="button" style={smallDangerBtnStyle} onClick={() => setDeleting(v)}>Remove</button>
-                  </>}
+                  )}
                 </td>
               </tr>
             ))}
@@ -193,7 +205,7 @@ export default function ServiceVisitsTab({ srId, srStatus, assignedId, onChanged
         <div style={cardStyle}>
           <ManagedDocumentPanel entityType="erp_service_visit_report" entityId={docFor}
             revision={data?.visits.find((v) => v.id === docFor)?.document_revision || 0}
-            canModify={canEditAll || data?.visits.find((v) => v.id === docFor)?.engineer_id === me?.id}
+            canModify={visitFeat('edit') && (() => { const v = data?.visits.find((x) => x.id === docFor); return !!v && mayTouch(v) })()}
             recordLabel="service report" downloadName={`ServiceReport-${srId}-V${docFor}`} />
         </div>
       )}

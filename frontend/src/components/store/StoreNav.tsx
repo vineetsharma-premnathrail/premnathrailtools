@@ -30,7 +30,7 @@ const GROUPS = [
       // Approval documents — approvers land here from the notification bell.
       { href: '/dashboard/store/adjustments', label: 'Adjustments', key: 'adjustments', subtabKey: 'adjustments' },
       { href: '/dashboard/store/reorder', label: 'Reorder', key: 'reorder', subtabKey: 'stock', feature: 'reorder' },
-      { href: '/dashboard/store/cycle-count', label: 'Physical Count', key: 'cycle-count', subtabKey: 'adjustments', feature: 'cycle_count' },
+      { href: '/dashboard/store/cycle-count', label: 'Physical Count', key: 'cycle-count', subtabKey: 'adjustments', feature: 'cycle_count', featureOnly: true },
     ],
   },
   {
@@ -48,7 +48,7 @@ const GROUPS = [
     key: 'outward', label: 'Outward', icon: 'outward',
     tabs: [
       { href: '/dashboard/store/issues', label: 'Issues', key: 'issues', subtabKey: 'issues' },
-      { href: '/dashboard/store/job-work', label: 'Job Work', key: 'job-work', subtabKey: 'issues', feature: 'job_work' },
+      { href: '/dashboard/store/job-work', label: 'Job Work', key: 'job-work', subtabKey: 'issues', feature: 'job_work', featureOnly: true },
       { href: '/dashboard/store/transfers', label: 'Transfers', key: 'transfers', subtabKey: 'transfers' },
       { href: '/dashboard/store/reservations', label: 'Reservations', key: 'reservations', subtabKey: 'reservations' },
     ],
@@ -98,9 +98,14 @@ export default function StoreNav() {
     .map((g) => ({
       ...g,
       // A page that is a feature of its tab (Batches, Serial Nos., Reorder, Physical Count, Before PO, Job Work)
-      // also needs that feature's View.
-      visible: filterTabsByAccess<SubTab>('store', g.tabs, user)
-        .filter((t) => !('feature' in t) || canFeature(user, 'store', t.subtabKey, t.feature, 'view')),
+      // also needs that feature's View. `featureOnly` pages (Physical Count, Job Work) open on the feature's
+      // View alone — their server routes check only the feature, so the tick decides (owner, 2026-11-14).
+      visible: (() => {
+        const byTab = new Set<SubTab>(filterTabsByAccess<SubTab>('store', g.tabs, user))
+        return (g.tabs as readonly SubTab[]).filter((t) => 'feature' in t
+          ? (byTab.has(t) || ('featureOnly' in t && t.featureOnly)) && canFeature(user, 'store', t.subtabKey, t.feature, 'view')
+          : byTab.has(t))
+      })(),
     }))
     .filter((g) => g.visible.length > 0)
 

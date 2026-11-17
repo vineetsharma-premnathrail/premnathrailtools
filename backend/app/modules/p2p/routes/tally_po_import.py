@@ -13,10 +13,11 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.data_scope import ensure_in_scope
-from app.core.permissions import ensure_feature_action, ensure_tab_action, require_app_access
+from app.core.permissions import ensure_feature_action, ensure_tab_action
 from app.db.session import get_db
 import app.modules.p2p.access  # noqa: F401 — registers the Procurement data scopes
 from app.modules.main.models.user import User
+from app.modules.main.routes.auth import get_current_user
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder
 from app.utils.sharepoint import download_file_content
 
@@ -37,7 +38,7 @@ def _tally_po_or_404(db: Session, user: User, po_id: int) -> P2PPurchaseOrder:
 async def get_tally_po_document(
     po_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
+    user: User = Depends(get_current_user),
 ):
     ensure_tab_action(user, "p2p", "purchase_orders", "view")
     ensure_feature_action(user, "p2p", "purchase_orders", "po_document", "view")

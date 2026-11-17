@@ -477,8 +477,12 @@ def _require_deviation_authority(lot: QualityInspectionLot, user: User, deviatio
                        critical_status)
     if not (deviation_reference or "").strip():
         raise LotError(f"{what} needs the Design / customer concession reference (deviation number).", 422)
-    if not access.is_quality_head(user):
-        raise LotError(f"{what} is a 'use as is' decision — only a Quality head can make it.", 403)
+    # The live tick decides (owner, 2026-11-14): Inspection Lots › Usage decision › Approve —
+    # not NCR › Approve, which sits on a tab that isn't live yet.
+    from app.core.permission_registry import can_feature
+    if not can_feature(user, "quality", "inspection_lots", "usage_decision", "approve"):
+        raise LotError(f"{what} is a 'use as is' decision — it needs the tick Quality › Inspection Lots › Usage decision › "
+                       "Approve. Ask an admin to add it to your role in Organization › Role & Permissions.", 403)
     if user.id in _recorders(lot):
         raise LotError("You recorded this lot's results, so you can't also approve accepting it with a deviation — "
                        "another Quality user with head authority (not the person who recorded the results) must decide (segregation of duties).", 403)
@@ -493,9 +497,12 @@ def decide(db: Session, lot: QualityInspectionLot, *, decision: str, user: User,
     _require_status(lot, ("results_recorded",), "make a decision")
     if decision not in QUALITY_LOT_DECISIONS:
         raise LotError(f"Decision must be one of: {', '.join(QUALITY_LOT_DECISION_LABELS.values())}.", 422)
-    if not access.can_decide_lot(user):
-        raise LotError("Only a Quality engineer or Quality head can make the decision — ask an admin to apply the role "
-                       "in Quality settings › Quality roles.", 403)
+    # The matrix tick decides: Inspection Lots › Usage decision › Approve (it inherits
+    # Inspection Lots › Approve for a role that never customised the feature).
+    from app.core.permission_registry import can_feature
+    if not can_feature(user, "quality", "inspection_lots", "usage_decision", "approve"):
+        raise LotError("Making the usage decision needs the tick Quality › Inspection Lots › Usage decision › Approve — "
+                       "ask an admin to add it to your role in Organization › Role & Permissions.", 403)
     failed = [r for r in lot.results if r.result == "fail"]
     critical_failed = [r for r in failed if r.classification == "critical"]
     qty = lot.quantity

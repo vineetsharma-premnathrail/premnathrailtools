@@ -247,6 +247,8 @@ async def update_user_permissions(
             old_value=json.dumps(removed) if removed else None, new_value=json.dumps(added) if added else None,
             performed_by_id=admin.id,
         ))
+        from app.modules.main.routes.roles import notify_access_changed
+        notify_access_changed(db, [target], admin, f"{admin.name} changed your extra permissions.")
     db.commit()
     db.refresh(target)
     return to_response(target, db)
@@ -304,6 +306,8 @@ async def update_user_roles(
         notify_event(db, background_tasks, "organization", "role_members_changed", title=f"Roles of {target.name} changed",
                      message=f"{admin.name} set {target.name}'s roles to: {', '.join(after) or 'none'} (was: {', '.join(before) or 'none'}).",
                      entity_type="user", entity_id=target.id, actor=admin, skip_user_ids={target.id})
+        from app.modules.main.routes.roles import notify_access_changed
+        notify_access_changed(db, [target], admin, f"{admin.name} changed your roles to: {', '.join(after) or 'none'}.")
     db.commit()
     db.refresh(target)
     return to_response(target, db)
@@ -376,6 +380,8 @@ async def update_user_data_scopes(
                     + (", ".join(f"{PERMISSION_MODULES[k]['label']} = {SCOPE_LABELS[v]}" for k, v in clean.items()) or "follow roles"),
             old_value=json.dumps(before), new_value=json.dumps(clean), performed_by_id=admin.id,
         ))
+        from app.modules.main.routes.roles import notify_access_changed
+        notify_access_changed(db, [target], admin, f"{admin.name} changed which records you can see (data access).")
     db.commit()
     db.refresh(target)
     return _data_scope_rows(target)
@@ -440,20 +446,22 @@ async def get_user_effective_permissions(
     db: Session = Depends(get_db),
     _user: User = Depends(require_tab_action("organization", "roles", "view")),
 ):
-    """Every grant this user effectively holds and where it comes from
-    (role names and/or "Extra"), for the read-only matrix on their profile."""
+    """Every grant this user effectively holds TODAY and where it comes from
+    (role names, "<role> (everyone)" and/or "Extra"), for the read-only matrix
+    on their profile and the role editor's "Settings for" view. Built the same
+    way as the user's real access (User.role_grant_lists): roles / extra
+    grants outside their validity window and inactive roles give nothing —
+    they are listed in `sources` with active=false and a reason, and what they
+    would give is in `inactive_grants`. `user_active` false = the user can't
+    sign in at all, whatever the grants say."""
+    from app.modules.main.services.grc import access_sources
+
     target = db.query(User).filter(User.id == user_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
-    sources: dict[str, list[str]] = {}
-    held = [r for r in target.roles if r.is_active]
-    held += [r for r in db.query(Role).filter(Role.is_default.is_(True), Role.is_active.is_(True)).all() if r not in held]
-    for role in held:
-        for g in expand_grants(role.permissions):
-            sources.setdefault(g, []).append(role.name + (" (everyone)" if role.is_default else ""))
-    for g in expand_grants(target.granular_permissions):
-        sources.setdefault(g, []).append("Extra")
-    return {"is_admin": target.role == "admin", "apps": target.get_apps(), "grants": sources}
+    out = access_sources(db, target)
+    return {"is_admin": target.role == "admin", "apps": target.get_apps(), "user_active": bool(target.is_active),
+            "grants": out["grants"], "inactive_grants": out["inactive_grants"], "sources": out["sources"]}
 
 
 @router.get("/{user_id}/permission-history", response_model=list[UserActivityResponse])

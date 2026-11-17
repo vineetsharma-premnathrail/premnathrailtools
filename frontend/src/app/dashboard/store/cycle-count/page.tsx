@@ -17,6 +17,7 @@ import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
 import Select from '@/components/shared/Select'
+import StorePlantNote from '@/components/store/StorePlantNote'
 
 const STATUS_LABELS: Record<string, string> = { counting: 'Counting (stock frozen)', submitted: 'Awaiting approval', posted: 'Posted', cancelled: 'Cancelled' }
 const STATUS_HEX: Record<string, string> = { counting: '#d97706', submitted: '#2563eb', posted: '#16a34a', cancelled: '#94a3b8' }
@@ -33,6 +34,7 @@ export default function PhysicalCountListPage() {
   const [counts, setCounts] = useState<StorePhysicalCount[]>([])
   const [loaded, setLoaded] = useState(false)
   const [locations, setLocations] = useState<{ id: number; name: string }[]>([])
+  const [locsLoaded, setLocsLoaded] = useState(false)
   const [categories, setCategories] = useState<{ id: number; name: string }[]>([])
   const [locationId, setLocationId] = useState('')
   const [category, setCategory] = useState('')
@@ -50,7 +52,7 @@ export default function PhysicalCountListPage() {
   useEffect(() => {
     if (!isAuthorized || !seeCounts) return
     physicalCountsApi.list().then(setCounts).catch((err) => setError(extractErrorMessages(err, 'Could not load physical counts.'))).finally(() => setLoaded(true))
-    storeApi.listLocations().then(setLocations).catch(() => setLocations([]))
+    storeApi.listLocations().then((l) => { setLocations(l); setLocsLoaded(true) }).catch(() => setLocations([]))
     storeApi.listCategories().then(setCategories).catch(() => setCategories([]))
   }, [isAuthorized, seeCounts])
 
@@ -87,7 +89,7 @@ export default function PhysicalCountListPage() {
           <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>Store & Inventory</p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Physical Count</h1>
           <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0, maxWidth: 720 }}>
-            Count what is on the shelf against the books. Counted items are frozen at that store while counting; differences go to a Store Manager for approval before stock changes.
+            Count what is on the shelf against the books. Counted items are frozen at that store while counting; differences go to an approver (Store › Adjustments › Approve) before stock changes.
           </p>
         </div>
         {canCreate && (
@@ -120,6 +122,7 @@ export default function PhysicalCountListPage() {
                     <option value="">Select store…</option>
                     {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
                   </Select>
+                  <StorePlantNote count={locations.length} loading={!locsLoaded} />
                 </div>
                 <div style={{ flex: '1 1 200px' }}>
                   <label style={sheetLabel}>Category</label>

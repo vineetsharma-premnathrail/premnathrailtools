@@ -38,10 +38,10 @@ const modules = [
   {
     title: 'R&D',
     app: 'rnd' as const,
-    description: 'R&D projects, experiments & test data, prototypes, feasibility, and railway engineering calculators.',
+    description: 'R&D requirements, Prototype / Research projects, feasibility, and railway engineering calculators.',
     icon: CalculatorIcon,
     href: '/dashboard/rnd',
-    features: ['Projects', 'Experiments', 'Prototypes', 'Feasibility', 'Engineering Tools'],
+    features: ['Requirements', 'Prototype / Research', 'Feasibility', 'Engineering Tools'],
     barColor: 'linear-gradient(90deg,#3b82f6,#60a5fa)',
     iconBg: 'rgba(59,130,246,0.12)',
     iconColor: '#2563eb',

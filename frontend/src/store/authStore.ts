@@ -30,6 +30,10 @@ interface AuthStore {
   setError: (error: string | null) => void
 
   fetchUser: () => Promise<void>
+  /** Re-reads /auth/me in the background (no loading state, keeps the user on
+   * a network error) so role / permission changes reach an open tab without a
+   * reload — called on window focus, after a token refresh and after a 403. */
+  refreshUser: () => Promise<void>
   logout: () => void
   /** Clears the session locally only — no API call. Used by the response
    * interceptor on 401 so an already-expired token can't trigger a repeat
@@ -37,6 +41,10 @@ interface AuthStore {
    * `/auth/logout` request that a full `logout()` would make. */
   clearSession: () => void
 }
+
+// Background /auth/me refreshes are throttled: focus + 403 bursts must not hammer the API.
+const REFRESH_EVERY_MS = 60_000
+let lastRefresh = 0
 
 export const useAuthStore = create<AuthStore>()(
   persist(
@@ -65,6 +73,19 @@ export const useAuthStore = create<AuthStore>()(
             user: null,
             token: null,
           })
+        }
+      },
+
+      refreshUser: async () => {
+        if (!get().user) return
+        const now = Date.now()
+        if (now - lastRefresh < REFRESH_EVERY_MS) return
+        lastRefresh = now
+        try {
+          const user = await authApi.getMe()
+          set({ user })
+        } catch {
+          // A real sign-out surfaces through the 401 interceptor; anything else keeps the current user.
         }
       },
 

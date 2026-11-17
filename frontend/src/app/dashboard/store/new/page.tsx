@@ -16,6 +16,7 @@ import { StoreItemCategory, StoreItemMeta, StoreItemUnitName } from '@/types'
 import { ItemErpForm, ItemErpValues, EMPTY_ERP_VALUES, erpPayload } from '@/components/store/ItemErpSections'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import StoreNav from '@/components/store/StoreNav'
+import SimilarRecordsHint from '@/components/typing-assist/SimilarRecordsHint'
 import { recordPath } from '@/lib/recordRef'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
@@ -171,6 +172,7 @@ export default function NewStoreItemPage() {
             </div>
             <label style={sheetLabel}>Item Name (as on invoice) <Req /></label>
             <input data-tour="item-name" style={sheetInput} value={itemName} onChange={(e) => setItemName(e.target.value)} placeholder="Mild Steel Rod 12mm" />
+            {!vis.preview && <SimilarRecordsHint kind="item" name={itemName} />}
             <ItemUnitNames value={unitNames} onChange={setUnitNames} />
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginTop: 14 }}>
               <div style={{ flex: '0 1 200px', minWidth: 160 }}>

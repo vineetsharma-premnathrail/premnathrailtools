@@ -6,9 +6,9 @@ currencies, inventory, costing … live in accounts_b.py.)
 `inherit` names the tab action that guarded each feature action before
 features existed, so roles that were never customised keep exactly the
 access they had. Record-level rules stay on top: maker-checker (no self
-posting), Finance Manager for reversals / GST / opening balances, the
+posting), the role matrix for reversals / GST / opening balances (2026-11-14), the
 approval engine, and data scope. Period close / year-end close have no
-features: closing is the tab's approve and reopening is admin-only."""
+features: closing and reopening are the tab's Approve grant."""
 from app.core.permission_registry import _feature, register_features
 from app.core.visibility import register_visibility
 from app.modules.accounts.models.payment_transaction import PAYMENT_MODES, PAYMENT_TYPES
@@ -28,7 +28,7 @@ register_features(
     "accounts", "journal_vouchers",
     _feature("reversal", "Reverse posted journals", "action", {
         "view": "view", "cancel": "reject",
-    }, "Reverse a posted journal with a reason (a mirror entry is posted). The user must also be a Finance Manager."),
+    }, "Reverse a posted journal with a reason (a mirror entry is posted)."),
     _feature("change_history", "Change history", "section", {
         "view": "view",
     }, "The change log of a posted voucher (narration / remark edits, posting and reversal events) on the voucher page."),

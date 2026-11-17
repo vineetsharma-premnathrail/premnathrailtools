@@ -18,8 +18,11 @@ stages reproduce the routing Store had before the move:
   (stage conditions on `source_type` / `condition_<value>`); any one approver
   of a stage decides it, and the creator never approves their own return.
   Approvers don't need a Store grant (a department head usually has none).
-* Stock adjustment — the Store Manager the creator names on it
-  (`approver_id`), who must hold Store › Adjustments › Approve.
+* Stock adjustment — the approver the creator names on it (`approver_id`),
+  who must hold Store › Adjustments › Approve (the matrix tick alone decides;
+  the 'Store Manager' user flag is not a gate since 2026-11-14).
+* Stock transfer — routed to the sending store's manager; anyone holding
+  Store › Transfers › Approve may decide it too (`plus_permission`).
 
 Material Issues post at once and have no approval (Store › Issues lists no
 approve/reject action). GRN acceptance lives in P2P (goods receipts).
@@ -99,11 +102,44 @@ def adjustment_default_stages() -> list[engine.StageDef]:
     return [engine.StageDef("Store manager named on the adjustment", "record_field", {"field": "approver_id"})]
 
 
+ADJUSTMENT_APPROVE_GRANT = ("store", "adjustments", "approve")
+
+
+def holds_adjustment_approve(user) -> bool:
+    """Who may approve a stock adjustment / count differences: the Role
+    matrix tick Store › Adjustments › Approve (owner, 2026-11-14 — the tick is
+    the authority; the old 'Store Manager' user flag is no longer a gate)."""
+    from app.core.permission_registry import can_perform
+
+    return bool(user is not None and user.is_active and can_perform(user, *ADJUSTMENT_APPROVE_GRANT))
+
+
+def adjustment_approver_ids(db: Session) -> list[int]:
+    """Active users who can be named as the approver of an adjustment."""
+    from app.modules.main.models.user import User
+
+    return [u.id for u in db.query(User).filter(User.is_active.is_(True)).order_by(User.name).all()
+            if holds_adjustment_approve(u)]
+
+
+def ensure_adjustment_approver(approver, what: str = "stock adjustments") -> None:
+    """400 with the reason when the named approver lacks the Approve tick."""
+    from fastapi import HTTPException
+
+    if holds_adjustment_approve(approver):
+        return
+    raise HTTPException(status_code=400, detail=(
+        f"{approver.name or approver.email} can't approve {what} — none of their roles has the tick "
+        "Store › Adjustments › Approve. Pick someone from the Approver list (it only shows people who hold it), "
+        "or ask an admin to tick it on their role in Organization › Role & Permissions."))
+
+
 def transfer_default_stages() -> list[engine.StageDef]:
-    """The manager of the sending store answers for the stock leaving it.
-    A store with no manager set falls back to whoever holds Store ›
-    Transfers › Approve (plus_permission holders become the approvers when
-    the main rule finds nobody)."""
+    """The manager of the sending store answers for the stock leaving it and
+    is the person asked (notified). Whoever holds Store › Transfers › Approve
+    may decide it too (plus_permission: they see it in My Approvals and in
+    Store › Transfers), and becomes the approver when the store has no
+    manager set."""
     return [engine.StageDef("Manager of the sending store", "record_field",
                             {"field": "from_manager_id", "plus_permission": "store:transfers:approve"})]
 

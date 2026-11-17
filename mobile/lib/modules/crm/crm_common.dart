@@ -177,7 +177,8 @@ class CrmLists {
   static const activityTypes = ['Call', 'Email', 'Meet at Client/Site Office', 'Meet at Own Office'];
   static const followUpStatuses = ['Open', 'Closed', 'Hold'];
 
-  static const orgTypesDomestic = ['PSU', 'Govt Department', 'Railway', 'Private', 'Joint Venture', 'Other'];
+  // Same names as the web (2026-11-17): "Private"/"Govt Department" are now "Private Company"/"Government Department".
+  static const orgTypesDomestic = ['PSU', 'Government Department', 'Railway', 'Private Company', 'Joint Venture', 'Other'];
   static const orgTypesInternational = [
     'Government Department', 'Railway', 'Private Company', 'Joint Venture', 'Public Enterprise', 'Other',
   ];

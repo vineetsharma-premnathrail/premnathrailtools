@@ -146,7 +146,7 @@ const statementHead = (count: number) => (
 // ─────────────────────────────────────────────────────────────────────────
 
 export default function FinanceReportsPage() {
-  const { isAuthorized, isLoading, user } = useRequireApp('accounts')
+  const { isAuthorized, isLoading } = useRequireApp('accounts')
   const { tabs: visibleTabs, tab, setTab } = useFinanceSubTabs(TABS, TAB_KEYS)
   const { can } = useCan()
   const [fromDate, setFromDate] = useState(fyStartIso())
@@ -184,10 +184,11 @@ export default function FinanceReportsPage() {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<{ title: string; text: string } | null>(null)
 
-  const isAdmin = user?.role === 'admin'
-  // Anyone with Approve may request the close; a Finance Manager's (or admin's) click closes at once (approval engine).
-  const closesDirectly = !!user?.is_finance_manager || isAdmin
+  // Year-end Close › Approve decides close and reopen (owner, 2026-11-14). By default the
+  // approval stage is that grant's holders, so a holder's click closes at once (approval engine).
   const canClose = can('accounts', 'year_end_close', 'approve')
+  const closesDirectly = canClose
+  const canReopen = canClose
 
   useEffect(() => {
     if (!isAuthorized) return
@@ -256,7 +257,7 @@ export default function FinanceReportsPage() {
     setError(null)
     try {
       const res: { entry_number?: string; approval_status?: string; message?: string } = await accountsApi.closeFinancialYear(fyCode)
-      if (res.approval_status === 'pending') setMessage({ title: `Close of ${fyCode} submitted for approval`, text: res.message || 'A Finance Manager must approve it.' })
+      if (res.approval_status === 'pending') setMessage({ title: `Close of ${fyCode} submitted for approval`, text: res.message || 'Its approver must approve it (Approvals inbox).' })
       else setMessage({ title: `Financial year ${fyCode} closed`, text: `Closing voucher ${res.entry_number} posted on ${dmy(preview?.end_date)}. Income and expense ledgers are now zero for ${fyCode}; the result sits in Retained Earnings.` })
       const s = await accountsApi.getSetup(); setSetup(s)
       setReloadKey((k) => k + 1)
@@ -701,16 +702,16 @@ export default function FinanceReportsPage() {
             </div>
             <p style={{ fontSize: 12.5, color: TEXT.secondary, lineHeight: 1.6, margin: '0 0 14px' }}>
               {closed
-                ? `This year was closed by ${preview.closing_entry}. Its income and expense ledgers are zero and the result is in Retained Earnings. To correct something in ${preview.fy_code}, an admin must reopen it — the closing voucher is reversed, not deleted.`
+                ? `This year was closed by ${preview.closing_entry}. Its income and expense ledgers are zero and the result is in Retained Earnings. To correct something in ${preview.fy_code}, someone with Approve on Year-end Close must reopen it — the closing voucher is reversed, not deleted.`
                 : `Closing will transfer the ${preview.net_profit >= 0 ? 'profit' : 'loss'} of ${inr(Math.abs(preview.net_profit))} to Retained Earnings on ${dmy(preview.end_date)}. The ${preview.fy_code} Statement of Profit & Loss stays readable afterwards (the closing voucher is excluded from it).`}
             </p>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
               {!closed && (canClose
                 ? <button type="button" data-tour="fin-rep-ye-close-btn" style={{ ...primaryBtnStyle, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={() => setConfirmClose(true)}>{closesDirectly ? 'Close financial year' : 'Request year-end close'}</button>
                 : <span style={{ fontSize: 12, color: TEXT.muted }}>You need the Approve permission on Year-end Close to close a financial year.</span>)}
-              {closed && (isAdmin
+              {closed && (canReopen
                 ? <button type="button" data-tour="fin-rep-ye-reopen-btn" style={{ ...secondaryBtnStyle, color: RED, borderColor: `${RED}55`, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={() => setPromptReopen(true)}>Reopen year</button>
-                : <span style={{ fontSize: 12, color: TEXT.muted }}>Only an admin can reopen a closed year.</span>)}
+                : <span style={{ fontSize: 12, color: TEXT.muted }}>Reopening needs &apos;Approve&apos; on Finance &amp; Accounting › Year-end Close — ask an admin to tick it on your role.</span>)}
             </div>
             <div style={{ marginTop: 14 }}>
               <ApprovalPanel key={`${preview.fy_code}-${reloadKey}`} entityType="accounts_year_end_close" entityId={Number(preview.fy_code.split('-')[0])}
@@ -843,7 +844,7 @@ export default function FinanceReportsPage() {
       <ConfirmDialog
         open={confirmClose}
         title={`Close financial year ${fyCode}?`}
-        message={`A year-end voucher dated ${dmy(preview?.end_date)} will bring every income and expense ledger to zero and transfer the net ${(preview?.net_profit ?? 0) >= 0 ? 'profit' : 'loss'} of ${inr(Math.abs(preview?.net_profit ?? 0))} to Retained Earnings. ${fyCode} will be marked closed and no further postings can be dated in it. Only an admin can reopen it.`}
+        message={`A year-end voucher dated ${dmy(preview?.end_date)} will bring every income and expense ledger to zero and transfer the net ${(preview?.net_profit ?? 0) >= 0 ? 'profit' : 'loss'} of ${inr(Math.abs(preview?.net_profit ?? 0))} to Retained Earnings. ${fyCode} will be marked closed and no further postings can be dated in it. Only someone with Approve on Year-end Close can reopen it.`}
         confirmLabel="Close financial year"
         danger
         onConfirm={doClose}

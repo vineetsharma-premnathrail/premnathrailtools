@@ -21,8 +21,13 @@ class RndProjectTask(Base, TimestampMixin):
     __tablename__ = "rnd_project_tasks"
     __table_args__ = (
         CheckConstraint("progress_percent BETWEEN 0 AND 100", name="ck_rnd_proj_task_progress"),
-        # Exactly one parent: a Prototype / Research project OR a Project Management project.
-        CheckConstraint("(project_id IS NULL) <> (pm_project_id IS NULL)", name="ck_rnd_proj_task_one_parent"),
+        # Exactly one parent: a Prototype / Research project, a Project Management project or
+        # (since 2026-11-17) a past machine of All Projects (erp_projects, not linked to a project).
+        CheckConstraint(
+            "(CASE WHEN project_id IS NULL THEN 0 ELSE 1 END + CASE WHEN pm_project_id IS NULL THEN 0 ELSE 1 END"
+            " + CASE WHEN machine_id IS NULL THEN 0 ELSE 1 END) = 1",
+            name="ck_rnd_proj_task_one_parent",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -31,12 +36,11 @@ class RndProjectTask(Base, TimestampMixin):
     # given from R&D › R&D Tasks. Exactly one of the two is set.
     project_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("rnd_projects.id"), index=True, nullable=True)
     pm_project_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("pm_projects.id"), index=True, nullable=True)
+    # A past machine shown in All Projects (owner 2026-11-17: every project is pickable).
+    machine_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("erp_projects.id"), index=True, nullable=True)
     # Sub-task: the parent's assignee split their work and handed this part on.
     # The sub-task's creator reviews it, like a lead reviews a top-level task.
     parent_task_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("rnd_project_tasks.id", ondelete="CASCADE"), index=True, nullable=True)
-    # The plan milestone this task belongs to (sub-tasks copy their parent's).
-    # NULL on tasks created before milestones existed.
-    milestone_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("rnd_project_milestones.id", ondelete="SET NULL"), index=True, nullable=True)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
     assigned_to_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)

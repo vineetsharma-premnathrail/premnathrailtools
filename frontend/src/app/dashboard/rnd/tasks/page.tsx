@@ -30,7 +30,7 @@ const PAGE_SIZE = 100
 const STATUS_OPTIONS = [
   { value: 'pending', label: 'Pending (open, not overdue)' },
   { value: 'overdue', label: 'Overdue' },
-  { value: 'completed', label: 'Completed' },
+  { value: 'closed', label: 'Completed' },
   { value: 'cancelled', label: 'Cancelled' },
 ]
 const BAND_OPTIONS = [
@@ -46,13 +46,14 @@ const inputStyle: React.CSSProperties = { ...sharedInputStyle, width: 'auto', ba
 type Draft = { parent: string; user: string; department: string; type: string; status: string; priority: string; from: string; to: string; band: string }
 const EMPTY: Draft = { parent: '', user: '', department: '', type: '', status: '', priority: '', from: '', to: '', band: '' }
 
-/** Draft → the API filters. parent = "requirement:<id>", "project:<id>" or "pm_project:<id>". */
+/** Draft → the API filters. parent = "requirement:<id>", "project:<id>", "pm_project:<id>" or "machine:<id>" (a past machine). */
 function toFilters(d: Draft, q: string): RndTaskFilters {
   const f: RndTaskFilters = {}
   const [kind, id] = d.parent.split(':')
   if (kind === 'requirement' && id) f.requirement_id = Number(id)
   if (kind === 'project' && id) f.rnd_project_id = Number(id)
   if (kind === 'pm_project' && id) f.pm_project_id = Number(id)
+  if (kind === 'machine' && id) f.machine_id = Number(id)
   if (d.user) f.assigned_to_id = Number(d.user)
   if (d.department) f.department = d.department
   if (d.type === 'requirement' || d.type === 'prototype' || d.type === 'project') f.type = d.type
@@ -95,7 +96,7 @@ export default function RndTasksPage() {
     rndApi.listProjects().then((rows: { id: number; project_number: string; title: string }[]) => setProjs((Array.isArray(rows) ? rows : [])
       .sort((a, b) => a.project_number.localeCompare(b.project_number, undefined, { numeric: true })).map((p) => ({ value: `project:${p.id}`, label: `${p.project_number} — ${p.title}` })))).catch(() => setProjs([]))
     rndApi.pmProjectOptions().then((rows) => setPmProjs((Array.isArray(rows) ? rows : []).slice().sort((a, b) => a.project_code.localeCompare(b.project_code, undefined, { numeric: true }))
-      .map((p) => ({ value: `pm_project:${p.id}`, label: p.label || `${p.project_code} — ${p.name}` })))).catch(() => setPmProjs([]))
+      .map((p) => ({ value: `${p.kind === 'machine' ? 'machine' : 'pm_project'}:${p.id}`, label: p.label || `${p.project_code} — ${p.name}` })))).catch(() => setPmProjs([]))
   }, [isAuthorized])
 
   const filters = useMemo(() => toFilters(applied, search), [applied, search])
@@ -140,7 +141,7 @@ export default function RndTasksPage() {
   }
   const openGroup = (g: RndTaskGroup) => {
     try {
-      router.push(g.kind === 'requirement' ? recordPath(`/dashboard/rnd/requirements/${g.source || 'inquiry'}`, g, 'record_id') : recordPath(g.kind === 'pm_project' ? '/dashboard/rnd/project-tasks' : '/dashboard/rnd/projects', g))
+      router.push(g.kind === 'requirement' ? recordPath(`/dashboard/rnd/requirements/${g.source || 'inquiry'}`, g, 'record_id') : recordPath(g.kind === 'machine' ? '/dashboard/rnd/machine-tasks' : g.kind === 'pm_project' ? '/dashboard/rnd/project-tasks' : '/dashboard/rnd/projects', g))
     } catch (err) {
       setError(extractErrorMessages(err, 'Could not open this record — reload the page and try again.'))
     }

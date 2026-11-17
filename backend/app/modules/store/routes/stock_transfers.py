@@ -25,7 +25,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.data_scope import apply_scope, ensure_in_scope
+from app.core.data_scope import SCOPE_LABELS, apply_scope, ensure_in_scope, scope_filter, user_scope
 from app.core.permission_registry import can_feature, can_perform
 from app.core.permission_words import action_word
 from app.core.permissions import require_feature_action, require_tab_access, require_tab_action
@@ -111,6 +111,20 @@ def _to_response(db: Session, transfer: StoreStockTransfer, user: User | None = 
         resp.can_cancel = transfer.status in ("pending_approval", "approved") and (
             transfer.transferred_by_id == user.id or can_perform(user, "store", "transfers", "delete"))
     return resp
+
+
+def _ensure_scope_for_action(db: Session, user: User, transfer: StoreStockTransfer) -> None:
+    """Cancel / dispatch / receive: the transfer must be inside the user's data
+    scope itself (which already covers the routed approver, the receiving
+    side and the Transfers › Approve holders — store/access.py). Being able to
+    decide its approval (My Approvals) opens the record to read, not to act."""
+    expr = scope_filter(db, user, StoreStockTransfer)
+    if expr is None or db.query(StoreStockTransfer.id).filter(StoreStockTransfer.id == transfer.id, expr).first() is not None:
+        return
+    level = SCOPE_LABELS[user_scope(user, "store")]
+    raise HTTPException(status_code=403, detail=(
+        f"This stock transfer is outside your data access — your scope for this module is '{level}'. Ask an admin to "
+        "widen it in Organization › Role & Permissions (Data access column of your role) if you need it."))
 
 
 def _check_availability(db: Session, transfer_from: int, totals: dict[int, float]) -> None:
@@ -330,7 +344,7 @@ async def cancel_stock_transfer(
     user: User = Depends(require_tab_access("store", "transfers")),
 ):
     transfer = _load(db, transfer_id, lock=True)
-    ensure_in_scope(db, user, transfer)
+    _ensure_scope_for_action(db, user, transfer)
     if transfer.status not in ("pending_approval", "approved"):
         raise HTTPException(status_code=409, detail=f"Transfer {transfer.transfer_number} is {STATUS_LABELS.get(transfer.status, transfer.status).lower()} — only a transfer that hasn't been dispatched can be cancelled.")
     if transfer.transferred_by_id != user.id and not can_perform(user, "store", "transfers", "delete"):
@@ -374,7 +388,7 @@ async def dispatch_stock_transfer(
     user: User = Depends(require_feature_action("store", "transfers", "dispatch", "edit")),
 ):
     transfer = _load(db, transfer_id, lock=True)
-    ensure_in_scope(db, user, transfer)
+    _ensure_scope_for_action(db, user, transfer)
     if transfer.status != "approved":
         raise HTTPException(status_code=409, detail=f"Transfer {transfer.transfer_number} is {STATUS_LABELS.get(transfer.status, transfer.status).lower()} — only an approved transfer can be dispatched.")
     ensure_location_allowed(db, user, transfer.from_location_id)
@@ -443,7 +457,7 @@ async def receive_stock_transfer(
     user: User = Depends(require_feature_action("store", "transfers", "receive", "edit")),
 ):
     transfer = _load(db, transfer_id, lock=True)
-    ensure_in_scope(db, user, transfer)
+    _ensure_scope_for_action(db, user, transfer)
     if transfer.status != "in_transit":
         raise HTTPException(status_code=409, detail=f"Transfer {transfer.transfer_number} is {STATUS_LABELS.get(transfer.status, transfer.status).lower()} — only a dispatched (in transit) transfer can be received.")
     ensure_location_allowed(db, user, transfer.to_location_id)

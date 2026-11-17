@@ -128,7 +128,9 @@ class QuotationResponse(BaseModel):
     model_config = {"from_attributes": True}
 
     id: int
-    inquiry_id: int
+    # Exactly one of inquiry_id / tender_id is set: the record the quotation was made on.
+    inquiry_id: int | None = None
+    tender_id: int | None = None
     quot_number: str | None = None
     revision_number: int
     quotation_type: str

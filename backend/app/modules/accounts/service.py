@@ -140,7 +140,7 @@ def _check_period_open(db: Session, period: str, gl_accounts: dict) -> None:
     # Whole-period lock — catches accounts never yet posted to in the period.
     period_close = db.query(PeriodClose).filter(PeriodClose.accounting_period == period).first()
     if period_close and period_close.status == "closed":
-        raise ValueError(f"Period {period} is closed — cannot post. Ask an admin to reopen it first if this posting is genuinely needed.")
+        raise ValueError(f"Period {period} is closed — cannot post. Ask someone with Finance › Period Close › Approve to reopen it (Finance › Journals › Period Close) if this posting is genuinely needed.")
     # Per-GLBalance lock — belt-and-suspenders once close_period() has run.
     locked = db.query(GLBalance).filter(
         GLBalance.gl_account_id.in_(list(gl_accounts)), GLBalance.accounting_period == period, GLBalance.is_locked == True,  # noqa: E712
@@ -506,8 +506,8 @@ def check_three_way_match(db: Session, *, purchase_order_id: int, invoice_qty: f
       - nothing has been accepted on a GRN yet (no invoice before receipt);
       - this invoice would take the total invoiced past the approved PO value.
 
-    Variance (a Finance Manager other than the invoice's creator must
-    approve): quantity or amount outside tolerance of what was received but
+    Variance (a holder of Purchase Invoices › Approve 3-way-match variance
+    other than the invoice's creator must approve): quantity or amount outside tolerance of what was received but
     not yet invoiced, or a legacy PO with no line prices to match against.
 
     The invoice amount is compared pre-GST, against accepted qty x PO unit

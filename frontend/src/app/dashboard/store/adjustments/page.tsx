@@ -16,6 +16,7 @@ import { useCan } from '@/lib/permissions'
 import { useVisibility } from '@/lib/visibility'
 import { VisTd, VisTh } from '@/lib/visibilityComponents'
 import { sampleAdjustments } from '@/lib/storePreviewSamples'
+import ScopeNote from '@/components/shared/ScopeNote'
 
 // Columns a role may hide (Store › Adjustments › Visibility); Adjustment # and Status are always shown.
 const HIDEABLE: Record<string, string> = { Store: 'store', Date: 'date', Approver: 'approver', Items: 'items' }
@@ -67,6 +68,7 @@ export default function StoreStockAdjustmentsPage() {
 
       <MessageDialog open={!!error} variant="error" title="Failed to Load Stock Adjustments" message={error} onClose={() => setError('')} actionLabel="Reload" onAction={() => window.location.reload()} />
 
+      <ScopeNote module="store" empty={!loading && adjustments.length === 0} />
       <div data-tour="adjustments-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
           <thead>

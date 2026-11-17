@@ -7,7 +7,7 @@ const config: TourConfig = {
     {
       target: 'p2p-nav-truck',
       title: 'P.O Tracking',
-      purpose: 'Follow every Purchase Order (PO) from draft to closed — which are with the vendor, what is due this week, what is late, what is partly received, what is waiting for approval. Purchase team only.',
+      purpose: 'Follow every Purchase Order (PO) from draft to closed — which are with the vendor, what is due this week, what is late, what is partly received, what is waiting for approval. Shown to roles with View on Procurement › Purchase Orders.',
       why: 'A released PO is the vendor\'s promise to deliver by a date. Chasing late deliveries before they stop production is one of the main jobs of a buyer.',
     },
     {

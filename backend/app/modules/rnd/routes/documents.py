@@ -3,18 +3,16 @@ import mimetypes
 from datetime import datetime, timezone
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form, Response
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.permission_registry import can_perform
+from app.core.permission_registry import can_perform, is_admin_user
 from app.core.permissions import ensure_tab_action, require_app_access
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.rnd.scope import apply_scope, ensure_in_scope
 from app.modules.rnd.models.project import RndProject
-from app.modules.rnd.models.experiment import RndExperiment
-from app.modules.rnd.models.prototype import RndPrototype
 from app.modules.rnd.models.document import RndDocument, RND_DOCUMENT_TYPES
 from app.modules.rnd.services import project_roles as roles
 from app.modules.rnd.schemas.document import RndDocumentResponse
@@ -24,7 +22,7 @@ from app.utils.sharepoint import (
     download_file_content,
 )
 
-# Documents show up inside project / experiment / prototype pages as well as
+# Documents show up inside project pages as well as
 # on their own tab, so this is gated on the R&D app only — not on a subtab —
 # otherwise a user without the Documents tab would get 403s on a project page.
 router = APIRouter(
@@ -40,17 +38,53 @@ _STORAGE_NOT_CONFIGURED = (
 )
 
 
-def _to_response(db: Session, doc: RndDocument) -> RndDocumentResponse:
+def _to_response(db: Session, doc: RndDocument, numbers: dict[int, str] | None = None) -> RndDocumentResponse:
+    """`numbers` = project id -> RND number, built once for a whole list (no per-row query)."""
     resp = RndDocumentResponse.model_validate(doc)
+    if numbers is not None:
+        resp.project_number = numbers.get(doc.project_id) if doc.project_id else None
+        return resp
     project = db.query(RndProject.project_number).filter(RndProject.id == doc.project_id).first()
     resp.project_number = project[0] if project else None
-    if doc.experiment_id:
-        exp = db.query(RndExperiment.experiment_number).filter(RndExperiment.id == doc.experiment_id).first()
-        resp.experiment_number = exp[0] if exp else None
-    if doc.prototype_id:
-        proto = db.query(RndPrototype.prototype_number).filter(RndPrototype.id == doc.prototype_id).first()
-        resp.prototype_number = proto[0] if proto else None
     return resp
+
+
+def _project_numbers(db: Session, docs: list[RndDocument]) -> dict[int, str]:
+    ids = {d.project_id for d in docs if d.project_id}
+    if not ids:
+        return {}
+    return {pid: num for pid, num in db.query(RndProject.id, RndProject.project_number).filter(RndProject.id.in_(ids)).all()}
+
+
+def _ensure_task_file_visible(db: Session, doc: RndDocument, user: User) -> None:
+    """Task files follow the task: same people as project_tasks._visible (assignee, creator, people
+    on the main task, and the project's managers / leads / admins). 403 with the reason otherwise."""
+    from app.modules.rnd.models.project_task import RndProjectTask
+    from app.modules.rnd.routes.project_tasks import _machine_parent, _pm_parent
+
+    denied = HTTPException(
+        status_code=403,
+        detail="This file belongs to an R&D task that isn't yours — only the task's assignee, its creator, an R&D head "
+               "or the project's lead / manager can open it. Ask one of them to share it or to give you the task.",
+    )
+    task = db.query(RndProjectTask).filter(RndProjectTask.id == doc.task_id).first()
+    if not task:
+        raise denied
+    if user.id in (task.assigned_to_id, task.created_by_id):
+        return
+    if task.parent_task_id:
+        main = db.query(RndProjectTask).filter(RndProjectTask.id == task.parent_task_id).first()
+        if main and user.id in (main.assigned_to_id, main.created_by_id):
+            return
+    if doc.machine_id:
+        can_manage = _machine_parent(db, doc.machine_id, user).can_manage(user)
+    elif doc.pm_project_id:
+        can_manage = _pm_parent(db, doc.pm_project_id, user).can_manage(user)
+    else:
+        project = db.query(RndProject).filter(RndProject.id == doc.project_id, RndProject.is_deleted == False).first()  # noqa: E712
+        can_manage = bool(project and roles.can_manage(user, project))
+    if not can_manage:
+        raise denied
 
 
 def _get_or_404(db: Session, document_id: int, user: User | None = None) -> RndDocument:
@@ -58,78 +92,76 @@ def _get_or_404(db: Session, document_id: int, user: User | None = None) -> RndD
     if not doc:
         raise HTTPException(status_code=404, detail=f"R&D document #{document_id} not found (it may have been deleted).")
     if user is not None:
-        if doc.task_id and doc.pm_project_id:
-            # A file of an R&D task on a Project Management project: open to the task's
-            # assignee / creator and whoever reviews it (routes/project_tasks.py), not the R&D data scope.
-            from app.modules.rnd.models.project_task import RndProjectTask
-            from app.modules.rnd.routes.project_tasks import _pm_parent
-            task = db.query(RndProjectTask).filter(RndProjectTask.id == doc.task_id).first()
-            parent = _pm_parent(db, doc.pm_project_id, user)
-            if not task or (user.id not in (task.assigned_to_id, task.created_by_id) and not parent.can_manage(user)):
-                raise HTTPException(status_code=403, detail="This file belongs to an R&D task on a project that isn't yours — only the task's assignee, its creator, an R&D head or the project manager can open it.")
+        if doc.task_id:
+            # A file of an R&D task (Prototype / Research project, Project Management project or past
+            # machine): open to the task's assignee / creator, the assignee or creator of its main task
+            # and whoever manages the project (the same people routes/project_tasks.py::_visible shows
+            # the task to) — never through the broader R&D data scope.
+            _ensure_task_file_visible(db, doc, user)
             return doc
         ensure_in_scope(db, user, doc)
     return doc
 
 
-def _resolve_links(db: Session, project_id: int, experiment_id: int | None, prototype_id: int | None) -> RndProject:
+def _ensure_can_open(user: User, doc: RndDocument) -> None:
+    """Opening a file needs the tab it is shown on (owner 2026-11-14, the tick
+    decides): R&D › Documents, or the project page it sits on; a task's file
+    also opens from R&D › R&D Tasks."""
+    ok = (
+        can_perform(user, "rnd", "documents", "view")
+        or (doc.project_id and can_perform(user, "rnd", "projects", "view"))
+        or (doc.task_id and can_perform(user, "rnd", "tasks", "view"))
+    )
+    if not ok:
+        raise HTTPException(
+            status_code=403,
+            detail="Opening R&D documents needs 'View' on R&D › Documents (or on R&D › Prototype / Research for "
+                   "the project the file belongs to, or R&D › R&D Tasks for a task's file). Ask an admin to tick it in Organization › Role & Permissions.",
+        )
+
+
+def _resolve_project(db: Session, project_id: int) -> RndProject:
     project = db.query(RndProject).filter(RndProject.id == project_id, RndProject.is_deleted == False).first()  # noqa: E712
     if not project:
         raise HTTPException(status_code=404, detail=f"R&D project #{project_id} not found — pick the project again.")
-    if experiment_id:
-        exp = db.query(RndExperiment).filter(RndExperiment.id == experiment_id, RndExperiment.is_deleted == False).first()  # noqa: E712
-        if not exp:
-            raise HTTPException(status_code=404, detail=f"Experiment #{experiment_id} not found (it may have been deleted).")
-        if exp.project_id != project_id:
-            raise HTTPException(status_code=400, detail=f"Experiment {exp.experiment_number} belongs to a different project than {project.project_number}.")
-    if prototype_id:
-        proto = db.query(RndPrototype).filter(RndPrototype.id == prototype_id, RndPrototype.is_deleted == False).first()  # noqa: E712
-        if not proto:
-            raise HTTPException(status_code=404, detail=f"Prototype #{prototype_id} not found (it may have been deleted).")
-        if proto.project_id != project_id:
-            raise HTTPException(status_code=400, detail=f"Prototype {proto.prototype_number} belongs to a different project than {project.project_number}.")
     return project
 
 
 @router.get("", response_model=list[RndDocumentResponse])
 async def list_documents(
     project_id: int | None = None,
-    experiment_id: int | None = None,
-    prototype_id: int | None = None,
     doc_type: str | None = None,
     search: str | None = None,
+    limit: int = Query(500, ge=1, le=2000),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("rnd")),
 ):
     # The R&D › Documents tab lists every project's files and needs 'view' on it. The same list
-    # filtered to one project / experiment / prototype is the Documents card of that record's
-    # page, so 'view' on that record's tab is enough there.
+    # filtered to one project is the Documents card of the project page, so 'view' on
+    # R&D › Prototype / Research is enough there.
     if not (
         can_perform(user, "rnd", "documents", "view")
         or (project_id and can_perform(user, "rnd", "projects", "view"))
-        or (experiment_id and can_perform(user, "rnd", "experiments", "view"))
-        or (prototype_id and can_perform(user, "rnd", "prototypes", "view"))
     ):
         raise HTTPException(
             status_code=403,
-            detail="Seeing R&D documents needs 'View' on R&D › Documents (or on the project / experiment / prototype "
-                   "they belong to). Ask an admin to add it to your role in Organization › Role & Permissions.",
+            detail="Seeing R&D documents needs 'View' on R&D › Documents (or on R&D › Prototype / Research for the "
+                   "project they belong to). Ask an admin to add it to your role in Organization › Role & Permissions.",
         )
     # Task files are shown on their task, not in the document lists.
     query = db.query(RndDocument).filter(RndDocument.is_deleted == False, RndDocument.task_id.is_(None))  # noqa: E712
     query = apply_scope(query, user, RndDocument)
     if project_id:
         query = query.filter(RndDocument.project_id == project_id)
-    if experiment_id:
-        query = query.filter(RndDocument.experiment_id == experiment_id)
-    if prototype_id:
-        query = query.filter(RndDocument.prototype_id == prototype_id)
     if doc_type:
         query = query.filter(RndDocument.doc_type == doc_type)
     if search:
         like = f"%{like_escape(search)}%"
         query = query.filter((RndDocument.title.ilike(like, escape="\\")) | (RndDocument.file_name.ilike(like, escape="\\")))
-    return [_to_response(db, d) for d in query.order_by(RndDocument.id.desc()).all()]
+    docs = query.order_by(RndDocument.id.desc()).offset(offset).limit(limit).all()
+    numbers = _project_numbers(db, docs)
+    return [_to_response(db, d, numbers) for d in docs]
 
 
 @router.post("", response_model=list[RndDocumentResponse])
@@ -139,8 +171,6 @@ async def upload_documents(
     title: str = Form(...),
     version: str | None = Form(None),
     description: str | None = Form(None),
-    experiment_id: int | None = Form(None),
-    prototype_id: int | None = Form(None),
     files: list[UploadFile] = File(...),
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("rnd")),
@@ -160,7 +190,7 @@ async def upload_documents(
                    "R&D › Prototype / Research. Ask an admin to add one to your role in "
                    "Organization › Role & Permissions.",
         )
-    project = _resolve_links(db, project_id, experiment_id, prototype_id)
+    project = _resolve_project(db, project_id)
     # The project (and so everything filed under it) must be in the user's R&D data scope.
     ensure_in_scope(db, user, project)
     if not settings.SHAREPOINT_SITE_ID:
@@ -174,8 +204,6 @@ async def upload_documents(
         result = await upload_file_to_sharepoint(settings.SHAREPOINT_SITE_ID, folder_path, f)
         doc = RndDocument(
             project_id=project_id,
-            experiment_id=experiment_id,
-            prototype_id=prototype_id,
             doc_type=doc_type,
             title=title.strip(),
             version=(version or "").strip() or None,
@@ -193,7 +221,8 @@ async def upload_documents(
     db.commit()
     for d in documents:
         db.refresh(d)
-    return [_to_response(db, d) for d in documents]
+    numbers = _project_numbers(db, documents)
+    return [_to_response(db, d, numbers) for d in documents]
 
 
 @router.get("/{document_id}/content")
@@ -201,6 +230,7 @@ async def get_document_content(document_id: int, db: Session = Depends(get_db), 
     """Raw bytes for in-app viewing via the app-only Graph token — never the
     raw SharePoint webUrl, same pattern as quality/routes/documents.py."""
     doc = _get_or_404(db, document_id, user=user)
+    _ensure_can_open(user, doc)
     if not settings.SHAREPOINT_SITE_ID:
         raise HTTPException(status_code=503, detail=_STORAGE_NOT_CONFIGURED)
     content, _claimed = await download_file_content(settings.SHAREPOINT_SITE_ID, doc.sharepoint_path or "")
@@ -229,23 +259,29 @@ async def delete_document(
     user: User = Depends(require_app_access("rnd")),
 ):
     doc = _get_or_404(db, document_id, user=user)
-    # Project files: only the project's leads (and admins) delete — team
-    # members can upload but never remove, even their own uploads.
+    # One rule (owner 2026-11-14, same on the Documents tab and the record pages):
+    # 'Delete' on R&D › Documents AND (you uploaded the file — the company delete
+    # rule — or you lead the project / manage the task's project, or are admin).
     ensure_tab_action(user, "rnd", "documents", "delete")
-    if doc.pm_project_id:
-        # A file of an R&D task on a Project Management project: only whoever manages
-        # R&D tasks on that project (admin, R&D head, project manager) removes it.
-        from app.modules.rnd.routes.project_tasks import _pm_parent
-        parent = _pm_parent(db, doc.pm_project_id, user)
+    own = doc.uploaded_by_id is not None and doc.uploaded_by_id == user.id
+    if not own and (doc.pm_project_id or doc.machine_id):
+        # A file of an R&D task on a Project Management project or a past machine: whoever manages
+        # R&D tasks on that project (admin, R&D head, project manager / management) removes others' files.
+        from app.modules.rnd.routes.project_tasks import _machine_parent, _pm_parent
+        parent = _machine_parent(db, doc.machine_id, user) if doc.machine_id else _pm_parent(db, doc.pm_project_id, user)
         if not parent.can_manage(user):
-            raise HTTPException(status_code=403, detail=f"Only an R&D head or the project manager of {parent.project_number} can delete this task's files — ask them to remove '{doc.title}'.")
+            raise HTTPException(status_code=403, detail=f"You can delete only the files you uploaded — '{doc.title}' was uploaded by "
+                                                        f"{doc.uploaded_by_name or 'someone else'}. Ask them, an R&D head or the project manager of {parent.project_number} to remove it.")
     project = db.query(RndProject).filter(RndProject.id == doc.project_id).first() if doc.project_id else None
-    if project and not roles.can_manage(user, project):
+    if not own and project and not roles.can_manage(user, project):
         lead_names = ", ".join(n for n in user_names(db, roles.lead_ids(project)).values()) or "the project lead"
         raise HTTPException(
             status_code=403,
-            detail=f"Only a project lead of {project.project_number} can delete its files. Ask {lead_names} to remove '{doc.title}'.",
+            detail=f"You can delete only the files you uploaded — '{doc.title}' was uploaded by {doc.uploaded_by_name or 'someone else'}. "
+                   f"Ask them or a project lead of {project.project_number} ({lead_names}) to remove it.",
         )
+    if not own and not project and not doc.pm_project_id and not doc.machine_id and not is_admin_user(user):
+        raise HTTPException(status_code=403, detail=f"You can delete only the files you uploaded — ask {doc.uploaded_by_name or 'its uploader'} or an admin to remove '{doc.title}'.")
     if settings.SHAREPOINT_SITE_ID and doc.sharepoint_path:
         try:
             await delete_file_from_sharepoint(settings.SHAREPOINT_SITE_ID, doc.sharepoint_path)

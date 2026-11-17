@@ -257,6 +257,9 @@ def test_a_line_buyer_sees_the_whole_tracker(client, db):
 def test_an_unrelated_user_gets_403_on_the_tracker(client, db):
     w = _world(client, db)
     outsider = _user(db, VIEW_BOTH)
+    # 2026-11-14: the role-matrix tick decides; the suite's org-wide default data scope is narrowed to the production default here.
+    outsider.data_access_scopes = {"p2p": "assigned"}
+    db.commit()
     r = _tracker(client, w, outsider)
     assert r.status_code == 403, r.text
     # And one with no Procurement access at all.

@@ -1,10 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRequireApp } from '@/hooks/useAuth'
-import { useCan } from '@/lib/permissions'
+import { canChangeRecord, useCan } from '@/lib/permissions'
 import { erpApi } from '@/lib/api'
-import ErpNav from '@/components/erp/ErpNav'
+import ErpNav, { useErpTabAccess } from '@/components/erp/ErpNav'
 import { Section, smallPrimaryBtnStyle } from '@/components/shared/ui'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
@@ -27,15 +26,19 @@ interface DeletedSR {
   deleted_at: string | null
   days_remaining: number
   created_by_id?: number | null
+  assigned_service_person_id?: number | null
+  /** Server: the SR is inside the user's Service Edit scope. */
+  can_restore?: boolean
 }
 
 export default function RecycleBinPage() {
-  const { user, isAuthorized, isLoading } = useRequireApp('erp')
-  // Restoring = Recycle Bin › Edit; an SR can only be restored by its creator (or an admin).
+  const { user, isAuthorized, isLoading } = useErpTabAccess('recycle_bin')
+  // Restoring = Recycle Bin › Edit; an SR also has to be inside the role's Service Edit scope
+  // (Role › Data access › Edit — by default SRs you raised or are the assigned engineer of).
   const { can } = useCan()
   const canRestoreProjects = can('erp', 'recycle_bin', 'edit')
   const canRestoreSr = (sr: DeletedSR) =>
-    canRestoreProjects && (user?.role === 'admin' || sr.created_by_id == null || sr.created_by_id === user?.id)
+    canRestoreProjects && (sr.can_restore ?? canChangeRecord(user, 'erp', { ownerIds: [sr.created_by_id], assignedIds: [sr.assigned_service_person_id] }))
   const [projects, setProjects] = useState<DeletedProject[]>([])
   const [srs, setSrs] = useState<DeletedSR[]>([])
   const [loading, setLoading] = useState(true)

@@ -106,7 +106,8 @@ def test_restore_needs_recycle_bin_edit(client, db):
 def test_machines_live_under_all_projects(client, db):
     """Machines moved to Project Management (2026-10-26) and the separate Past Projects tab was merged into
     All Projects (2026-11-02). Stray old grants (erp:projects / projects:service_projects) still open them;
-    All Projects › View opens them; a Project Management wildcard covers them; Service Requests alone can't."""
+    All Projects › View opens them; a Project Management wildcard covers them. Service Requests alone reads the
+    machine list too (SR form picker, 2026-11-14), limited by the Service data scope."""
     from app.core.permission_registry import MODULES, expand_grants
     assert "projects" not in MODULES["erp"]["subtabs"] and "service_projects" not in MODULES["projects"]["subtabs"]
     assert expand_grants(["erp:projects:view"]) >= {"projects:all_projects:view"}
@@ -120,6 +121,9 @@ def test_machines_live_under_all_projects(client, db):
         assert client.get(f"{ERP}/projects", headers=_h(u)).status_code == 200
         assert "projects" in u.get_apps()
     sr_only = _user(db, "sr_only@premnathrail.com", ["erp:service_requests:view"])
-    assert client.get(f"{ERP}/projects", headers=_h(sr_only)).status_code == 403
+    r = client.get(f"{ERP}/projects", headers=_h(sr_only))
+    assert r.status_code == 200 and r.json() == []  # own + assigned Service scope: no SRs, no machines
+    nobody = _user(db, "no_machine_grant@premnathrail.com", ["store:items:view"])
+    assert client.get(f"{ERP}/projects", headers=_h(nobody)).status_code == 403
     pm_all = _user(db, "pm_all@premnathrail.com", ["projects:*:*"])
     assert client.get(f"{ERP}/projects", headers=_h(pm_all)).status_code == 200

@@ -103,11 +103,13 @@ def test_ap_variance_stage_then_posting(client, books):
     r = client.post(f"{VI}/{inv.id}/submit", headers=_h(maker))
     assert r.status_code == 200, r.text
     req = engine.latest_request(db, access.ET_VENDOR_INVOICE, inv.id)
-    assert [s.stage_name for s in req.steps if s.sequence == 1] == ["3-way-match variance (Finance Manager)"]
-    assert {s.approver_id for s in req.steps if s.sequence == 1} == {checker.id}  # FMs except the maker
+    assert {s.stage_name for s in req.steps if s.sequence == 1} == {"3-way-match variance"}
+    # Holders of Purchase Invoices › Approve 3-way-match variance except the maker —
+    # the role matrix decides, the Finance Manager flag does not (2026-11-14).
+    assert {s.approver_id for s in req.steps if s.sequence == 1} == {checker.id, clerk.id}
     assert {s.approver_id for s in req.steps if s.sequence == 2} == {checker.id, clerk.id}
 
-    assert _decide(client, clerk, access.ET_VENDOR_INVOICE, inv.id, "approve").status_code == 403  # not a Finance Manager
+    assert _decide(client, maker, access.ET_VENDOR_INVOICE, inv.id, "approve").status_code == 403  # four-eyes
     assert _decide(client, checker, access.ET_VENDOR_INVOICE, inv.id, "approve").status_code == 200
     mid = client.get(f"{VI}/{inv.id}", headers=_h(maker)).json()
     assert mid["status"] == "pending" and mid["approval_stage"] == "Posting approver"
@@ -118,7 +120,7 @@ def test_ap_variance_stage_then_posting(client, books):
     assert out["variance_approved_by_id"] == checker.id and out["journal_entry_number"].startswith("PI/")
 
 
-def test_invoice_without_variance_skips_the_finance_manager_stage(client, books):
+def test_invoice_without_variance_skips_the_variance_stage(client, books):
     inv = _bill(books, "PS/CA-2")
     assert inv.matching_status != "variance"
     client.post(f"{VI}/{inv.id}/submit", headers=_h(books["maker"]))
@@ -130,18 +132,18 @@ def test_invoice_without_variance_skips_the_finance_manager_stage(client, books)
 
 # ── Period-end processes ────────────────────────────────────────────────
 
-def test_finance_manager_closes_in_one_click_others_wait_for_one(client, books):
+def test_period_close_approve_holder_closes_in_one_click_flag_or_not(client, books):
+    """Default stage = holders of Period Close › Approve (2026-11-14): the clerk
+    (no Finance Manager flag) closes in one click just like the checker."""
     db, checker, clerk = books["db"], books["checker"], books["clerk"]
     r = client.post("/api/v1/accounts/period-close/2026-07/close", headers=_h(checker), json={"notes": "July books final"})
     assert r.status_code == 200 and r.json()["status"] == "closed"
 
     r = client.post("/api/v1/accounts/period-close/2026-06/close", headers=_h(clerk), json={})
-    assert r.status_code == 202 and r.json()["approval_status"] == "pending" and "cov.checker" in r.json()["message"]
-    assert db.query(PeriodClose).filter(PeriodClose.accounting_period == "2026-06").first() is None
-    assert _decide(client, checker, access.ET_PERIOD_CLOSE, 202606, "approve").status_code == 200
+    assert r.status_code == 200, r.text
     db.expire_all()
     pc = db.query(PeriodClose).filter(PeriodClose.accounting_period == "2026-06").one()
-    assert pc.status == "closed" and pc.closed_by_id == checker.id
+    assert pc.status == "closed" and pc.closed_by_id == clerk.id
 
 
 # ── Data scope ──────────────────────────────────────────────────────────

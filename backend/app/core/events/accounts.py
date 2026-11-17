@@ -44,13 +44,13 @@ register_event(
     default_channels=("bell", "teams"), kind="approval",
 )
 register_event(
-    "accounts", "period_close_requested", "Period close waiting for a Finance Manager",
-    "someone asks to close an accounting month and it waits for a Finance Manager's approval", ("period_close", "approve"),
+    "accounts", "period_close_requested", "Period close waiting for approval",
+    "someone asks to close an accounting month and it waits for its approver (Period Close › Approve)", ("period_close", "approve"),
     default_channels=("bell", "teams"), kind="approval",
 )
 register_event(
-    "accounts", "year_close_requested", "Financial year close waiting for a Finance Manager",
-    "someone asks to close a financial year and it waits for a Finance Manager's approval", ("year_end_close", "approve"),
+    "accounts", "year_close_requested", "Financial year close waiting for approval",
+    "someone asks to close a financial year and it waits for its approver (Year-end Close › Approve)", ("year_end_close", "approve"),
     default_channels=("bell", "teams"), kind="approval",
 )
 

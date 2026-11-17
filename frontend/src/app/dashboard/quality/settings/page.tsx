@@ -14,6 +14,7 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import { extractErrorMessages } from '@/lib/validation'
 import Select from '@/components/shared/Select'
 import { LIVE_QUALITY_MASTER_LISTS } from '@/components/quality/qualityLive'
+import { can } from '@/lib/permissions'
 
 interface Spec { key: string; group: string; label: string; type: 'int' | 'float' | 'str' | 'choice'; help?: string; choices?: [string, string][]; min?: number; max?: number }
 interface RoleUser { id: number; name: string; email: string; is_admin: boolean; is_partner: boolean; roles: string[] }
@@ -56,7 +57,9 @@ export default function QualitySettingsPage() {
     qualityApi.listQualityRoles().then((d) => { setRoles(d.roles || []); setUsers(d.users || []) }).catch(() => {})
   }, [])
 
-  useEffect(() => { if (isAuthorized) load() }, [isAuthorized, load])
+  // Deny by default: the page opens on Quality › Quality Settings › View (the server checks it too).
+  const seeSettings = can(user, 'quality', 'settings', 'view')
+  useEffect(() => { if (isAuthorized && seeSettings) load() }, [isAuthorized, seeSettings, load])
 
   const save = async () => {
     setError('')
@@ -118,13 +121,25 @@ export default function QualitySettingsPage() {
   }
 
   if (isLoading || !isAuthorized) return null
+  if (!seeSettings) {
+    return (
+      <div>
+        <QualityNav />
+        <PageHeader title="Quality Settings" />
+        <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>
+          Quality settings need &apos;View&apos; on Quality › Quality Settings — ask an admin to add it to one of your roles in
+          Organization › Role &amp; Permissions. Your other Quality tabs are in the bar above.
+        </p>
+      </div>
+    )
+  }
 
   return (
     <div>
       <QualityNav />
       <MessageDialog open={!!saved} variant="success" title="Saved" message={saved} onClose={() => setSaved('')} />
       <PageHeader title="Quality Settings" />
-      {!canEdit && <p style={{ fontSize: 13, color: '#b45309', margin: '-8px 0 14px' }}>Read-only — only a Quality head or an admin can change Quality settings.</p>}
+      {!canEdit && <p style={{ fontSize: 13, color: '#b45309', margin: '-8px 0 14px' }}>Read-only — changing Quality settings needs &apos;Edit&apos; on Quality › Quality Settings (ask an admin).</p>}
       <ErrorBanner error={error} />
       <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 14px' }}>
         Who approves is set in Organization › Approval Workflows, not here.

@@ -1,7 +1,7 @@
 import re
 from datetime import datetime, timezone
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, Form
-from sqlalchemy import func
+from sqlalchemy import false, func, or_
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
@@ -10,7 +10,7 @@ from app.core.permissions import (
     ensure_can_delete, ensure_feature_action, ensure_tab_action, has_erp_permission, require_any_app_access,
     require_feature_action, require_tab_access, require_tab_action,
 )
-from app.core.permission_registry import can_view_tab
+from app.core.permission_registry import can_perform, can_view_tab
 from app.modules.main.routes.auth import get_current_user
 from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
@@ -25,7 +25,7 @@ from app.modules.erp.schemas.project import (
 from app.modules.erp.settings import get_setting as get_erp_setting
 from app.modules.erp.notify import broadcast_except, fire_event, role_event
 from app.modules.erp import access as erp_access
-from app.core.data_scope import apply_scope, ensure_in_scope, in_scope
+from app.core.data_scope import apply_scope, ensure_in_scope, in_scope, scope_filter, user_scope
 from app.core import visibility
 from app.core.pew_numbers import link_machine_to_project, normalise_serial
 from app.modules.projects import lifecycle
@@ -129,12 +129,54 @@ def link_machine_by_number(db: Session, machine: Project, user: User) -> bool:
     return True
 
 
+def _has_sr_access(user: User) -> bool:
+    """Service Requests tab view / create / edit — the SR form's machine picker
+    and the SR list's machine names read the machine list with it (owner,
+    2026-11-14: the SR tick alone must make the SR form work)."""
+    return (can_view_tab(user, "erp", "service_requests")
+            or can_perform(user, "erp", "service_requests", "create")
+            or can_perform(user, "erp", "service_requests", "edit"))
+
+
+def _sr_machine_filter(db: Session, user: User):
+    """Machines a Service user may pick / read through the SR screens: the
+    machine table limited by their SERVICE data scope (not the Project
+    Management one), plus every machine of an SR they can see. None = all."""
+    level = user_scope(user, "erp")
+    by_level = scope_filter(db, user, Project, level=level)
+    if by_level is None:
+        return None
+    sr_ids = apply_scope(
+        db.query(ServiceRequest.project_id).filter(ServiceRequest.is_deleted == False), user, ServiceRequest,  # noqa: E712
+    )
+    return or_(by_level, Project.id.in_(sr_ids.scalar_subquery()))
+
+
+def _machine_list_filter(db: Session, user: User):
+    """Machines list filter: the Project Management machine scope for Machines-tab
+    users, widened by the Service scope for SR users. None = no restriction."""
+    parts = []
+    if can_view_tab(user, "projects", "all_projects"):
+        own = scope_filter(db, user, Project)
+        if own is None:
+            return None
+        parts.append(own)
+    if _has_sr_access(user):
+        sr = _sr_machine_filter(db, user)
+        if sr is None:
+            return None
+        parts.append(sr)
+    return or_(*parts) if parts else false()
+
+
 def _machines_tab_or_pm_project(
     pm_project_id: int | None = None, db: Session = Depends(get_db), user: User = Depends(get_current_user),
 ) -> User:
-    """Machines list gate: the Machines tab, or — when asking for one project's machines —
-    permission to view that Project Management project."""
-    if can_view_tab(user, "projects", "all_projects") or _pm_project_viewable(db, user, pm_project_id):
+    """Machines list gate: the Machines tab, the Service Requests tab (SR form
+    machine picker, SR list machine names), or — when asking for one project's
+    machines — permission to view that Project Management project."""
+    if (can_view_tab(user, "projects", "all_projects") or _has_sr_access(user)
+            or _pm_project_viewable(db, user, pm_project_id)):
         return user
     return require_tab_access("projects", "all_projects")(user)  # raises the standard 403
 
@@ -316,7 +358,9 @@ async def list_projects(
     anyone who can view that project (its Overview shows them), whatever their machine scope."""
     query = db.query(Project).filter(Project.is_deleted == False)  # noqa: E712
     if not (pm_project_id and _pm_project_viewable(db, _user, pm_project_id)):
-        query = apply_scope(query, _user, Project)
+        scope_expr = _machine_list_filter(db, _user)
+        if scope_expr is not None:
+            query = query.filter(scope_expr)
     if status:
         query = query.filter(Project.status == status)
     if application_type:
@@ -550,6 +594,11 @@ async def get_project(
         return project  # linked to a Project Management project the user can view
     if not _has_machine_or_sr_tab(_user):
         _deny_machine_tab()
+    if _has_sr_access(_user):
+        # SR page / SR form: the machine of an SR the user can see, or one in their Service scope.
+        sr_expr = _sr_machine_filter(db, _user)
+        if sr_expr is None or db.query(Project.id).filter(Project.id == project.id, sr_expr).first() is not None:
+            return project
     ensure_in_scope(db, _user, project)
     return project
 

@@ -82,8 +82,12 @@ def test_create_task_refusals(client, db, tor_env):
 
 def test_requirement_task_needs_accepted_requirement_project_task_needs_a_lead(client, db, tor_env):
     bd, head, member, other, inq, project = _env(client, db)
-    # A member who is not a lead of the project can't give project tasks.
-    resp = _proj_task(client, project, member, other)
+    # Someone outside the project (not lead / team) can't give project tasks, even with the tick
+    # (owner 2026-11-14: a ticked team member can — the project must be inside the Edit scope).
+    outsider = make_user(db, "tb.outsider@premnathrail.com", apps=("rnd",))
+    outsider.data_access_scopes = {"rnd": "organization", "rnd:edit": "assigned"}  # sees it, can't change it
+    db.commit()
+    resp = _proj_task(client, project, outsider, other)
     assert resp.status_code == 403 and "project lead" in resp.json()["detail"]
     # A requirement that is not accepted any more (BD re-sent) can't get tasks.
     from app.tests.test_cov_crm_quotations_rnd import send_tor
@@ -99,7 +103,9 @@ def test_requirement_task_needs_accepted_requirement_project_task_needs_a_lead(c
     opts = client.get(f"{BOARD}/requirement-options", headers=auth(head)).json()
     assert [o["record_id"] for o in opts] == [inq.id] and opts[0]["rd_number"] in opts[0]["label"]
     assert [p["project_number"] for p in client.get(f"{BOARD}/project-options", headers=auth(head)).json()] == ["RND-2026-0801"]
-    assert client.get(f"{BOARD}/project-options", headers=auth(member)).json() == []   # not a lead
+    # A team member whose role ticks task Create may give tasks (2026-11-14); an outsider may not.
+    assert [p["id"] for p in client.get(f"{BOARD}/project-options", headers=auth(member)).json()] == [project.id]
+    assert client.get(f"{BOARD}/project-options", headers=auth(outsider)).json() == []
 
 
 def test_assignees_follow_the_chosen_record(client, db, tor_env):

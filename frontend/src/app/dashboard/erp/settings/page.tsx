@@ -1,12 +1,11 @@
 'use client'
 
-import { useRequireApp } from '@/hooks/useAuth'
 import { erpApi } from '@/lib/api'
 import ModuleSettingsPage from '@/components/shared/ModuleSettingsPage'
-import ErpNav from '@/components/erp/ErpNav'
+import ErpNav, { useErpTabAccess } from '@/components/erp/ErpNav'
 
 export default function ServiceSettingsPage() {
-  const { isAuthorized, isLoading } = useRequireApp('erp')
+  const { isAuthorized, isLoading } = useErpTabAccess('settings')
   if (isLoading || !isAuthorized) return null
   return (
     <ModuleSettingsPage title="Service settings" nav={<ErpNav />} backHref="/dashboard/erp"

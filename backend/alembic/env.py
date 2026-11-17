@@ -226,17 +226,13 @@ from app.modules.rnd.models.tool_calculations import (
     SplineCalculation, TractiveEffortCalculation, VehiclePerformanceCalculation,
 )
 from app.modules.rnd.models.project import RndProject
-from app.modules.rnd.models.experiment import RndExperiment
-from app.modules.rnd.models.prototype import RndPrototype, RndPrototypeBomItem
 from app.modules.rnd.models.feasibility import RndFeasibilityStudy
 from app.modules.rnd.models.document import RndDocument
-from app.modules.rnd.models.requirement_work import RndTeamMember, RndRequirementAccess, RndRequirementTask, RndTaskEvent, RndRequirementProjectLink, RndRequirementShare, RndRequirementDocVisibility
+from app.modules.rnd.models.requirement_work import RndTeamMember, RndRequirementAccess, RndRequirementTask, RndTaskEvent, RndRequirementProjectLink, RndRequirementDocVisibility
 from app.modules.rnd.models.requirement import RndRequirement, RndRequirementRevision
 from app.modules.rnd.models.task_approval import RndTaskApproval
 from app.modules.rnd.models.technical_offer import RndTechnicalOffer
 from app.modules.rnd.models.project_task import RndProjectTask, RndProjectTaskEvent
-from app.modules.rnd.models.project_milestone import RndProjectMilestone
-from app.modules.rnd.models.requirement_milestone import RndRequirementMilestone
 from app.modules.hr.models.masters import HrGrade, HrDesignation, HrShift
 from app.modules.hr.models.holiday import HrHoliday
 from app.modules.hr.models.employee_profile import HrEmployeeProfile

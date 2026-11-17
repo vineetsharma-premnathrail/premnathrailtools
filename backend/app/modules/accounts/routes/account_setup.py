@@ -19,7 +19,7 @@ from app.modules.accounts.schemas.journal_entry import OpeningBalancesCreate
 from app.modules.accounts.services import fiscal, gst
 from app.modules.accounts.services.balances import rebuild_gl_balances
 from app.modules.accounts.services.opening import post_opening_balances
-from app.modules.accounts.routes._common import write_audit, who, service_errors, require_finance_manager
+from app.modules.accounts.routes._common import write_audit, who, service_errors
 
 router = APIRouter(prefix="/accounts", tags=["Accounts"])
 
@@ -159,7 +159,6 @@ async def get_ledger_settings(db: Session = Depends(get_db), _user: User = Depen
 @router.put("/ledger-settings", response_model=list[LedgerSettingResponse])
 async def update_ledger_setting(payload: LedgerSettingUpdate, db: Session = Depends(get_db),
                                 user: User = Depends(require_tab_action("accounts", "ledger_settings", "edit"))):
-    require_finance_manager(user, "change which ledgers automatic postings use")
     if payload.role not in LEDGER_ROLES:
         raise HTTPException(status_code=400, detail=f"Unknown ledger role '{payload.role}'.")
     if payload.gl_account_id:
@@ -187,7 +186,6 @@ async def list_gst_rates(db: Session = Depends(get_db), _user: User = Depends(re
 
 @router.post("/gst-rates", response_model=GSTRateResponse, status_code=201)
 async def create_gst_rate(payload: GSTRateCreate, db: Session = Depends(get_db), user: User = Depends(require_tab_action("accounts", "gst_rates", "create"))):
-    require_finance_manager(user, "maintain GST rates")
     if payload.rate < 0 or payload.rate > 100:
         raise HTTPException(status_code=400, detail="A GST rate must be between 0 and 100%.")
     if db.query(GSTRate).filter(GSTRate.rate == payload.rate).first():
@@ -202,7 +200,6 @@ async def create_gst_rate(payload: GSTRateCreate, db: Session = Depends(get_db),
 
 @router.patch("/gst-rates/{rate_id}", response_model=GSTRateResponse)
 async def update_gst_rate(rate_id: int, payload: GSTRateUpdate, db: Session = Depends(get_db), user: User = Depends(require_tab_action("accounts", "gst_rates", "edit"))):
-    require_finance_manager(user, "maintain GST rates")
     rate = db.query(GSTRate).filter(GSTRate.id == rate_id).first()
     if not rate:
         raise HTTPException(status_code=404, detail="GST rate not found")
@@ -219,7 +216,6 @@ async def update_gst_rate(rate_id: int, payload: GSTRateUpdate, db: Session = De
 @router.post("/opening-balances")
 async def post_opening_balances_route(payload: OpeningBalancesCreate, db: Session = Depends(get_db),
                                       user: User = Depends(require_tab_action("accounts", "opening_balances", "edit"))):
-    require_finance_manager(user, "post opening balances")
     with service_errors(db):
         entry = post_opening_balances(
             db, as_of=payload.as_of, ledger_lines=[l.model_dump() for l in payload.ledger_lines],

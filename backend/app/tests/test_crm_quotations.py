@@ -79,7 +79,8 @@ def test_only_inquiry_owner_or_admin_creates(client, db):
     inq = _inquiry(db, owner, uid="PRT-INQ-2026-0103")
     resp = _create(client, inq.id, other)
     assert resp.status_code == 403
-    assert "q_owner2" in resp.json()["detail"]
+    # Not the creator's name any more: the CRM Edit scope decides (owner, 2026-11-03 / 11-14).
+    assert "Edit scope" in resp.json()["detail"] and "PRT-INQ-2026-0103" in resp.json()["detail"]
     assert _create(client, inq.id, admin).status_code == 201
 
 

@@ -67,6 +67,8 @@ export default function StoreItemDetailPage() {
   const [form, setForm] = useState<Partial<StoreItem>>(vis.preview ? sampleItem : {})
   const [busy, setBusy] = useState(false)
   const [errors, setErrors] = useState<string[]>([])
+  const [reviewing, setReviewing] = useState(false)
+  const [reviewError, setReviewError] = useState('')
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
 
   const load = async () => {
@@ -297,6 +299,24 @@ export default function StoreItemDetailPage() {
               {!vis.preview && <button type="button" data-tour="item-detail-back-btn" onClick={() => router.push('/dashboard/store')} style={secondaryBtnStyle}>← Back</button>}
             </div>
           </div>
+
+          {/* Added from a Before PO receipt (2026-11-14): complete the details, then mark it reviewed. */}
+          {item.needs_review && (
+            <div role="status" data-tour="item-needs-review" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '10px 14px', marginBottom: 14, borderRadius: 12, background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', fontSize: 13 }}>
+              <span style={{ flex: '1 1 320px' }}>
+                <strong>Added at inward — needs review.</strong> This item was added in a hurry from a goods receipt. Use <strong>Edit</strong> to complete its stock levels, quality check, HSN / GST and ledgers, then mark it reviewed.
+                {reviewError && <span role="alert" style={{ display: 'block', marginTop: 4, color: '#b91c1c' }}>{reviewError}</span>}
+              </span>
+              {can('store', 'items', 'edit') && !vis.preview && (
+                <button type="button" disabled={reviewing} style={secondaryBtnStyle} onClick={async () => {
+                  setReviewing(true); setReviewError('')
+                  try { setItem(await storeApi.markItemReviewed(item.id)) }
+                  catch (err) { setReviewError(extractErrorMessages(err, 'Could not mark the item reviewed — reload the page and try again.').join(' ')) }
+                  finally { setReviewing(false) }
+                }}>{reviewing ? 'Saving…' : 'Mark reviewed'}</button>
+              )}
+            </div>
+          )}
 
           {/* One record view: name + what it is on top, then every fact as label–value rows. */}
           <DetailCard>

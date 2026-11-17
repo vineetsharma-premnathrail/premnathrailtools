@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp, hasErpPermission } from '@/hooks/useAuth'
+import { canChangeRecord } from '@/lib/permissions'
 import { erpApi } from '@/lib/api'
 import { ServiceRequest } from '@/types'
 import ErpNav from '@/components/erp/ErpNav'
@@ -27,8 +28,10 @@ export default function EditServiceRequestPage() {
     erpApi.getServiceRequest(srId).then(setSr).catch((err) => setError(extractErrorMessages(err, 'Could not load this service request — check your connection and reload the page.').join(' '))).finally(() => setLoading(false))
   }, [isAuthorized, srId])
 
-  // Mirrors the backend's _can_edit — non-owners are sent back to the detail page.
-  const canModify = !!sr && !!user && (user.role === 'admin' || (sr.created_by_id === user.id && hasErpPermission(user, 'sr_edit')))
+  // Mirrors the backend: Service Requests › Edit AND the SR inside the role's Service Edit scope (default = SRs
+  // you raised or are the assigned engineer of). Anyone else is sent back to the detail page.
+  const canModify = !!sr && hasErpPermission(user, 'sr_edit')
+    && canChangeRecord(user, 'erp', { ownerIds: [sr.created_by_id], assignedIds: [sr.assigned_service_person_id] })
   useEffect(() => {
     if (sr && user && !canModify) router.push(`/dashboard/erp/service-requests/${ref}`)
   }, [sr, user, canModify, router, ref])
