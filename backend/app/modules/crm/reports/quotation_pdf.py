@@ -338,10 +338,14 @@ def build_quotation_pdf(ctx: Mapping[str, Any]) -> io.BytesIO:
         raise Exception("reportlab library is not installed. Please run: pip install reportlab")
 
     buf = io.BytesIO()
+    # The letterhead banners are drawn flush with the page edges (_draw_letterhead), so the
+    # text area starts just below the header rule / stops just above the footer rule —
+    # an extra MARGIN here left ~50pt dead on top and bottom and pushed the terms and
+    # signature onto a second, nearly empty page (owner, 2026-11-18).
     doc = SimpleDocTemplate(
         buf, pagesize=A4,
-        topMargin=MARGIN + HEADER_HEIGHT + 0.15 * inch,
-        bottomMargin=MARGIN + FOOTER_HEIGHT + 0.15 * inch,
+        topMargin=HEADER_HEIGHT + 0.2 * inch,
+        bottomMargin=FOOTER_HEIGHT + 0.12 * inch,
         leftMargin=MARGIN, rightMargin=MARGIN,
     )
 
@@ -354,7 +358,7 @@ def build_quotation_pdf(ctx: Mapping[str, Any]) -> io.BytesIO:
     story.append(_p(LUMP_SUM_TITLE if lump_sum else "QUOTATION", size=HEADER_SIZE + 12, bold=True, align="right", color=ACCENT))
     story.append(Spacer(1, 2))
     story.append(_p(f"Quotation type: {ctx.get('quotation_type') or 'Domestic'}", size=BODY_SIZE, align="right", color=MUTED))
-    story.append(Spacer(1, 14))
+    story.append(Spacer(1, 10))
 
     # ── Client (left) + Quotation #/Date/Valid until/Delivery time (right) ──
     # quot.quot_number already has "-r<N>" baked in by the revise workflow (see
@@ -397,7 +401,7 @@ def build_quotation_pdf(ctx: Mapping[str, Any]) -> io.BytesIO:
     top_block = Table([[bill_to, meta_table]], colWidths=[USABLE_WIDTH * 0.55, USABLE_WIDTH * 0.45])
     top_block.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
     story.append(top_block)
-    story.append(Spacer(1, 16))
+    story.append(Spacer(1, 12))
 
     if lump_sum:
         story.extend(_lump_sum_body(ctx, currency, is_export))
@@ -529,36 +533,46 @@ def _itemwise_body(ctx: Mapping[str, Any], currency: str, is_export: bool) -> li
         Spacer(1, 14),
         _p(f"<b>Amount in words: {_amount_in_words(grand_total, is_export)}</b>", size=BODY_SIZE, escape=False),
     ]))
-    story.append(Spacer(1, 20))
+    story.append(Spacer(1, 14))
     return story
 
 
 def _append_terms_and_signatory(story: list[Any], ctx: Mapping[str, Any], lump_sum: bool) -> None:
+    # The terms flow point by point (no single KeepTogether for the whole block, which
+    # threw every term onto page 2 whenever the block was even slightly too tall).
+    # Only two things are glued: the heading/sub-label to the point under it, and the
+    # last point to the signatory, so neither is ever stranded alone on a page.
+    chunks: list[list[Any]] = []  # each chunk = flowables that must stay on one page
     terms_sections = _terms_sections(ctx, lump_sum)
     if terms_sections:
-        terms_block: list[Any] = [_p(LUMP_SUM_TERMS_HEADING if lump_sum else "TERMS AND CONDITIONS", size=BODY_SIZE + 1, bold=True, color=ACCENT), Spacer(1, 8)]
-        for label, text in terms_sections:
+        pending: list[Any] = [_p(LUMP_SUM_TERMS_HEADING if lump_sum else "TERMS AND CONDITIONS", size=BODY_SIZE + 1, bold=True, color=ACCENT), Spacer(1, 8)]
+        # Lump sum prints one plain numbered list, so its sections run on with no gap
+        # between them (the gap before "4." when Notes continued Payment Terms).
+        for s, (label, text) in enumerate(terms_sections):
+            if s and not lump_sum:
+                chunks.append([Spacer(1, 6)])
             if label:
-                terms_block.append(_p(label, size=BODY_SIZE, bold=True, color=MUTED))
-                terms_block.append(Spacer(1, 3))
+                pending += [_p(label, size=BODY_SIZE, bold=True, color=MUTED), Spacer(1, 3)]
             for point in _split_numbered_points(text):
-                terms_block.append(_p(point, size=BODY_SIZE))
-                terms_block.append(Spacer(1, 5))
-            terms_block.append(Spacer(1, 6))
-        # KeepTogether so the heading is never orphaned from its content; if the
-        # terms text is too long for one page it still flows normally onto the next.
-        story.append(KeepTogether(terms_block))
+                chunks.append(pending + [_p(point, size=BODY_SIZE), Spacer(1, 3)])
+                pending = []
 
-    story.append(Spacer(1, 24))
     if lump_sum:
         # Official Commercial Offer signature block: left-aligned, company names in bold.
-        story.append(KeepTogether([_p(line, bold=(n > 0)) for n, line in enumerate(LUMP_SUM_SIGNATORY)]))
-        return
-    sign_table = Table(
-        [[_p("_" * 34)], [_p("Authorized Signatory", color=MUTED)]],
-        colWidths=[2.6 * inch],
-    )
-    sign_table.setStyle(TableStyle([("ALIGN", (0, 0), (-1, -1), "LEFT"), ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
-    wrapper = Table([["", sign_table]], colWidths=[USABLE_WIDTH - 2.6 * inch, 2.6 * inch])
-    wrapper.setStyle(TableStyle([("ALIGN", (1, 0), (1, 0), "RIGHT"), ("VALIGN", (0, 0), (-1, -1), "TOP")]))
-    story.append(wrapper)
+        signature: list[Any] = [_p(line, bold=(n > 0)) for n, line in enumerate(LUMP_SUM_SIGNATORY)]
+    else:
+        sign_table = Table(
+            [[_p("_" * 34)], [_p("Authorized Signatory", color=MUTED)]],
+            colWidths=[2.6 * inch],
+        )
+        sign_table.setStyle(TableStyle([("ALIGN", (0, 0), (-1, -1), "LEFT"), ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
+        wrapper = Table([["", sign_table]], colWidths=[USABLE_WIDTH - 2.6 * inch, 2.6 * inch])
+        wrapper.setStyle(TableStyle([("ALIGN", (1, 0), (1, 0), "RIGHT"), ("VALIGN", (0, 0), (-1, -1), "TOP")]))
+        signature = [wrapper]
+    tail = [Spacer(1, 14)] + signature
+    if chunks:
+        chunks[-1] = chunks[-1] + tail
+    else:
+        chunks.append(tail)
+    for chunk in chunks:
+        story.append(KeepTogether(chunk))

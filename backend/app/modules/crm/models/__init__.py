@@ -8,7 +8,7 @@ from app.modules.crm.models.stage_log import CrmStageLog
 from app.modules.crm.models.product import Product
 from app.modules.crm.models.payment_term import PaymentTerm
 from app.modules.crm.models.document_category import CrmDocumentCategory
-from app.modules.crm.models.rnd_request import CrmRndRequest
+from app.modules.crm.models.rnd_request import CrmRndRequest, CrmRndRequestQuery
 from app.modules.crm.models.requirement_comment import CrmRequirementComment
 from app.modules.crm.models.library import (
     LibraryFolder, LibraryDocument, LibraryDocumentVersion, LibraryDocumentLink, LibraryFavorite,
@@ -31,6 +31,7 @@ __all__ = [
     "PaymentTerm",
     "CrmDocumentCategory",
     "CrmRndRequest",
+    "CrmRndRequestQuery",
     "CrmRequirementComment",
     "LibraryFolder",
     "LibraryDocument",

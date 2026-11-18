@@ -34,6 +34,8 @@ export interface User {
   is_store_manager?: boolean
   is_purchase_manager?: boolean
   /** Approval-queue visibility: named as a PR approver on >=1 PR / holds a PO-approval role flag. Admins get both. */
+  /** Sidebar "My Approvals": given approvals in some switched-on workflow. */
+  is_approver?: boolean
   is_pr_approver?: boolean
   is_po_approver?: boolean
   notifications_enabled?: boolean
@@ -862,12 +864,41 @@ export interface RndRequest {
   is_late: boolean
   response_documents: RequirementMovementDoc[]
   /** R&D's "Ask BD for more details" questions, oldest first (the request stays open). */
-  queries?: { remarks: string | null; asked_by: string | null; asked_at: string | null }[]
+  queries?: RndRequestQuery[]
+  /** 'bd' while a question to BD is unanswered: R&D's clock is paused (never overdue). */
+  waiting_on?: 'bd' | null
 }
+
+/** Channel BD used to give R&D the details (2026-11-17). */
+export type RndQueryChannel = 'portal' | 'phone' | 'email' | 'meeting'
+
+/** One R&D question to BD and BD's answer (no new revision; the request stays the same). */
+export interface RndRequestQuery {
+  id?: number
+  /** The question (kept as `remarks` for older readers). */
+  remarks: string | null
+  asked_by: string | null
+  asked_at: string | null
+  answer?: string | null
+  answer_channel?: RndQueryChannel | null
+  answered_by?: string | null
+  answered_at?: string | null
+  /** 'bd' = BD replied; 'rnd' = R&D noted BD's off-portal answer with its final response. */
+  answered_side?: 'bd' | 'rnd' | null
+  due_date_before?: string | null
+  due_date_after?: string | null
+  answer_documents?: RequirementMovementDoc[]
+}
+
+/** Why BD changed a requirement already sent to R&D (required on every re-send). */
+export type RequirementChangeReason = 'customer_changed' | 'bd_correction' | 'other'
 
 export interface RndRequestAssignment {
   response_due_date: string
   remarks?: string
+  /** Required when the requirement was sent before (a re-send = new revision). */
+  change_reason?: RequirementChangeReason
+  change_note?: string
 }
 
 export interface RndAssignee {
@@ -1565,6 +1596,12 @@ export interface P2PRequestLineItemInput {
   /** Picked from the Item Master; the server fills name / part code / unit / category from it. */
   store_item_id?: number | null
   item_name?: string
+  /** Typed by hand (not in the Item Master yet, 2026-11-18): Store gives it an item code on the GRN. */
+  manual?: boolean
+  /** Manual line: technical details (saved as "Name — details" in the line's name). */
+  specification?: string
+  /** Manual line: Item Master item type (with `category`, decides the buyer and the purpose check). */
+  item_type?: string
   make?: string
   part_code?: string
   unit?: string
@@ -4238,6 +4275,8 @@ export interface P2PReceivablePurchaseOrder {
   items: ({ id: number; item_name: string; unit?: string; quantity: number; received_quantity: number; pending_quantity: number
     store_item_id?: number | null; batch_controlled?: boolean; expiry_controlled?: boolean; serial_controlled?: boolean
     item_code?: string | null; make?: string | null; part_code?: string | null; specification?: string | null
+    /** No item code yet (typed by hand on the PR): its PR line's Item Master category. */
+    pr_item_category?: string | null
     delivery_date?: string | null; order_project_name?: string | null
     // Already put into stock by a Before-PO receipt — the GRN settles it, no second posting.
     pre_po_receipt_number?: string | null; pre_po_unsettled_qty?: number } & P2POrderProjectLineLink)[]

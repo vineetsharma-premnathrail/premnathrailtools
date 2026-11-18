@@ -10,6 +10,22 @@ const config: TourConfig = {
   pageTitle: 'Send Technical Requirement to R&D',
   steps: [
     {
+      target: 'tor-reason',
+      title: 'Reason for sending again',
+      required: true,
+      purpose: 'Shown only when the requirement was sent to R&D before. R&D sees the reason with the new revision.',
+      options: [
+        { value: 'Customer changed requirement', meaning: 'The customer asked for something different' },
+        { value: 'Correction of BD\'s mistake', meaning: 'What BD sent earlier was wrong or incomplete' },
+        { value: 'Other', meaning: 'Anything else; the note is then required (at least 10 characters)' },
+      ],
+    },
+    {
+      target: 'tor-note',
+      title: 'Note',
+      purpose: 'Extra words for R&D. Required when the reason is Other.',
+    },
+    {
       target: 'tor-due-date',
       title: 'Response Due Date',
       required: true,

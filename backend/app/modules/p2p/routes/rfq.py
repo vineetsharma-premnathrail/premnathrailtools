@@ -127,8 +127,9 @@ def ensure_rfq_readable(db: Session, rfq: RFQ, user: User, pr: P2PRequest | None
     """Who may open an RFQ's detail (its quotes, comparison, invites, files, PO documents) on top of the
     data scope: its own buyer, whoever may work all buyers' lines (Purchase head, admin), and the
     approvers of the requisition / its POs (they sign off on what was bought). Another purchase user
-    - even one whose data scope is wide - is told whose RFQ it is."""
-    if po_split.can_work_all_lines(user):
+    - even one whose data scope is wide - is told whose RFQ it is. Since 2026-11-18 every buyer
+    (Create on R.F.Q.) sees every RFQ like the Purchase head (po_split.can_see_all_lines)."""
+    if po_split.can_see_all_lines(user):
         return
     owner_id = rfq.buyer_id or rfq.created_by_id
     if owner_id is None or owner_id == user.id:
@@ -273,9 +274,10 @@ def _classify_line(db: Session, item: P2PRequestItem, pr: P2PRequest, buyer: Use
                         "off that RFQ first.")
     owner = po_split.effective_buyer_id(item, pr)
     if owner is None:
-        if po_split.can_work_all_lines(user):
+        # No buyer yet: the buyer who puts it on their RFQ takes it (owner, 2026-11-18).
+        if po_split.can_claim_line(user):
             return "claim", ""
-        return "nobuyer", f"'{name}' has no buyer. Ask the Purchase head to assign one."
+        return "nobuyer", f"'{name}' has no buyer yet. A buyer takes it by ticking it on their RFQ."
     if owner != buyer.id:
         who = _user_label(db, owner) or f"user #{owner}"
         return "other", (f"'{name}' is assigned to {who}. Ask the Purchase head to reassign it, "
@@ -322,7 +324,7 @@ def _choose_lines(db: Session, pr: P2PRequest, buyer: User, user: User, pr_item_
                 parts.append(f"{', '.join(names)} {label}")
         fixes = {"wait": "Decide the stock check on the waiting lines (issue from stock or send to procurement).",
                  "busy": "Quote those lines on the RFQ they are already on.",
-                 "nobuyer": "Ask the Purchase head to assign a buyer to the lines without one.",
+                 "nobuyer": "A buyer (Create on Procurement > R.F.Q.) takes the lines without one by ticking them on their RFQ.",
                  "other": "Ask the Purchase head to reassign them to you, or ask their buyer to raise the RFQ."}
         hints = [fixes[c] for c in ("wait", "busy", "nobuyer", "other") if any(verdict[i.id][0] == c for i in pr.items)]
         fix = (" ".join(hints) if parts else
@@ -499,7 +501,7 @@ def _blank_unreadable_rows(db: Session, user: User, rfqs: list[RFQ], out: list[R
     quotes, files, vendors and commercial terms are emptied. Same rule as ensure_rfq_readable (own buyer,
     Purchase head / admin, approvers of the requisition), decided with one query for the whole page.
     Delegates and escalation targets (decided per requisition by the approval engine) open the detail instead."""
-    if not rfqs or po_split.can_work_all_lines(user):
+    if not rfqs or po_split.can_see_all_lines(user):
         return
     from app.modules.p2p.access import approver_expr
 

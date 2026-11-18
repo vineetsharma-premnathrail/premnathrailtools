@@ -15,7 +15,7 @@ from app.tests.test_cov_crm_quotations_rnd import API, auth, make_inquiry, make_
 def _send(client, inq_id, bd):
     return client.post(
         f"{API}/inquiries/{inq_id}/technical-offer-request",
-        json={"response_due_date": (date.today() + timedelta(days=5)).isoformat()},
+        json={"response_due_date": (date.today() + timedelta(days=5)).isoformat(), "change_reason": "customer_changed"},
         headers=auth(bd),
     )
 

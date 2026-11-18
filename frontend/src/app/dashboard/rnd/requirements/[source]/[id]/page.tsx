@@ -18,7 +18,7 @@ import RequirementReviewBar from '@/components/rnd/RequirementReviewBar'
 import RequirementRevisionList from '@/components/rnd/RequirementRevisionList'
 import { secondaryBtnStyle, primaryBtnStyle, pillStyle, DetailCard, DetailGroup, DetailRow } from '@/components/shared/ui'
 import { SheetIcon } from '@/components/shared/FormSheet'
-import { rndRequestBadge, RndRequestCloseSheet } from '@/components/crm/RndRequestBlock'
+import { rndRequestBadge, RndRequestCloseSheet, openQuery, daysSince, QUERY_CHANNEL_LABEL } from '@/components/crm/RndRequestBlock'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import { priorityLabel } from '@/lib/priority'
@@ -53,6 +53,7 @@ export default function RndRequirementDetailPage() {
   const [data, setData] = useState<RndRequirementDetailV2 | null>(null)
   const [error, setError] = useState<string | string[]>('')
   const [closeOpen, setCloseOpen] = useState(false)
+  const [docError, setDocError] = useState<string | string[]>('')
   // ?tab=tasks|documents|technical-offers|timeline (e.g. from a notification) opens that tab.
   const [tab, setTab] = useState<Tab>(() => (typeof window !== 'undefined' && TAB_PARAMS[new URLSearchParams(window.location.search).get('tab') || '']) || 'Requirement')
 
@@ -135,7 +136,7 @@ export default function RndRequirementDetailPage() {
       </div>
 
       {intake && (
-        <RequirementReviewBar source={data.source} recordId={data.record_id} intake={intake} revisions={data.revisions} canReview={!!data.my_access.can_review} onChanged={() => load()} />
+        <RequirementReviewBar source={data.source} recordId={data.record_id} intake={intake} revisions={data.revisions} canReview={!!data.my_access.can_review} onChanged={() => load()} changes={data.movements[data.movements.length - 1]?.changes} />
       )}
 
       {currentReq && (() => {
@@ -148,13 +149,20 @@ export default function RndRequirementDetailPage() {
         const daysLeft = Math.round((new Date(currentReq.due_date + 'T00:00:00').getTime() - today.getTime()) / 86400000)
         const open = currentReq.status === 'open'
         const closed = currentReq.status === 'closed'
+        // R&D asked BD for details: R&D's clock is paused until BD replies (never overdue meanwhile).
+        const waitingBd = open && currentReq.waiting_on === 'bd'
+        const pending = waitingBd ? openQuery(currentReq) : null
+        const waitDays = daysSince(pending?.asked_at)
+        const lastQ = (currentReq.queries || [])[(currentReq.queries || []).length - 1]
+        const bdReplied = open && !waitingBd && lastQ?.answered_side === 'bd' ? lastQ : null
         const title = closed ? 'Closed by R&D — no response needed'
           : !open ? 'Response sent to CRM'
+          : waitingBd ? 'Waiting for BD to send the details'
           : acceptFirst ? 'Waiting for R&D to accept this requirement'
           : mine ? 'CRM is waiting for your response'
           : team ? 'Waiting for the R&D head to respond'
           : `Waiting for ${currentReq.assigned_to || 'the assigned engineer'} to respond`
-        const dueNote = !open ? null
+        const dueNote = !open || waitingBd ? null
           : daysLeft < 0 ? `${-daysLeft} day${daysLeft === -1 ? '' : 's'} overdue`
           : daysLeft === 0 ? 'due today'
           : `${daysLeft} day${daysLeft === 1 ? '' : 's'} left`
@@ -170,11 +178,25 @@ export default function RndRequirementDetailPage() {
               </span>
               <div style={{ minWidth: 0 }}>
                 <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: TEXT.heading }}>{title}</p>
+                {waitingBd && (
+                  <p style={{ margin: '2px 0 0', fontSize: 12.5, color: TEXT.muted }}>
+                    R&amp;D asked on <strong style={{ color: TEXT.body }}>{formatDate(pending?.asked_at)}</strong> · waiting {waitDays} day{waitDays === 1 ? '' : 's'}
+                    {pending?.remarks ? <> · &ldquo;{pending.remarks.length > 90 ? `${pending.remarks.slice(0, 90)}…` : pending.remarks}&rdquo;</> : null}
+                  </p>
+                )}
                 <p style={{ margin: '2px 0 0', fontSize: 12.5, color: TEXT.muted }}>
                   {currentReq.requested_by ? <>Requested by <strong style={{ color: TEXT.body }}>{currentReq.requested_by}</strong> · </> : null}
-                  Due <strong style={{ color: TEXT.body }}>{formatDate(currentReq.due_date)}</strong>
+                  {waitingBd
+                    ? <>Due date <strong style={{ color: '#6d28d9' }}>paused</strong> until BD replies (was {formatDate(currentReq.due_date)})</>
+                    : <>Due <strong style={{ color: TEXT.body }}>{formatDate(currentReq.due_date)}</strong></>}
                   {dueNote && <span style={{ color: daysLeft < 0 ? '#DC2626' : daysLeft <= 1 ? '#D97706' : TEXT.muted, fontWeight: daysLeft <= 1 ? 600 : 400 }}> ({dueNote})</span>}
                 </p>
+                {bdReplied && (
+                  <p data-tour="rnd-reqd-bd-replied" style={{ margin: '2px 0 0', fontSize: 12.5, color: '#15803d' }}>
+                    BD replied on <strong>{formatDate(bdReplied.answered_at)}</strong>{bdReplied.answer_channel ? <> by {QUERY_CHANNEL_LABEL[bdReplied.answer_channel] || bdReplied.answer_channel}</> : null}
+                    {bdReplied.due_date_after ? <> · new due <strong>{formatDate(bdReplied.due_date_after)}</strong></> : null}
+                  </p>
+                )}
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -214,6 +236,21 @@ export default function RndRequirementDetailPage() {
           </div>
         )
       })()}
+
+      {currentReq && (currentReq.queries || []).length > 0 && (
+        <div data-tour="rnd-reqd-qa-thread" style={{ padding: '4px 16px 14px', marginBottom: 16, borderRadius: 12, background: '#fff', border: '1px solid rgba(15,23,42,0.08)', boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
+          <p style={{ margin: '12px 0 0', fontSize: 13, fontWeight: 700, color: TEXT.heading }}>Questions to BD</p>
+          {docError && <p style={{ margin: '6px 0 0', fontSize: 12.5, color: '#b91c1c' }}>{Array.isArray(docError) ? docError.join(' ') : docError}</p>}
+          <RndRequestBlock
+            request={currentReq}
+            threadOnly
+            onOpenDoc={async (doc) => {
+              setDocError('')
+              try { await rndApi.openWorkDocument(doc) } catch (err) { setDocError(extractErrorMessages(err, `Could not open "${doc.name}". It may have been deleted from the Documents tab or SharePoint.`)) }
+            }}
+          />
+        </div>
+      )}
 
       {data.edited_after_send && (
         <div data-tour="rnd-reqd-edited" style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(234,88,12,0.08)', border: '1px solid rgba(234,88,12,0.25)', color: '#9a3412', fontSize: 12.5 }}>

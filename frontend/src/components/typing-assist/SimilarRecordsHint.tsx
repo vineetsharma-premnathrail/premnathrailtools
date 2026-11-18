@@ -3,12 +3,14 @@
 // "Similar already exists" box for create forms (Item, Vendor). It never blocks
 // saving: it only tells the person that a record with a near-identical name is
 // already there, with a link (new tab, signed record link) to check it first.
+// Items open in a right-side panel beside the form instead (owner, 2026-11-17).
 //
 //   <SimilarRecordsHint kind="item" name={itemName} />
 //   <SimilarRecordsHint kind="vendor" name={form.name} excludeId={vendor?.id} />
 import { useEffect, useState } from 'react'
 import { typingAssistApi, SimilarKind, SimilarMatch } from '@/lib/typingAssistApi'
 import { recordPath } from '@/lib/recordRef'
+import ItemQuickView from '@/components/store/ItemQuickView'
 
 const BASE: Partial<Record<SimilarKind, string>> = {
   item: '/dashboard/store',
@@ -24,6 +26,7 @@ function hrefOf(kind: SimilarKind, m: SimilarMatch): string | null {
 
 export default function SimilarRecordsHint({ kind, name, excludeId }: { kind: SimilarKind; name: string; excludeId?: number | null }) {
   const [matches, setMatches] = useState<SimilarMatch[]>([])
+  const [viewing, setViewing] = useState<SimilarMatch | null>(null)
   const q = name.trim()
 
   useEffect(() => {
@@ -52,13 +55,16 @@ export default function SimilarRecordsHint({ kind, name, excludeId }: { kind: Si
         const label = `${m.code ? `${m.code} · ` : ''}${m.name} (${Math.round(m.score * 100)}%)`
         return (
           <div key={`${m.id}`} style={{ overflowWrap: 'anywhere' }}>
-            {href
+            {kind === 'item'
+              ? <button type="button" onClick={() => setViewing(m)} style={{ padding: 0, border: 0, background: 'none', font: 'inherit', textAlign: 'left', cursor: 'pointer', color: '#92400e', textDecoration: 'underline' }}>{label}</button>
+              : href
               ? <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: '#92400e', textDecoration: 'underline' }}>{label}</a>
               : label}
           </div>
         )
       })}
       <div style={{ marginTop: 2, opacity: 0.85 }}>Check before saving so the same {kind === 'item' ? 'item' : kind === 'vendor' ? 'vendor' : 'record'} is not entered twice. You can still save.</div>
+      {viewing && <ItemQuickView itemId={viewing.id} idRef={viewing.id_ref} onClose={() => setViewing(null)} />}
     </div>
   )
 }

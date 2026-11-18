@@ -100,6 +100,12 @@ def resolve_auto_buyer_id(db, category_code: str | None = None) -> int | None:
     return None
 
 
+# Buyer by category is switched OFF for now (owner, 2026-11-18: "future use karenge"):
+# every requisition line is saved without a buyer and Purchase assigns it by hand.
+# Set True to bring back Procurement > Settings > Buyer responsibility routing.
+BUYER_BY_CATEGORY_ENABLED = False
+
+
 def resolve_line_buyer_id(db, item_type: str | None, category: str | None = None, item_id: int | None = None) -> int | None:
     """The buyer a requisition line goes to: the active buyer of the item's
     Item Master category (Procurement > Settings > Buyer responsibility); the
@@ -110,7 +116,7 @@ def resolve_line_buyer_id(db, item_type: str | None, category: str | None = None
     each item type" and "Default buyer" were removed on 2026-11-14 (owner:
     category-wise only). Old callers pass the item type alone and get None."""
     from app.modules.p2p.buyer_responsibility import category_buyer_id
-    if not (category or item_id):
+    if not BUYER_BY_CATEGORY_ENABLED or not (category or item_id):
         return None
     return category_buyer_id(db, category=category, item_type=item_type, item_id=item_id)
 

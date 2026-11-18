@@ -16,11 +16,19 @@ import { SheetIcon } from '@/components/shared/FormSheet'
 import { Pill, primaryBtnStyle } from '@/components/shared/ui'
 import { REVISION_STATUS_HEX, REVISION_STATUS_LABEL, type RndIntake, type RndRevision } from '@/types/rndIntake'
 
-export default function RequirementReviewBar({ source, recordId, intake, revisions, canReview, onChanged }: {
+const CHANGE_REASON_LABEL: Record<string, string> = {
+  customer_changed: 'Customer changed requirement',
+  bd_correction: 'Correction of BD\'s mistake',
+  other: 'Other',
+}
+
+export default function RequirementReviewBar({ source, recordId, intake, revisions, canReview, onChanged, changes }: {
   source: 'inquiry' | 'tender'
   recordId: number
   intake: RndIntake
   revisions: RndRevision[]
+  /** Old / new values of the fields BD changed in the latest send (the latest movement's `changes`), when the page has them. */
+  changes?: { field: string; label: string; old: string | null; new: string | null }[]
   /** Head, admin or R&D › Requirements › Review (server: my_access.can_review). */
   canReview: boolean
   onChanged: () => void
@@ -32,6 +40,8 @@ export default function RequirementReviewBar({ source, recordId, intake, revisio
   const latest = revisions.find((r) => r.revision_no === intake.current_revision) ?? revisions[revisions.length - 1]
   const status = intake.status
   const canAccept = canReview && status === 'submitted'
+  // R1+ still awaiting review = BD changed a requirement R&D already knew: announce it.
+  const newRevision = status === 'submitted' && !!latest && latest.revision_no > 0
   const hex = REVISION_STATUS_HEX[status]
 
   const accept = async () => {
@@ -88,6 +98,38 @@ export default function RequirementReviewBar({ source, recordId, intake, revisio
         </div>
       )}
 
+      {newRevision && latest && (
+        <div data-tour="rnd-reqd-new-revision" style={{ flexBasis: '100%', padding: '10px 12px', borderRadius: 10, background: 'rgba(37,99,235,0.06)', border: '1px solid rgba(37,99,235,0.2)' }}>
+          <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#1d4ed8' }}>
+            BD sent {latest.revision_code}{latest.submitted_at ? <> on {formatDateTime(latest.submitted_at)}</> : null}
+            {latest.change_reason ? <> · Reason: {CHANGE_REASON_LABEL[latest.change_reason] || latest.change_reason}</> : null}
+          </p>
+          {latest.change_note && <p style={{ margin: '4px 0 0', fontSize: 12.5, color: TEXT.body, whiteSpace: 'pre-wrap' }}>{latest.change_note}</p>}
+          {latest.changed_fields && latest.changed_fields.length > 0 && (
+            <p style={{ margin: '4px 0 0', fontSize: 12.5, color: TEXT.muted }}>Changed: <strong style={{ color: TEXT.body }}>{latest.changed_fields.join(', ')}</strong></p>
+          )}
+          {changes && changes.length > 0 && (
+            <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
+              {changes.map((c) => (
+                <div key={c.field} style={{ fontSize: 12.5 }}>
+                  <div style={{ fontWeight: 600, color: TEXT.body, marginBottom: 3 }}>{c.label}</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 8, alignItems: 'start' }}>
+                    <span style={{ color: '#991b1b', background: 'rgba(220,38,38,0.06)', borderRadius: 6, padding: '3px 8px', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+                      <span style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: TEXT.muted }}>Before </span>{c.old || '—'}
+                    </span>
+                    <span style={{ color: '#166534', background: 'rgba(22,163,74,0.07)', borderRadius: 6, padding: '3px 8px', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+                      <span style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: TEXT.muted }}>Now </span>{c.new || '—'}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {status === 'submitted' && latest?.corrected_at && (
+        <p data-tour="rnd-reqd-corrected" style={{ flexBasis: '100%', margin: 0, fontSize: 12, color: TEXT.muted }}>BD fixed a typo on {formatDateTime(latest.corrected_at)} before acceptance.</p>
+      )}
       <ConfirmDialog
         open={accepting}
         title={`Accept ${intake.revision_code}?`}

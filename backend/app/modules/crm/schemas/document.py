@@ -1,4 +1,6 @@
 from datetime import date, datetime
+from typing import Literal
+
 from pydantic import BaseModel
 
 
@@ -32,6 +34,25 @@ class TechnicalOfferRequestBody(BaseModel):
     # The request goes to the whole R&D team queue (no named engineer).
     response_due_date: date | None = None
     remarks: str | None = None
+    # Why the requirement goes to R&D again. Required once an earlier send exists for the record
+    # ('other' also needs a note); ignored on the first send. Checked in requirement_movement.check_change_reason.
+    change_reason: Literal["customer_changed", "bd_correction", "other"] | None = None
+    change_note: str | None = None
+
+
+class ChangeRequirementBody(BaseModel):
+    """Inquiry "Change requirement" (after the requirement went to R&D). `revision` sends the new
+    text to R&D as the next revision; `correction` fixes a typo in the SAME revision, only
+    while R&D has not accepted it."""
+    mode: Literal["revision", "correction"]
+    product_spec: str
+    # One entry per additional product, in the inquiry's order; None keeps that product's text.
+    item_specs: list[str | None] | None = None
+    change_reason: Literal["customer_changed", "bd_correction", "other"] | None = None
+    change_note: str | None = None
+    response_due_date: date | None = None
+    remarks: str | None = None
+    document_ids: list[int] = []
 
 
 class CrmDocumentUploadSessionPayload(BaseModel):

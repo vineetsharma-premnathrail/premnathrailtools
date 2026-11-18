@@ -71,6 +71,12 @@ class RndRequirementRevision(Base):
     review_remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
     return_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     responded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Why BD sent this revision: customer_changed | bd_correction | other. A BD correction
+    # (BD fixed its own mistake) is stamped corrected_at/corrected_by_id.
+    change_reason: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    change_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    corrected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    corrected_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
     # Teams reminder cadence for a revision nobody has reviewed yet.
     last_reminded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())

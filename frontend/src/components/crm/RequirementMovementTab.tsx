@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { crmApi, rndApi } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
-import { RequirementMovement, RequirementMovementDoc } from '@/types'
+import { RequirementMovement, RequirementMovementDoc, RndRequest, RndRequestQuery } from '@/types'
 import MessageDialog from '@/components/erp/MessageDialog'
 import RndRequestBlock from '@/components/crm/RndRequestBlock'
 import { extractErrorMessages } from '@/lib/validation'
@@ -14,6 +14,68 @@ const cardStyle: React.CSSProperties = {
   border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)',
 }
 const sectionLabel: React.CSSProperties = { fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', margin: '0 0 6px' }
+
+/** The R&D request of the newest send that has one (movements come oldest first from the API). */
+export function latestRndRequest(moves: RequirementMovement[] | null | undefined): RndRequest | null {
+  for (let i = (moves?.length ?? 0) - 1; i >= 0; i--) {
+    const r = moves![i].rnd_request
+    if (r) return r
+  }
+  return null
+}
+
+/** The question R&D asked that BD has not answered yet (null when R&D is not waiting on BD). */
+export function openBdQuestion(request: RndRequest | null | undefined): RndRequestQuery | null {
+  if (!request || request.waiting_on !== 'bd') return null
+  const qs = request.queries || []
+  for (let i = qs.length - 1; i >= 0; i--) if (!qs[i].answered_at && !qs[i].answer) return qs[i]
+  return null
+}
+
+/** Sent to R&D at least once (even if taken back): a new send needs a reason. */
+export function sentToRndBefore(moves: RequirementMovement[] | null | undefined, sentAt?: string | null): boolean {
+  return !!sentAt || (moves?.length ?? 0) > 0
+}
+
+/** Sent to R&D and not taken back: the Customer Requirement is locked in Edit and changed through "Change requirement". */
+export function requirementLockedBySend(moves: RequirementMovement[] | null | undefined, sentAt?: string | null): boolean {
+  // Same rule as the backend: locked only while some send has an R&D request that was not taken back (an older send with no request does not lock).
+  if (moves) return moves.some((m) => !!m.rnd_request && m.rnd_request.status !== 'withdrawn')
+  return !!sentAt
+}
+
+const daysSince = (iso: string | null | undefined) => (iso ? Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)) : 0)
+
+// CRM side: R&D asked BD for more details and is waiting (R&D's clock is paused). The reply
+// button is gated by the same right as "Send Technical Requirement to R&D" (the caller decides).
+export function RndWaitingBanner({ question, canReply, onReply, tourId }: {
+  question: RndRequestQuery
+  canReply: boolean
+  onReply: () => void
+  tourId: string
+}) {
+  const days = daysSince(question.asked_at)
+  return (
+    <div data-tour={tourId} style={{
+      display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 16,
+      padding: '10px 14px', borderRadius: 12, background: 'rgba(124,58,237,0.05)',
+      border: '1px solid rgba(124,58,237,0.25)', borderLeft: '4px solid #7C3AED',
+    }}>
+      <div style={{ minWidth: 0, flex: '1 1 320px' }}>
+        <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#5b21b6' }}>R&amp;D is waiting for your response</p>
+        <p style={{ margin: '6px 0 0', fontSize: 12.5, color: '#1f1108', whiteSpace: 'pre-wrap' }}>{question.remarks}</p>
+        <p style={{ margin: '4px 0 0', fontSize: 11.5, color: '#78716c' }}>
+          Asked by {question.asked_by || 'R&D'} on {formatDateTime(question.asked_at)} · {days === 0 ? 'waiting since today' : `waiting ${days} day${days === 1 ? '' : 's'}`}. R&amp;D&apos;s due date is on hold until you reply.
+        </p>
+      </div>
+      <button type="button" data-tour={`${tourId}-reply`} onClick={onReply} disabled={!canReply}
+        title={canReply ? 'Answer R&D\'s question — R&D gets a new due date' : 'Replying to R&D needs Inquiries & Tenders › Send Technical Requirement (TOR) to R&D › Create in your role. Ask your admin, or ask the BD owner to reply.'}
+        style={{ ...primaryBtnStyle, opacity: canReply ? 1 : 0.5, cursor: canReply ? 'pointer' : 'not-allowed' }}>
+        Reply to R&amp;D
+      </button>
+    </div>
+  )
+}
 
 // Every "Send Technical Requirement to R&D" for an inquiry/tender, newest first:
 // what R&D received, which documents went with it, and what changed since the

@@ -618,7 +618,16 @@ def _p2p_approver_flags(db: Session, user: User) -> tuple[bool, bool]:
 @router.get("/me", response_model=CurrentUserResponse)
 async def get_current_user_info(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Get current logged-in user info."""
+    from app.modules.organization.services import approval_engine
+
     is_pr_approver, is_po_approver = _p2p_approver_flags(db, user)
+    # Only the Sidebar link depends on it: a bad workflow row must never break sign-in.
+    try:
+        is_approver = approval_engine.is_approver(db, user)
+    except Exception:
+        logger.exception("is_approver failed for user %s", user.id)
+        db.rollback()
+        is_approver = False
     return CurrentUserResponse(
         id=user.id,
         email=user.email,
@@ -645,6 +654,7 @@ async def get_current_user_info(user: User = Depends(get_current_user), db: Sess
         is_project_manager=user.is_project_manager,
         is_store_manager=user.is_store_manager,
         is_purchase_manager=user.is_purchase_manager,
+        is_approver=is_approver,
         is_pr_approver=is_pr_approver,
         is_po_approver=is_po_approver,
         notifications_enabled=user.notifications_enabled,

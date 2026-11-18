@@ -24,7 +24,7 @@ from app.modules.p2p.models.p2p_request import (
 from app.modules.p2p import purpose as pr_purpose
 from app.modules.p2p.models.p2p_request_approval import P2PRequestApproval
 from app.modules.p2p.models.p2p_request_po_approver import P2PRequestPOApprover
-from app.modules.p2p.item_link import item_snapshot, purchasable_item
+from app.modules.p2p.item_link import item_snapshot, manual_line, purchasable_item
 from app.modules.p2p.models.p2p_request_item import P2PRequestItem
 from app.modules.p2p.models.p2p_request_attachment import P2PRequestAttachment, P2P_ATTACHMENT_DOC_TYPES
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder
@@ -669,6 +669,7 @@ async def create_p2p_request(
         status="draft" if draft else "submitted",
     )
     _apply_account_assignment(db, pr, payload)
+    _apply_project_head(db, pr, payload, draft=draft)
     _default_label(pr)
     db.add(pr)
     db.flush()
@@ -740,6 +741,25 @@ def _requirement_type(db: Session, payload: P2PRequestCreate) -> str | None:
     return rules["requirement_type"] if rules else None
 
 
+# Purposes whose requisition names a project on the form; its Project Head is picked there too.
+PROJECT_HEAD_PURPOSES = ("customer_order", "machine_project")
+
+
+def _apply_project_head(db: Session, pr: P2PRequest, payload: P2PRequestCreate, *, draft: bool) -> None:
+    """The Project Head picked on the PR form (2026-11-18): the approval workflow's "Project head"
+    stage (Person named on the record, field project_head_id, skipped when none is picked) sends
+    the approval and its notification to that person. The web form requires it; the server
+    doesn't, so the mobile app and internal callers that don't send it yet keep working."""
+    if pr.purpose not in PROJECT_HEAD_PURPOSES or payload.project_head_id is None:
+        pr.project_head_id, pr.project_head_name = None, None
+        return
+    head = db.get(User, payload.project_head_id)
+    if head is None or not head.is_active:
+        raise HTTPException(status_code=422, detail=(
+            f"The Project Head picked (user #{payload.project_head_id}) is not an active user - pick another Project Head."))
+    pr.project_head_id, pr.project_head_name = head.id, head.name or head.email
+
+
 def _assign_line_buyers(pr: P2PRequest) -> None:
     """A requisition with no category of its own (LINE_CATEGORY) is assigned to
     the buyer of its first line that has one, so lists, data scope and the RFQ
@@ -768,33 +788,36 @@ def _validate_pr_payload(db: Session, payload: P2PRequestCreate, *, draft: bool,
         raise HTTPException(status_code=400, detail="Project Type must be 'Existing project' or 'New project'.")
     if payload.purpose and payload.purpose not in P2P_PURPOSES:
         raise HTTPException(status_code=400, detail=f"Purpose must be one of: {', '.join(P2P_PURPOSES.values())}.")
-    items = [i for i in payload.items if i.store_item_id] if draft else list(payload.items)
+    # A draft keeps the lines that hold an item (picked, or typed by hand).
+    items = [i for i in payload.items if i.store_item_id or (i.item_name or "").strip()] if draft else list(payload.items)
     # What the lines say about their project follows the purpose's line project
     # mode (Procurement › Settings › Purpose rules): overhead = every line
     # Inhouse, service = every line belongs to the header's machine project.
     pr_purpose.apply_line_project_mode(db, payload.purpose, items)
     if not draft and not items:
         raise HTTPException(status_code=400, detail="Add at least one item line before submitting the requisition.")
-    # Every line is an Item Master item (2026-10-11 — never a typed name) and
-    # must say whether it's for the Project or Inhouse (2026-09-30) — Store
+    # A line is an Item Master item (2026-10-11), or — for now (2026-11-18) — a
+    # typed item that Store gives an item code on the GRN (item_link.manual_line).
+    # It must say whether it's for the Project or Inhouse (2026-09-30) — Store
     # issue/consumption and reporting split on it downstream.
     lines = []
     for idx, item in enumerate(items, start=1):
-        master = purchasable_item(db, item.store_item_id, f"Line {idx}")
+        master = (purchasable_item(db, item.store_item_id, f"Line {idx}") if item.store_item_id
+                  else manual_line(db, item, f"Line {idx}"))
         if not draft and item.project_inhouse not in ("Project", "Inhouse"):
             raise HTTPException(
                 status_code=400,
-                detail=f"Line {idx} ({master.item_code} {master.item_name}): choose Project or Inhouse.",
+                detail=f"Line {idx} ({(master.item_code + ' ') if master.item_code else ''}{master.item_name}): choose Project or Inhouse.",
             )
         if not item.quantity or item.quantity <= 0:
-            raise HTTPException(status_code=400, detail=f"Line {idx} ({master.item_code} {master.item_name}): quantity must be more than 0.")
+            raise HTTPException(status_code=400, detail=f"Line {idx} ({(master.item_code + ' ') if master.item_code else ''}{master.item_name}): quantity must be more than 0.")
         lines.append((item, master))
 
     if not draft and payload.purpose and check_category:
         # A new (or draft being submitted) requisition's item types must fit its
         # purpose; older / already-submitted ones are not re-judged.
         for idx, (_line, master) in enumerate(lines, start=1):
-            why = pr_purpose.item_type_problem(payload.purpose, f"Line {idx}", master.item_code, master.item_name, master.item_type, db=db)
+            why = pr_purpose.item_type_problem(payload.purpose, f"Line {idx}", master.item_code or "new item", master.item_name, master.item_type, db=db)
             if why:
                 raise HTTPException(status_code=422, detail=why)
     if not draft and payload.purpose:
@@ -834,7 +857,8 @@ def _sync_pr_lines(db: Session, pr: P2PRequest, lines: list[tuple], *, draft: bo
         if row is None:
             row = P2PRequestItem(p2p_request_id=pr.id)
             pr.items.append(row)
-        if pr.category_code == LINE_CATEGORY and (row.buyer_id is None or row.store_item_id != master.id):
+        if pr.category_code == LINE_CATEGORY and (row.buyer_id is None or row.store_item_id != master.id
+                                                  or (master.id is None and row.category != master.category)):
             # A new line, or its item changed: the buyer of the item's category,
             # else of its type, else the default buyer.
             row.buyer_id = resolve_line_buyer_id(db, master.item_type, master.category, item_id=master.id)
@@ -842,6 +866,7 @@ def _sync_pr_lines(db: Session, pr: P2PRequest, lines: list[tuple], *, draft: bo
             setattr(row, field, value)
         # Make comes from the Item Master only — a different brand is a
         # different item code, never a free-text override on the PR line.
+        # (A manual line's make is what the requester typed.)
         row.make = master.make
         row.quantity = item.quantity
         row.project_inhouse = item.project_inhouse
@@ -942,6 +967,7 @@ async def edit_p2p_request(
     old_purpose = pr.purpose
     pr.purpose = payload.purpose
     pr.project_type = pr_purpose.project_type_for(payload.purpose) if payload.purpose else payload.project_type
+    _apply_project_head(db, pr, payload, draft=draft)
     _default_label(pr)
     pr.required_date = payload.required_date
     # Not asked on the form any more: kept while the purpose is unchanged, else the new purpose's usual one.
@@ -1649,9 +1675,8 @@ def _linked_store_item(db: Session, item: P2PRequestItem) -> StoreItem | None:
     return db.get(StoreItem, item.store_item_id) if item.store_item_id else None
 
 
-_UNLINKED_LINE = ("'{name}' was raised before PR lines were picked from the Item Master and isn't linked to an item, "
-                  "so its store stock can't be checked or issued. Send it to procurement; link it to its item on the "
-                  "PO (Link to Item Master) before receiving it.")
+_UNLINKED_LINE = ("'{name}' isn't an Item Master item yet (typed by hand on the requisition), so its store stock can't "
+                  "be checked or issued. Send it to procurement; Store gives it an item code when the goods arrive (GRN).")
 
 
 def _stock_balance_info(db: Session, item_id: int, location_id: int | None = None) -> P2PRequestItemStockLocationInfo:

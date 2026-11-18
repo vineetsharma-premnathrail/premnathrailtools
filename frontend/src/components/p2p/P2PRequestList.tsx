@@ -206,7 +206,7 @@ export default function P2PRequestList({ statuses, emptyLabel, context, queue, o
   const HIDEABLE: Record<string, string> = { Category: 'category', Project: 'project', 'Required By': 'required_by', Priority: 'priority' }
   // The preview draws every column (hidden ones dimmed, with a toggle); normal use drops the hidden ones.
   const showCol = (label: string) => !HIDEABLE[label] || vis.preview || vis.showColumn('requisitions', HIDEABLE[label])
-  const columns = ['PR No.', 'Category', 'Project', 'Required By', 'Priority'].filter(showCol).concat([...(showPoValue ? ['PO Value'] : []), 'Status', ...(showPoValue ? [''] : [])])
+  const columns = ['PR No.', 'Created Date', 'Project', 'Required By', 'Priority'].filter(showCol).concat([...(showPoValue ? ['PO Value'] : []), 'Status', ...(showPoValue ? [''] : [])])
   // Engine-routed POs: the backend's can_decide; older in-flight POs: the old role check.
   const enginePo = (pr: P2PRequest) => pr.engine_approval?.entity_type === 'p2p_purchase_order' && pr.engine_approval.status === 'pending'
   const canApprovePoInline = (pr: P2PRequest) =>
@@ -370,7 +370,8 @@ export default function P2PRequestList({ statuses, emptyLabel, context, queue, o
               return (
               <tr key={pr.id} onClick={() => router.push(detailHref(pr))} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
                 <td style={{ padding: '10px 8px', fontSize: 13, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{pr.p2p_number}</td>
-                <VisTd vis={vis} table="requisitions" k="category" title={pr.category_label || pr.category_code || undefined} style={{ padding: '10px 8px', fontSize: 13, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{clip(pr.category_label || pr.category_code)}</VisTd>
+                {/* Created Date (owner, 2026-11-18): the day the requisition was raised. */}
+                <td style={{ padding: '10px 8px', fontSize: 12.5, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{formatDate(pr.request_date)}</td>
                 <VisTd vis={vis} table="requisitions" k="project" data-fit-clamp style={{ padding: '10px 8px', fontSize: 13, color: TEXT.secondary }}><div title={pr.project_label || undefined}>{clip2(pr.project_label)}</div></VisTd>
                 <VisTd vis={vis} table="requisitions" k="required_by" style={{ padding: '10px 8px', fontSize: 12.5, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{formatDate(pr.required_date)}</VisTd>
                 <VisTd vis={vis} table="requisitions" k="priority" style={{ padding: '10px 8px', fontSize: 13, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{pr.priority ? priorityLabel(pr.priority) : '—'}</VisTd>

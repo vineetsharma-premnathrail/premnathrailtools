@@ -172,7 +172,7 @@ register_direct(
 register_direct(
     "crm", "rnd_request_details_asked", "R&D needs more details",
     "The BD person who sent the requirement",
-    "R&D asks for more details on a requirement you sent",
+    "R&D asks for more details on a requirement you sent — reply to R&D on the record (no re-send needed)",
 )
 register_direct(
     "crm", "rnd_request_responded", "R&D responded to your request",
@@ -341,4 +341,17 @@ register_direct(
 register_direct(
     "rnd", "rnd_technical_offer_returned", "Your Technical Offer was returned", "The person who uploaded the offer",
     "the R&D head returns an uploaded Technical Offer for correction", default_channels=BELL, kind="info",
+)
+# R&D <-> BD questions and requirement corrections (2026-11-17).
+register_direct(
+    "rnd", "rnd_query_answered", "BD replied to R&D's question",
+    "The R&D engineer who asked, the assigned engineer, or the R&D head(s)",
+    "BD answers a question R&D asked about a requirement, with R&D's new due date",
+    default_channels=BELL_TEAMS, kind="assignment",
+)
+register_direct(
+    "rnd", "rnd_requirement_corrected", "BD corrected a requirement before you accepted it",
+    "The R&D head(s)",
+    "BD fixes a mistake in the Customer Requirement of a revision that is still waiting for review",
+    default_channels=BELL_TEAMS, kind="assignment",
 )

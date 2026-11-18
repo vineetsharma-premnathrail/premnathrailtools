@@ -527,8 +527,31 @@ export const crmApi = {
     })
     return data
   },
+  /** Customer Requirement after a send (2026-11-17). mode 'revision' = new revision sent to R&D
+   *  (reason + due date required); 'correction' = typo fix in the same revision, only before R&D accepts it.
+   *  item_specs follow the order of the inquiry's additional products. */
+  changeInquiryRequirement: async (id: number, payload: {
+    mode: 'revision' | 'correction'; product_spec: string; item_specs: (string | null)[]
+    change_reason?: import('@/types').RequirementChangeReason; change_note?: string
+    response_due_date?: string; remarks?: string; document_ids?: number[]
+  }) => {
+    const { data } = await apiClient.post(`/crm/inquiries/${id}/change-requirement`, payload, { activityLabel: 'Changing requirement', timeout: 120000 })
+    return data
+  },
   getInquiryAudit: async (id: number) => {
     const { data } = await apiClient.get(`/crm/inquiries/${id}/audit`)
+    return data
+  },
+  /** BD answers R&D's question on the same request (no revision): answer, how it was given, R&D's new due date. */
+  answerRndQuery: async (requestId: number, queryId: number, p: { answer: string; channel: import('@/types').RndQueryChannel; due_date: string; files?: File[] }): Promise<RndRequest> => {
+    const form = new FormData()
+    form.append('answer', p.answer)
+    form.append('channel', p.channel)
+    form.append('due_date', p.due_date)
+    for (const f of p.files || []) form.append('files', f)
+    const { data } = await apiClient.post(`/crm/rnd-requests/${requestId}/queries/${queryId}/answer`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' }, activityLabel: 'Replying to R&D', timeout: 600000,
+    })
     return data
   },
   listRndAssignees: async (): Promise<RndAssignee[]> => {
@@ -3396,9 +3419,12 @@ export const rndApi = {
     return data
   },
   /** `ask_details`: a question to BD in `remarks` — the request stays open (no files / delay reason). */
-  respondToRequest: async (requestId: number, payload: { remarks?: string; delay_reason?: string; files?: File[]; ask_details?: boolean }): Promise<RndRequest> => {
+  respondToRequest: async (requestId: number, payload: { remarks?: string; delay_reason?: string; files?: File[]; ask_details?: boolean; bd_told_channel?: string; bd_told_note?: string }): Promise<RndRequest> => {
     const form = new FormData()
     if (payload.remarks) form.append('remarks', payload.remarks)
+    // Final response while a question to BD is open: how BD gave the details off the portal.
+    if (payload.bd_told_channel) form.append('bd_told_channel', payload.bd_told_channel)
+    if (payload.bd_told_note) form.append('bd_told_note', payload.bd_told_note)
     if (payload.ask_details) form.append('ask_details', 'true')
     if (payload.delay_reason) form.append('delay_reason', payload.delay_reason)
     for (const f of payload.files || []) form.append('files', f)

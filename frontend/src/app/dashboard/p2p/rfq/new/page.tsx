@@ -47,6 +47,9 @@ export default function NewRfqPage() {
   const [loadingPr, setLoadingPr] = useState(false)
   const [prLoadError, setPrLoadError] = useState('')
   const [unticked, setUnticked] = useState<number[]>([])  // lines the buyer took off this RFQ (all ready lines start ticked)
+  // Lines with no buyer start unticked: the buyer decides they are theirs by ticking them (owner, 2026-11-18);
+  // sending the RFQ makes them that buyer's lines.
+  const [claimed, setClaimed] = useState<number[]>([])
   const [prId, setPrId] = useState('')
   useEffect(() => { if (linkedPrId) setPrId(String(linkedPrId)) }, [linkedPrId])
 
@@ -71,10 +74,11 @@ export default function NewRfqPage() {
   // form, and until the settings default quote date is in (else an untouched form looks changed).
   const [settingsReady, setSettingsReady] = useState(false)
   const draft = useFormDraft(initialPrId || !settingsReady ? null : 'p2p-rfq-new',
-    { prId, pickedIds, unticked, quoteDueDate, singleQuotationReason, lateDeliveryClause, inviteMessage },
+    { prId, pickedIds, unticked, claimed, quoteDueDate, singleQuotationReason, lateDeliveryClause, inviteMessage },
     (d) => {
       setPrId(d.prId || ''); setPickedIds(Array.isArray(d.pickedIds) ? d.pickedIds : [])
       setUnticked(Array.isArray(d.unticked) ? d.unticked : [])
+      setClaimed(Array.isArray(d.claimed) ? d.claimed : [])
       if (d.quoteDueDate) { dueDateTouched.current = true; setQuoteDueDate(d.quoteDueDate) }
       setSingleQuotationReason(d.singleQuotationReason || ''); setLateDeliveryClause(d.lateDeliveryClause || ''); setInviteMessage(d.inviteMessage || '')
     })
@@ -85,9 +89,13 @@ export default function NewRfqPage() {
     // several buyers work one requisition, and it stays open while any line is open).
     if (!holdsMyLines) {
       Promise.resolve().then(() => setPrListError("The requisitions you can quote come from your My Lines, and your role has no 'View' on Procurement › Purchase Requisitions › My Lines. Ask an admin to add it in Organization › Role & Permissions."))
-    } else p2pApi.myLines({ limit: 500 }).then((res) => {
+    } else Promise.all([
+      p2pApi.myLines({ limit: 500 }),
+      // Lines nobody buys yet: any buyer may take them on their RFQ (2026-11-18).
+      p2pApi.myLines({ buyer_id: 0, limit: 500 }).catch(() => ({ rows: [] as MyLineRow[] })),
+    ]).then(([mine, unassigned]) => {
       const byPr = new Map<number, { id: number; p2p_number: string; purpose_label: string | null; lines: number }>()
-      for (const r of res.rows) {
+      for (const r of [...mine.rows, ...unassigned.rows]) {
         if (!(r.open_to_order > 0) || r.state !== 'to_quote') continue
         const cur = byPr.get(r.p2p_request_id) || { id: r.p2p_request_id, p2p_number: r.p2p_number, purpose_label: r.purpose_label, lines: 0 }
         cur.lines += 1
@@ -111,7 +119,10 @@ export default function NewRfqPage() {
     Promise.resolve().then(() => { if (!cancelled) { setLoadingPr(true); setPrLoadError('') } })
     Promise.all([
       p2pApi.get(Number(prId)),
-      holdsMyLines ? p2pApi.myLines({ p2p_request_id: Number(prId), limit: 500 }).then((r) => r.rows).catch(() => null) : Promise.resolve(null),
+      holdsMyLines ? Promise.all([
+        p2pApi.myLines({ p2p_request_id: Number(prId), limit: 500 }),
+        p2pApi.myLines({ p2p_request_id: Number(prId), buyer_id: 0, limit: 500 }).catch(() => ({ rows: [] as MyLineRow[] })),
+      ]).then(([a, b]) => [...a.rows, ...b.rows]).catch(() => null) : Promise.resolve(null),
     ]).then(([pr, rows]) => {
       if (cancelled) return
       setSelectedPr(pr); setLineRows(rows)
@@ -125,7 +136,7 @@ export default function NewRfqPage() {
   useEffect(() => {
     const pr = selectedPr
     // Matched by Item Master id (info records), never by item name.
-    const buyLines = (pr?.items || []).filter((it) => it.fulfillment_status === 'sent_to_procurement' && it.store_item_id && (it.buyer_id ?? pr?.assigned_buyer_id) === user?.id).slice(0, 8)
+    const buyLines = (pr?.items || []).filter((it) => it.fulfillment_status === 'sent_to_procurement' && it.store_item_id && [user?.id, null, undefined].includes(it.buyer_id ?? pr?.assigned_buyer_id)).slice(0, 8)
     const names = buyLines.map((it) => it.item_name)
     if (!names.length) { Promise.resolve().then(() => setSuggestions([])); return }
     let cancelled = false
@@ -162,16 +173,18 @@ export default function NewRfqPage() {
       const row = rowById.get(it.id)
       const buyerId = it.buyer_id ?? selectedPr?.assigned_buyer_id
       const open = row ? row.open_to_order : Math.max(0, it.quantity - (it.issued_qty || 0) - (it.short_closed_qty || 0))
+      const claim = !buyerId  // nobody buys it yet: this buyer may take it
       let why: string | null = null
       if (it.fulfillment_status === 'pending') why = 'Waiting for the stock check'
-      else if (buyerId !== user?.id) why = buyerId ? `Bought by ${it.buyer_name || selectedPr?.assigned_buyer_name || 'another buyer'}` : 'No buyer yet - ask the Purchase head to assign one'
+      else if (!claim && buyerId !== user?.id) why = `Bought by ${it.buyer_name || selectedPr?.assigned_buyer_name || 'another buyer'}`
       else if (!(open > 0)) why = 'Nothing left to order'
       else if (row && row.state !== 'to_quote') why = row.state_label
-      return { it, open, why }
+      return { it, open, why, claim }
     })
   const readyLines = lineList.filter((l) => !l.why)
-  const chosenLines = readyLines.filter((l) => !unticked.includes(l.it.id))
-  const toggleLine = (id: number) => setUnticked((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]))
+  const isTicked = (l: { it: { id: number }; claim: boolean }) => (l.claim ? claimed.includes(l.it.id) : !unticked.includes(l.it.id))
+  const chosenLines = readyLines.filter(isTicked)
+  const toggleLine = (id: number, claim = false) => (claim ? setClaimed : setUnticked)((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]))
   const picked = pickedIds
     .map((id) => vendorMaster.find((v) => v.id === id))
     .filter((v): v is ProcurementVendor => !!v)
@@ -187,7 +200,7 @@ export default function NewRfqPage() {
   const validate = (): string | null => {
     if (!prId) return 'Select the Purchase Requisition this RFQ is for.'
     if (loadingPr || !selectedPr) return 'The requisition is still loading. Wait a moment and send again.'
-    if (!readyLines.length) return 'None of your lines on this requisition is ready for an RFQ. See the reasons under Lines for this RFQ; lines still waiting for the stock check, or bought by another buyer, are not yours to quote.'
+    if (!readyLines.length) return 'No line of this requisition is ready for you to quote. See the reasons under Lines for this RFQ; lines still waiting for the stock check, or bought by another buyer, cannot go on your RFQ.'
     if (!chosenLines.length) return 'Tick at least one line for this RFQ.'
     if (!picked.length) return 'Pick at least one vendor to ask for a quotation (add new vendors in Procurement › Vendors).'
     if (missingEmail.length) return `No email in the vendor master for ${missingEmail.map((v) => v.name).join(', ')} — add it under Procurement › Vendors, or remove ${missingEmail.length === 1 ? 'that vendor' : 'those vendors'} from this RFQ.`
@@ -261,24 +274,26 @@ export default function NewRfqPage() {
               )}
             </div>
             {!initialPrId && prListError && <p style={{ ...sheetHint, color: '#b91c1c' }}>{prListError}</p>}
-            {!initialPrId && !prListError && prOptions.length === 0 && <p style={sheetHint}>None of your requisition lines is waiting for an RFQ. Lines appear here once an approved requisition is assigned to you and its stock check is done.</p>}
+            {!initialPrId && !prListError && prOptions.length === 0 && <p style={sheetHint}>No requisition line is waiting for an RFQ. Lines appear here once a requisition is approved and its stock check is done — your own lines and the lines nobody buys yet.</p>}
             {prLoadError && <p style={{ ...sheetHint, color: '#b91c1c' }}>{prLoadError}</p>}
             {selectedPr && <p style={sheetHint}>{selectedPr.project_label || 'No project specified'}</p>}
             {selectedPr && (
               <div data-tour="rfq-new-lines" style={{ marginTop: 12, padding: '10px 12px', borderRadius: 10, background: SHEET.SOFT, border: `1px solid ${SHEET.LINE}` }}>
                 <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: SHEET.MUTED, margin: '0 0 6px' }}>Lines for this RFQ</p>
                 {lineList.length === 0 && <p style={{ fontSize: 13, color: SHEET.BODY, margin: 0 }}>This requisition has no lines to buy.</p>}
-                {readyLines.map(({ it, open }) => (
+                {readyLines.map((l) => { const { it, open, claim } = l; return (
                   <label key={it.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: SHEET.BODY, margin: '0 0 6px', cursor: busy ? 'default' : 'pointer' }}>
-                    <input type="checkbox" disabled={busy} checked={!unticked.includes(it.id)} onChange={() => toggleLine(it.id)} style={{ marginTop: 3 }} />
+                    <input type="checkbox" disabled={busy} checked={isTicked(l)} onChange={() => toggleLine(it.id, claim)} style={{ marginTop: 3 }} />
                     <span>
                       {it.item_code && <strong>{it.item_code} — </strong>}{it.item_name} — <strong>{open.toLocaleString('en-IN', { maximumFractionDigits: 3 })} {it.unit || ''}</strong>
+                      {it.category && <span style={{ color: SHEET.MUTED }}> · {it.category}</span>}
+                      {claim && <span style={{ display: 'block', fontSize: 12, color: '#b45309' }}>No buyer yet — tick it if you buy this; sending the RFQ makes it your line.</span>}
                       {((it.issued_qty || 0) > 0 || (it.short_closed_qty || 0) > 0) && (
                         <span style={{ color: SHEET.MUTED }}> (of {it.quantity}{(it.issued_qty || 0) > 0 ? `; ${it.issued_qty} issued from stock` : ''}{(it.short_closed_qty || 0) > 0 ? `; ${it.short_closed_qty} written off` : ''})</span>
                       )}
                     </span>
                   </label>
-                ))}
+                ) })}
                 {lineList.filter((l) => l.why).map(({ it, why }) => (
                   <p key={it.id} style={{ fontSize: 12.5, color: SHEET.MUTED, margin: '0 0 4px', paddingLeft: 24 }}>
                     {it.item_code && `${it.item_code} — `}{it.item_name}: {why}

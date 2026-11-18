@@ -41,7 +41,7 @@ const SHORT_STATUS: Record<string, string> = {
 const RED = '#b91c1c', ORANGE = '#c2410c', GREEN = '#15803d', BLUE = '#1d4ed8', PURPLE = '#6d28d9', GREY = '#78716c'
 const dayNo = (iso: string) => Math.floor(Date.parse(iso.slice(0, 10)) / 86400000)
 const todayNo = () => { const d = new Date(); return Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86400000) }
-function shortResponse(q: RndRequest): { text: string; color: string } {
+function shortResponse(q: RndRequest, waitingBd = false): { text: string; color: string } {
   if (q.status === 'superseded') return { text: 'Re-sent', color: GREY }
   if (q.status === 'closed') return { text: 'Closed', color: GREY }
   if (q.status === 'withdrawn') return { text: 'Taken back', color: GREY }
@@ -51,7 +51,8 @@ function shortResponse(q: RndRequest): { text: string; color: string } {
     const late = q.responded_at ? dayNo(q.responded_at) - dayNo(q.due_date) : 0
     return late > 0 ? { text: `Done · ${late}d late`, color: ORANGE } : { text: 'Done on time', color: GREEN }
   }
-  if (q.queries && q.queries.length > 0) return { text: 'Query raised', color: PURPLE }
+  // R&D asked BD for details: the clock is paused, never overdue while BD owes the answer.
+  if (waitingBd || q.waiting_on === 'bd') return { text: 'Waiting for BD', color: PURPLE }
   const left = dayNo(q.due_date) - todayNo()
   if (left < 0) return { text: `${-left}d late`, color: RED }
   if (left === 0) return { text: 'Due today', color: ORANGE }
@@ -106,7 +107,7 @@ export default function RndRequirementsPage() {
   const pendingResend = rows.filter((r) => r.edited_after_send).length
   const toReview = rows.filter((r) => r.needs_my_review).length
   const awaitingMe = rows.filter((r) => r.status === 'accepted' && r.rnd_request?.status === 'open' && (r.rnd_request.assigned_to_id == null ? r.can_respond : r.rnd_request.assigned_to_id === user?.id))
-  const overdueMine = awaitingMe.filter((r) => r.rnd_request?.is_late).length
+  const overdueMine = awaitingMe.filter((r) => r.rnd_request?.is_late && !r.waiting_on_bd && r.rnd_request?.waiting_on !== 'bd').length
 
   return (
     <div>
@@ -199,6 +200,16 @@ export default function RndRequirementsPage() {
                           Review
                         </span>
                       )}
+                      {r.new_revision && (
+                        <span data-tour="rnd-req-new-revision-pill" title="BD sent a new revision (changed requirement) — open it to see what changed" style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 6, background: 'rgba(234,88,12,0.12)', color: '#c2410c' }}>
+                          New revision
+                        </span>
+                      )}
+                      {r.waiting_on_bd && (
+                        <span data-tour="rnd-req-with-bd-pill" title="R&D asked BD for details — R&D's due date is paused until BD replies" style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 6, background: 'rgba(124,58,237,0.12)', color: '#6d28d9' }}>
+                          With BD
+                        </span>
+                      )}
                     </td>
                     <VisTd vis={vis} table="requirements" k="revision" style={{ ...cellStyle, whiteSpace: 'nowrap' }}>
                       {r.revision_code ? `R${r.revision_code.split('-R').pop()}` : '—'}
@@ -217,9 +228,9 @@ export default function RndRequirementsPage() {
                     <VisTd vis={vis} table="requirements" k="rnd_response" style={{ ...cellStyle, whiteSpace: 'nowrap' }}>
                       {r.rnd_request ? (
                         <>
-                          {(() => { const st = shortResponse(r.rnd_request); return <div style={{ fontWeight: 600, color: st.color }}>{st.text}</div> })()}
+                          {(() => { const st = shortResponse(r.rnd_request, !!r.waiting_on_bd); return <div style={{ fontWeight: 600, color: st.color }}>{st.text}</div> })()}
                           <div style={{ fontSize: 11.5, color: TEXT.muted, marginTop: 2 }}>
-                            {r.rnd_request.assigned_to_id == null ? 'Team' : r.rnd_request.assigned_to_id === user?.id ? 'You' : (r.rnd_request.assigned_to || '').split(' ')[0]} · {shortDate(r.rnd_request.due_date)}
+                            {r.rnd_request.assigned_to_id == null ? 'Team' : r.rnd_request.assigned_to_id === user?.id ? 'You' : (r.rnd_request.assigned_to || '').split(' ')[0]} · {r.waiting_on_bd || r.rnd_request.waiting_on === 'bd' ? 'due paused' : shortDate(r.rnd_request.due_date)}
                           </div>
                         </>
                       ) : <span style={{ fontSize: 12, color: TEXT.muted }}>Not assigned</span>}

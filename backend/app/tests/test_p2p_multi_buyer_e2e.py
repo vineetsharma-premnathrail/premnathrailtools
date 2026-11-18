@@ -508,10 +508,10 @@ def test_my_lines_own_lines_for_a_buyer_and_everything_for_the_head(client, db, 
     assert all(r["buyer_id"] == s["a"].id and r["state"] == "to_quote" and r["open_to_order"] > 0 for r in own_a.json()["rows"])
     assert "unit_price" not in own_a.text
     assert [r["pr_item_id"] for r in client.get(MY_LINES, headers=_h(s["b"])).json()["rows"]] == [s["l2"]]
-    # A buyer cannot ask for another buyer's lines or for everything (403 says which grant is missing).
+    # Since 2026-11-18 every buyer (Create on R.F.Q.) sees another buyer's lines and everything, like the head.
     other = client.get(MY_LINES, params={"buyer_id": s["b"].id}, headers=_h(s["a"]))
-    assert other.status_code == 403 and "All buyers" in other.json()["detail"]
-    assert client.get(MY_LINES, params={"all": "true"}, headers=_h(s["a"])).status_code == 403
+    assert other.status_code == 200 and [r["pr_item_id"] for r in other.json()["rows"]] == [s["l2"]]
+    assert client.get(MY_LINES, params={"all": "true"}, headers=_h(s["a"])).status_code == 200
     # The head (explicit All buyers' lines grant) sees every buyer, and can filter one.
     head = _user(db, HEAD, name="Hari Purchase Head")
     every = client.get(MY_LINES, params={"all": "true"}, headers=_h(head)).json()

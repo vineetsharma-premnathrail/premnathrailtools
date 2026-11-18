@@ -13,7 +13,7 @@ import { sampleContact, sampleInquiries, sampleOrganizations } from '@/lib/crmPr
 import { crmApi } from '@/lib/api'
 import { recordVisit } from '@/lib/crmShortcuts'
 import { formatDate, formatDateTime } from '@/lib/format'
-import { Inquiry, Tender, Organization, OrgContact, QuotationItem, QuotationLineItem, CrmActivity, CrmDocument, CrmStageLogEntry, RndRequestAssignment, CrmQuotationProduct, CrmQuotationApplication, CrmQuotationLookup } from '@/types'
+import { Inquiry, Tender, Organization, OrgContact, QuotationItem, QuotationLineItem, CrmActivity, CrmDocument, CrmStageLogEntry, RndRequestAssignment, CrmQuotationProduct, CrmQuotationApplication, CrmQuotationLookup, RequirementMovement } from '@/types'
 import type { CrmOfferV2, CrmRndRequirement } from '@/types/rndIntake'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
@@ -27,6 +27,9 @@ import ActivityViewDialog from '@/components/crm/ActivityViewDialog'
 import MomExportDialog from '@/components/crm/MomExportDialog'
 import TechnicalOfferPickerDialog from '@/components/crm/TechnicalOfferPickerDialog'
 import RndIntakeCard from '@/components/crm/RndIntakeCard'
+import { RndWaitingBanner, latestRndRequest, openBdQuestion, sentToRndBefore, requirementLockedBySend } from '@/components/crm/RequirementMovementTab'
+import RndReplySheet from '@/components/crm/RndReplySheet'
+import ChangeRequirementSheet from '@/components/crm/ChangeRequirementSheet'
 import BdTechnicalOffers from '@/components/crm/BdTechnicalOffers'
 import ManagedDocumentPanel from '@/components/shared/ManagedDocumentPanel'
 import QuotationStatusBar from '@/components/crm/QuotationStatusBar'
@@ -88,6 +91,11 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
   // R&D ID, revision and review state of the requirement sent to R&D (null = never sent / not visible to me).
   const [rnd, setRnd] = useState<CrmRndRequirement | null>(null)
   const loadRnd = () => crmApi.getRndRequirement('inquiry', inquiryId).then(setRnd).catch(() => setRnd(null))
+  // Every send with its R&D request: shows whether R&D waits on BD, and whether the requirement was sent (locked in Edit).
+  const [moves, setMoves] = useState<RequirementMovement[] | null>(null)
+  const loadMoves = () => crmApi.getInquiryRequirementMovements(inquiryId).then(setMoves).catch(() => setMoves(null))
+  const [showReply, setShowReply] = useState(false)
+  const [showChange, setShowChange] = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -109,6 +117,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
       }
       crmApi.getInquirySpecRevisions(inquiryId, true).then(setRevisions).catch(() => setRevisions([]))
       loadRnd()
+      loadMoves()
     } catch (err) {
       setError(extractErrorMessages(err, 'Inquiry not found.'))
     } finally {
@@ -183,6 +192,14 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
     !inquiry.product_spec
   )
 
+  // Sent before (even if taken back): every new send says why. Sent and not taken back: Customer Requirement is
+  // changed only through "Change requirement".
+  const sentBefore = sentToRndBefore(moves, inquiry?.technical_offer_sent_at)
+  const requirementLocked = requirementLockedBySend(moves, inquiry?.technical_offer_sent_at)
+  const latestRequest = latestRndRequest(moves)
+  const bdQuestion = openBdQuestion(latestRequest)
+  const canChangeRequirement = canSendTor && canEditRecord && requirementLocked
+
   const openTorPicker = () => {
     if (missingRequirementDetails) {
       setTorError('Please fill Product and Customer Requirement (click Edit) before sending the Technical Requirement to R&D — otherwise R&D gets a document with no requirement details.')
@@ -190,6 +207,14 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
     }
     setTorError('')
     setShowTorPicker(true)
+  }
+
+  // After a reply / change: the record, the R&D card and the send history all move.
+  const refreshRndArea = () => {
+    crmApi.getInquiry(inquiryId).then(setInquiry).catch(() => {})
+    crmApi.getInquirySpecRevisions(inquiryId, true).then(setRevisions).catch(() => {})
+    loadRnd()
+    loadMoves()
   }
 
   const sendTechnicalOfferRequest = async (documentIds: number[], assignment: RndRequestAssignment) => {
@@ -201,6 +226,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
       setShowTorPicker(false)
       setTab('Info')
       loadRnd()
+      loadMoves()
     } catch (err) {
       setTorError(extractErrorMessages(err, 'Failed to send Technical Requirement to R&D.'))
     } finally {
@@ -239,7 +265,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
                 data-tour="inq-tor-btn"
                 title={
                   !canSendAgain
-                    ? `Already sent as ${inquiry.technical_offer_number} — edit the inquiry to send again.`
+                    ? `Already sent as ${inquiry.technical_offer_number} — to change what R&D has, use Change requirement.`
                     : missingRequirementDetails
                     ? 'Fill Product and Customer Requirement before sending — the document would otherwise be empty.'
                     : 'Sends R&D a Word document with the customer and its type and region, every product with its specification, and the project background.'
@@ -247,6 +273,14 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
                 style={{ ...secondaryBtnStyle, opacity: !canSendAgain || sendingTOR ? 0.5 : 1, cursor: !canSendAgain || sendingTOR ? 'not-allowed' : 'pointer' }}
               >
                 {sendingTOR ? 'Sending…' : 'Send Technical Requirement to R&D'}
+              </button>}
+              {canChangeRequirement && <button
+                onClick={() => setShowChange(true)}
+                data-tour="inq-change-req-btn"
+                title="The Customer Requirement was sent to R&D, so it is changed here — R&D gets a new revision, or a typo is fixed before R&D accepts it."
+                style={secondaryBtnStyle}
+              >
+                Change requirement
               </button>}
               {canEditRecord && <button onClick={() => { setEditing(true); setTab('Info') }} data-tour="inq-edit-btn" style={secondaryBtnStyle}>Edit</button>}
               {canDeleteRecord && <button onClick={() => setShowDeleteConfirm(true)} data-tour="inq-delete-btn" style={dangerBtnStyle}>Delete</button>}
@@ -271,6 +305,9 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
       <MessageDialog open={!!error} variant="error" title="Inquiry Action Failed" message={error} onClose={() => setError('')} />
 
       {!editing && <VisSection vis={vis} k="inq_detail_rnd"><RndIntakeCard rnd={rnd} tourId="inq-rnd-status" canResend={canSendTor} sending={sendingTOR} onResend={openTorPicker} /></VisSection>}
+      {!editing && !vis.preview && bdQuestion && latestRequest && (
+        <VisSection vis={vis} k="inq_detail_rnd"><RndWaitingBanner question={bdQuestion} canReply={canSendTor} onReply={() => setShowReply(true)} tourId="inq-rnd-waiting" /></VisSection>
+      )}
 
       <div className="hide-scrollbar" style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 20, overflowX: 'auto', overflowY: 'visible' }}>
         {TABS.filter((t) => seeTab(t)).map((t) => {
@@ -303,6 +340,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
       {(tab === 'Info' || !seeTab(tab)) && editing && (
         <InquiryForm
           initial={inquiry}
+          lockRequirement={requirementLocked}
           submitLabel="Save Changes"
           onCancel={() => setEditing(false)}
           onSubmit={async (payload) => {
@@ -328,9 +366,26 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
         relatedModule="inquiry"
         relatedId={inquiry.id}
         sending={sendingTOR}
+        askReason={sentBefore}
         onSend={sendTechnicalOfferRequest}
         onCancel={() => setShowTorPicker(false)}
       />
+      {showReply && latestRequest && bdQuestion && (
+        <RndReplySheet
+          request={latestRequest}
+          question={bdQuestion}
+          onClose={() => setShowReply(false)}
+          onReplied={() => { setShowReply(false); refreshRndArea() }}
+        />
+      )}
+      {showChange && (
+        <ChangeRequirementSheet
+          inquiry={inquiry}
+          latestStatus={rnd?.status ?? null}
+          onClose={() => setShowChange(false)}
+          onChanged={() => { setShowChange(false); setTab('Info'); refreshRndArea() }}
+        />
+      )}
 
       <ConfirmDialog
         open={showDeleteConfirm}
@@ -1166,7 +1221,7 @@ export function QuotationsTab({ parent, record, org, contact }: { parent: { kind
                   onCreateNew={(query) => createPaymentTermFromField(query)}
                   createLabel="New Payment Term"
                   options={paymentTerms.map((t) => ({ key: String(t.id), label: t.label, sublabel: t.description || undefined }))}
-                  placeholder="Select from Payment Terms list or type your own"
+                  placeholder="Select from Payment Terms list or type your own" multiline
                 />
                 {fieldErrors.payment_terms && <p style={fieldErrorTextStyle}>{fieldErrors.payment_terms}</p>}
               </SF>

@@ -104,6 +104,8 @@ def _intake_fields(state: tuple | None, can_review: bool) -> dict:
         "revision_code": (rev.revision_code if rev else f"{req.rd_number}-R{req.current_revision}") if req else None,
         "last_received_at": _iso(req.last_received_at) if req else None,
         "needs_my_review": bool(req and req.status == "submitted" and can_review),
+        # BD re-sent the requirement (R1, R2 …) and nobody has reviewed that revision yet.
+        "new_revision": bool(rev and rev.revision_no > 0 and rev.status == "submitted"),
     }
 
 
@@ -158,6 +160,8 @@ async def list_requirements(
                 "last_sent_at": _iso(rec.technical_offer_sent_at), "last_sent_by": sender,
                 "send_count": max(count, 1), "edited_after_send": _edited_after_send(rec),
                 "rnd_request": reqs.get(rec.id),
+                # R&D asked BD a question and BD has not answered: R&D's clock is paused.
+                "waiting_on_bd": bool(reqs.get(rec.id) and reqs[rec.id].get("waiting_on") == "bd"),
                 **_intake_fields(states.get(rec.id), can_review),
             })
 
@@ -366,6 +370,8 @@ async def respond_to_request(
     remarks: str | None = Form(None),
     delay_reason: str | None = Form(None),
     ask_details: bool = Form(False),
+    bd_told_channel: str | None = Form(None),
+    bd_told_note: str | None = Form(None),
     files: list[UploadFile] | None = File(None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -376,8 +382,12 @@ async def respond_to_request(
     Otherwise R&D's answer to a CRM request: remarks and/or documents, plus a delay
     reason when answered after the due date. Only an accepted revision can be
     answered. Documents are filed with the CRM record (Documents tab) and
-    flagged shared_via_tor so both sides can open them."""
-    req = db.query(CrmRndRequest).filter(CrmRndRequest.id == request_id).first()
+    flagged shared_via_tor so both sides can open them.
+
+    While BD owes an answer to R&D's question, the final response also needs `bd_told_channel`
+    (portal / phone / email / meeting) and `bd_told_note` (what BD told R&D, 10+ characters);
+    the question is closed with that note and R&D is not late for the waiting time."""
+    req = db.query(CrmRndRequest).filter(CrmRndRequest.id == request_id).with_for_update().first()  # lock: a parallel ask / BD reply waits
     if not req:
         raise HTTPException(status_code=404, detail="This R&D request no longer exists — refresh the page.")
     model = Inquiry if req.source == "inquiry" else Tender
@@ -395,8 +405,9 @@ async def respond_to_request(
         requirement_movement.ask_details(db, req=req, record=record, user=user, remarks=remarks)
         db.commit()
         return requirement_movement.serialize_requests(db, [req])[req.id]
-    requirement_movement.mark_responded(
+    closed_query = requirement_movement.mark_responded(
         db, req=req, user=user, remarks=remarks, delay_reason=delay_reason, has_files=bool(files),
+        bd_told_channel=bd_told_channel, bd_told_note=bd_told_note,
     )
 
     if files:
@@ -423,7 +434,9 @@ async def respond_to_request(
     db.add(AuditLog(
         entity_type=req.source, entity_id=record.id, action="rnd_responded", module_key="crm",
         summary=f"{user.name or user.email} (R&D) responded to {req.offer_number or 'the Technical Offer Request'}"
-                + (" after the due date." if req.delay_reason else "."),
+                + (" after the due date." if req.delay_reason else ".")
+                + (f" BD's answer to R&D's question was recorded by R&D (told by {closed_query.answer_channel}): {closed_query.answer}"
+                   if closed_query is not None else ""),
         performed_by_id=user.id,
     ))
     db.commit()

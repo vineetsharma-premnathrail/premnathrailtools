@@ -86,6 +86,19 @@ def _approval_workflows_on(request, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _buyer_by_category_on(request, monkeypatch):
+    """Buyer by category is OFF in the app for now (owner 2026-11-18). Tests written
+    before that cover the routing, so it is ON here unless a test is marked
+    `buyer_by_category_off`."""
+    if request.node.get_closest_marker("buyer_by_category_off"):
+        yield
+        return
+    from app.modules.p2p.models import p2p_request
+    monkeypatch.setattr(p2p_request, "BUYER_BY_CATEGORY_ENABLED", True)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _finance_proof_rules_off(request, monkeypatch):
     """Finance › Settings › Supporting documents makes a vendor bill / journal
     working compulsory by default. Tests written before that rule post bills

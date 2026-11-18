@@ -4,7 +4,10 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from app.core.notify_rules import fire_rule
 from app.core.notification_events import notify_event
 from app.modules.crm.services.notify import broadcast_except
+from sqlalchemy import select
 from sqlalchemy.orm import Session
+
+from app.core.like import word_prefix_filter
 
 from app.db.session import get_db
 from app.core import visibility
@@ -132,17 +135,15 @@ async def list_tenders(
     if org_id:
         query = query.filter(Tender.org_id == org_id)
     if search:
-        like = f"%{search}%"
-        matching_org_ids = [
-            row[0] for row in db.query(Organization.id).filter(Organization.name.ilike(like)).all()
-        ]
-        query = query.filter(
-            (Tender.universal_id.ilike(like)) | (Tender.tender_number.ilike(like)) | (Tender.tender_name.ilike(like))
-            | (Tender.tender_authority.ilike(like)) | (Tender.tender_portal.ilike(like)) | (Tender.tender_type.ilike(like))
-            | (Tender.tender_category.ilike(like)) | (Tender.status.ilike(like)) | (Tender.current_stage.ilike(like))
-            | (Tender.railway_zone.ilike(like)) | (Tender.division.ilike(like)) | (Tender.workshop.ilike(like))
-            | (Tender.org_id.in_(matching_org_ids) if matching_org_ids else False)
-        )
+        # Word-start match (owner 2026-11-18), record / tender numbers still match anywhere.
+        cond = word_prefix_filter(
+            [Tender.tender_name, Tender.tender_authority, Tender.tender_portal, Tender.tender_type,
+             Tender.tender_category, Tender.status, Tender.current_stage, Tender.railway_zone, Tender.division,
+             Tender.workshop],
+            search, per_word=lambda w: Tender.org_id.in_(select(Organization.id).where(word_prefix_filter([Organization.name], w))),
+            contains_columns=[Tender.universal_id, Tender.tender_number])
+        if cond is not None:
+            query = query.filter(cond)
     tenders = query.order_by(Tender.id.desc()).offset(skip).limit(limit).all()
     creator_ids = {t.created_by_id for t in tenders if t.created_by_id}
     names_by_id = {}
@@ -430,6 +431,9 @@ async def create_technical_offer_request(
     raised_by = user.name or user.email
     now = datetime.now(timezone.utc)
     ctx, org = technical_offer.build_context(db, "tender", tender, user, now)
+    # A re-send says why it goes to R&D again (stored on the new revision, shown to R&D).
+    change_reason, change_note = requirement_movement.check_change_reason(
+        db, module="tender", record_id=tender.id, change_reason=body.change_reason, change_note=body.change_note)
     # No Technical Offer document (owner, 2026-10-30): R&D gets the requirement in R&D › Requirements
     # and the email; only the client documents picked in the dialog are shared.
     requirements_link = f"{settings.APP_BASE_URL}/dashboard/rnd/requirements"
@@ -459,17 +463,23 @@ async def create_technical_offer_request(
     rnd_req = requirement_movement.create_rnd_request(
         db, module="tender", record=tender, user=user, log=movement_log, offer_number=None,
         team=team, due_date=body.response_due_date, remarks=body.remarks,
+        change_reason=change_reason, change_note=change_note,
     )
     offer_number = rnd_req.offer_number
     tender.technical_offer_number = offer_number
     db.flush()
+
+    email_remarks = (body.remarks or "").strip() or None
+    if change_reason:
+        why = f"Reason for this revision: {requirement_movement.reason_text(change_reason, change_note)}."
+        email_remarks = f"{why} {email_remarks}" if email_remarks else why
 
     success, error = await send_technical_offer_request_email(
         db, entity_type="tender", entity_id=tender.id, offer_number=offer_number,
         universal_id=tender.universal_id, org_name=org.name if org else "", project_name=tender.tender_name or "",
         documents_link=requirements_link, actor_id=user.id, actor_name=raised_by,
         reference_documents=reference_documents, actor_email=user.email,
-        response_due_date=body.response_due_date, remarks=(body.remarks or "").strip() or None,
+        response_due_date=body.response_due_date, remarks=email_remarks,
         open_link=f"{settings.APP_BASE_URL}/dashboard/rnd/requirements/tender/{encode_ref(tender.id)}",
     )
     if not success:

@@ -4,7 +4,10 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from app.core.notify_rules import fire_rule
 from app.core.notification_events import notify_event
 from app.modules.crm.services.notify import broadcast_except
+from sqlalchemy import select
 from sqlalchemy.orm import Session
+
+from app.core.like import word_prefix_filter
 
 from app.db.session import get_db
 from app.core import visibility
@@ -16,7 +19,7 @@ from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.crm.models.inquiry import INQ_STATUSES, Inquiry, InquiryLineItem
 from app.modules.crm.services.cascade import cascade_delete_children
-from app.modules.crm.services import requirement_movement, technical_offer
+from app.modules.crm.services import requirement_change, requirement_movement, technical_offer
 from app.modules.crm.services.stage_guard import check_stage_move, ensure_deletable
 from app.core.priority import parse_priority, priority_label
 from app.modules.crm.services import opportunity as opp
@@ -26,7 +29,7 @@ from app.modules.crm.models.organization import Organization, OrgContact
 from app.modules.crm.schemas.inquiry import InquiryCreate, InquiryUpdate, InquiryResponse, StageLogEntry
 from app.modules.crm.schemas.workflow import StageLogResponse
 from app.modules.crm.schemas.activity import MomExportRequest
-from app.modules.crm.schemas.document import TechnicalOfferRequestBody
+from app.modules.crm.schemas.document import ChangeRequirementBody, TechnicalOfferRequestBody
 from app.modules.crm.models.document import CrmDocument
 from app.modules.crm.reports.mom_docx import build_mom_docx, mom_rows_from_activity
 from app.modules.crm.reports.mom_pdf import build_mom_pdf
@@ -171,19 +174,17 @@ async def list_inquiries(
     if org_id:
         query = query.filter(Inquiry.org_id == org_id)
     if search:
-        like = f"%{search}%"
-        matching_org_ids = [
-            row[0] for row in db.query(Organization.id).filter(Organization.name.ilike(like)).all()
-        ]
-        query = query.filter(
-            (Inquiry.universal_id.ilike(like)) | (Inquiry.product.ilike(like)) | (Inquiry.bd_owner.ilike(like))
-            | (Inquiry.sales_engineer.ilike(like)) | (Inquiry.railway_zone.ilike(like)) | (Inquiry.division.ilike(like))
-            | (Inquiry.lead_source.ilike(like)) | (Inquiry.status.ilike(like)) | (Inquiry.current_stage.ilike(like))
-            | (Inquiry.product_category.ilike(like)) | (Inquiry.delivery_location.ilike(like))
-            | (Inquiry.requirement_desc.ilike(like))
-            | (Inquiry.followup_assigned_to.ilike(like)) | (Inquiry.priority.ilike(like))
-            | (Inquiry.org_id.in_(matching_org_ids) if matching_org_ids else False)
-        )
+        # Word-start match on what the list shows (owner 2026-11-18: "t" found nearly every
+        # row because it matched inside SHUNTER, status, requirement text …). The record
+        # number still matches anywhere. Long requirement text is no longer searched.
+        cond = word_prefix_filter(
+            [Inquiry.product, Inquiry.bd_owner, Inquiry.sales_engineer, Inquiry.railway_zone, Inquiry.division,
+             Inquiry.lead_source, Inquiry.status, Inquiry.current_stage, Inquiry.product_category,
+             Inquiry.delivery_location, Inquiry.followup_assigned_to, Inquiry.priority],
+            search, per_word=lambda w: Inquiry.org_id.in_(select(Organization.id).where(word_prefix_filter([Organization.name], w))),
+            contains_columns=[Inquiry.universal_id])
+        if cond is not None:
+            query = query.filter(cond)
     inquiries = query.order_by(Inquiry.id.desc()).offset(skip).limit(limit).all()
     creator_ids = {i.created_by_id for i in inquiries if i.created_by_id}
     names_by_id = {}
@@ -327,6 +328,11 @@ async def update_inquiry(
             f"({inquiry.bd_owner or 'not recorded'}) and can't be changed."))
     updates.pop("bd_owner", None)
     updates.pop("bd_owner_id", None)
+    # Once R&D has the requirement, its Customer Requirement text changes only through "Change requirement".
+    new_item_specs = None if payload.additional_items is None else [i.product_spec for i in payload.additional_items]
+    if "product_spec" in updates or new_item_specs is not None:
+        requirement_change.ensure_requirement_not_locked(
+            db, inquiry, updates["product_spec"] if "product_spec" in updates else inquiry.product_spec, new_item_specs)
     _check_choice(updates, inquiry, "current_stage", INQ_STAGES, "inquiry stage")
     _check_choice(updates, inquiry, "status", INQ_STATUSES, "inquiry status")
     # Role-wise visibility checks only a CHANGED value, so a record that already holds a
@@ -466,17 +472,10 @@ async def get_inquiry_audit(
     ]
 
 
-@router.post("/{inquiry_id}/technical-offer-request", response_model=InquiryResponse)
-async def create_technical_offer_request(
-    inquiry_id: int,
-    body: TechnicalOfferRequestBody = TechnicalOfferRequestBody(),
-    db: Session = Depends(get_db),
-    user: User = Depends(require_feature_action("crm", "inquiries_tenders", "send_tor", "create")),
-):
-    inquiry = db.query(Inquiry).filter(Inquiry.id == inquiry_id, Inquiry.is_deleted == False).first()  # noqa: E712
-    if not inquiry:
-        raise HTTPException(status_code=404, detail="Inquiry not found")
-    ensure_in_scope(db, user, inquiry)
+async def _send_requirement_to_rnd(db: Session, inquiry: Inquiry, user: User, body: TechnicalOfferRequestBody) -> None:
+    """Sends the inquiry's requirement to R&D: a new send (R0 first time, R1, R2 ... after) with the
+    email. Shared by "Send Technical Requirement to R&D" and "Change requirement" (revision).
+    Commits on success; on a failed email everything is rolled back and nothing is opened."""
     missing = [label for label, ok in (
         ("Product", bool(inquiry.product)),
         ("Specification", bool(inquiry.product_spec)),
@@ -489,6 +488,9 @@ async def create_technical_offer_request(
     now = datetime.now(timezone.utc)
     ctx, org = technical_offer.build_context(db, "inquiry", inquiry, user, now)
     requirement_movement.ensure_requirement_changed(db, module="inquiry", record=inquiry, ctx=ctx)
+    # A re-send says why it goes to R&D again (stored on the new revision, shown to R&D).
+    change_reason, change_note = requirement_movement.check_change_reason(
+        db, module="inquiry", record_id=inquiry.id, change_reason=body.change_reason, change_note=body.change_note)
     # No Technical Offer document (owner, 2026-10-30): R&D gets the requirement in R&D › Requirements
     # and the email; only the client documents picked in the dialog are shared.
     requirements_link = f"{settings.APP_BASE_URL}/dashboard/rnd/requirements"
@@ -518,17 +520,22 @@ async def create_technical_offer_request(
     rnd_req = requirement_movement.create_rnd_request(
         db, module="inquiry", record=inquiry, user=user, log=movement_log, offer_number=None,
         team=team, due_date=body.response_due_date, remarks=body.remarks,
+        change_reason=change_reason, change_note=change_note,
     )
     offer_number = rnd_req.offer_number
     inquiry.technical_offer_number = offer_number
     db.flush()
 
+    email_remarks = (body.remarks or "").strip() or None
+    if change_reason:
+        why = f"Reason for this revision: {requirement_movement.reason_text(change_reason, change_note)}."
+        email_remarks = f"{why} {email_remarks}" if email_remarks else why
     success, error = await send_technical_offer_request_email(
         db, entity_type="inquiry", entity_id=inquiry.id, offer_number=offer_number,
         universal_id=inquiry.universal_id, org_name=org.name if org else "", project_name=inquiry.product or "",
         documents_link=requirements_link, actor_id=user.id, actor_name=raised_by,
         reference_documents=reference_documents, actor_email=user.email,
-        response_due_date=body.response_due_date, remarks=(body.remarks or "").strip() or None,
+        response_due_date=body.response_due_date, remarks=email_remarks,
         open_link=f"{settings.APP_BASE_URL}/dashboard/rnd/requirements/inquiry/{encode_ref(inquiry.id)}",
     )
     if not success:
@@ -536,6 +543,70 @@ async def create_technical_offer_request(
         raise HTTPException(status_code=502, detail=f"Failed to email the requirement to R&D — nothing was sent or opened. {error} Check the R&D email setting (RND_EMAIL) and try again.")
 
     db.commit()
+
+
+@router.post("/{inquiry_id}/technical-offer-request", response_model=InquiryResponse)
+async def create_technical_offer_request(
+    inquiry_id: int,
+    body: TechnicalOfferRequestBody = TechnicalOfferRequestBody(),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_feature_action("crm", "inquiries_tenders", "send_tor", "create")),
+):
+    inquiry = db.query(Inquiry).filter(Inquiry.id == inquiry_id, Inquiry.is_deleted == False).first()  # noqa: E712
+    if not inquiry:
+        raise HTTPException(status_code=404, detail="Inquiry not found")
+    ensure_in_scope(db, user, inquiry)
+    await _send_requirement_to_rnd(db, inquiry, user, body)
+    db.refresh(inquiry)
+    return _out(inquiry, user)
+
+
+@router.post("/{inquiry_id}/change-requirement", response_model=InquiryResponse)
+async def change_requirement(
+    inquiry_id: int,
+    body: ChangeRequirementBody,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_feature_action("crm", "inquiries_tenders", "send_tor", "create")),
+    _edit: User = Depends(require_tab_action("crm", "inquiries_tenders", "edit")),
+):
+    """Change requirement on an inquiry R&D already has (the Customer Requirement is locked in Edit).
+    mode `revision`: the new text goes to R&D as the next revision, with a reason (change_reason, plus
+    change_note for 'other'). mode `correction`: a mistake fixed in the same revision, only while R&D has
+    not accepted it; R&D is told, nothing else changes.
+    It rewrites the record's Customer Requirement, so it needs Inquiries & Tenders > Edit as well as
+    Send Technical Requirement (TOR) to R&D > Create, and the inquiry inside the user's Edit scope."""
+    inquiry = db.query(Inquiry).filter(Inquiry.id == inquiry_id, Inquiry.is_deleted == False).first()  # noqa: E712
+    if not inquiry:
+        raise HTTPException(status_code=404, detail="Inquiry not found")
+    ensure_in_scope(db, user, inquiry)
+    ensure_can_change(db, user, inquiry, action="change the requirement of")
+    if not requirement_movement.has_earlier_send(db, module="inquiry", record_id=inquiry.id):
+        raise HTTPException(status_code=409, detail=(
+            f"Inquiry {inquiry.universal_id} has not been sent to R&D yet — use Edit to change the Customer Requirement, "
+            "then Send Technical Requirement to R&D."))
+    if requirement_change.new_texts(inquiry, body.product_spec, body.item_specs) == requirement_change.current_texts(inquiry):
+        raise HTTPException(status_code=400, detail=(
+            "Nothing changed — edit the Customer Requirement text (the first product or an additional product) "
+            "before you submit the change."))
+    send_body = TechnicalOfferRequestBody(
+        document_ids=body.document_ids, response_due_date=body.response_due_date, remarks=body.remarks,
+        change_reason=body.change_reason, change_note=body.change_note)
+    if body.mode == "revision":
+        # Everything that can be refused is checked before the text is touched.
+        requirement_movement.check_change_reason(
+            db, module="inquiry", record_id=inquiry.id, change_reason=body.change_reason, change_note=body.change_note)
+        requirement_movement.validate_request(db, body.response_due_date)
+    try:
+        requirement_change.apply_texts(db, inquiry, user, body.product_spec, body.item_specs)
+        db.flush()
+        if body.mode == "revision":
+            await _send_requirement_to_rnd(db, inquiry, user, send_body)
+        else:
+            requirement_change.correct_in_place(db, inquiry=inquiry, user=user, note=body.change_note)
+            db.commit()
+    except HTTPException:
+        db.rollback()  # the new text is saved only together with the send / correction
+        raise
     db.refresh(inquiry)
     return _out(inquiry, user)
 

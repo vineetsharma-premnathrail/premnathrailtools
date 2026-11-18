@@ -183,7 +183,7 @@ from app.modules.store.models.pre_po_receipt import StorePrePoReceipt, StorePreP
 from app.modules.crm.models import (
     Organization, OrgContact, Inquiry, InquiryLineItem, Quotation, QuotationLineItem,
     Tender, Activity,
-    CrmDocument, CrmStageLog, Product, PaymentTerm, CrmRndRequest, CrmRequirementComment,
+    CrmDocument, CrmStageLog, Product, PaymentTerm, CrmRndRequest, CrmRndRequestQuery, CrmRequirementComment,
     CrmDocumentCategory,
 )
 from app.modules.accounts.models.gl_account import GLAccount

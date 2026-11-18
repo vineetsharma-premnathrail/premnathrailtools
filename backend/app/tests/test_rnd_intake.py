@@ -232,6 +232,15 @@ def test_ask_bd_for_details_keeps_the_request_open(client, db, tor_env):
     tl = client.get(f"{RND}/requirement-work/inquiry/{inq.id}/history", headers=auth(head))
     assert tl.status_code == 200, tl.text
     assert any(r["kind"] == "query" and "Axle load and gauge are missing" in r["summary"] for r in tl.json())
+    # While BD owes the answer, a final response must say how BD told R&D (2026-11-17) ...
+    assert client.post(url, data={"remarks": "Feasible"}, headers=auth(head)).status_code == 400
+    # ... or BD answers on the same request first (Reply to R&D), which restarts R&D's clock.
+    qid = body["queries"][0]["id"]
+    due = (date.today() + timedelta(days=7)).isoformat()
+    ans = client.post(f"{CRM}/rnd-requests/{req_id}/queries/{qid}/answer",
+                      data={"answer": "Axle load is 22.5 t, gauge 1676 mm", "channel": "portal", "due_date": due}, headers=auth(bd))
+    assert ans.status_code == 200, ans.text
+    assert ans.json()["waiting_on"] is None and ans.json()["due_date"] == due and ans.json()["queries"][0]["answered_side"] == "bd"
     assert client.post(url, data={"remarks": "Feasible"}, headers=auth(head)).json()["status"] == "responded"
     # Nothing to ask on a closed request.
     assert client.post(url, data={"remarks": "One more question please", "ask_details": "true"}, headers=auth(head)).status_code == 409

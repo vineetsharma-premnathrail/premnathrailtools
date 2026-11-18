@@ -280,7 +280,7 @@ export interface ComboOption {
  * the dropdown itself (via onCreateNew) so callers don't need a separate "New" button.
  */
 export function ComboBox({
-  value, onChange, onPick, options, placeholder, onCreateNew, createLabel = 'Add new', style,
+  value, onChange, onPick, options, placeholder, onCreateNew, createLabel = 'Add new', style, multiline,
 }: {
   value: string
   onChange: (text: string) => void
@@ -290,12 +290,16 @@ export function ComboBox({
   onCreateNew?: (query: string) => void
   createLabel?: string
   style?: React.CSSProperties
+  /** Long free text (e.g. payment terms): a fixed-size box where Enter / Shift+Enter starts a
+   *  new line. The list opens from the arrow (or on focus while empty), never while typing,
+   *  and always offers every option since the typed text is rarely an option's name. */
+  multiline?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null)
   const wrapperRef = useRef<HTMLDivElement>(null)
 
-  const filtered = value.trim()
+  const filtered = value.trim() && !multiline
     ? options.filter((o) => o.label.toLowerCase().includes(value.toLowerCase()))
     : options
   // An exact match already exists — offer it for picking, don't invite creating a duplicate.
@@ -351,8 +355,26 @@ export function ComboBox({
     focusNext(e.currentTarget)
   }
 
+  const typed = value.trim()
+  const typedShort = typed.length > 60 ? `${typed.slice(0, 60)}…` : typed
   return (
     <div ref={wrapperRef} style={{ position: 'relative', ...style }}>
+      {multiline ? (<>
+        <textarea
+          value={value}
+          rows={4}
+          onChange={(e) => { onChange(e.target.value); setOpen(false) }}
+          onFocus={() => { if (!value.trim()) openDropdown() }}
+          placeholder={placeholder}
+          data-tour-no-autofocus="true"
+          style={{ ...inputStyle, paddingRight: 36, resize: 'vertical', display: 'block', whiteSpace: 'pre-wrap' }}
+        />
+        <button type="button" aria-label={open ? 'Close the list' : 'Pick from the list'} title="Pick from the list"
+          onMouseDown={(e) => e.preventDefault()} onClick={() => (open ? setOpen(false) : openDropdown())}
+          style={{ position: 'absolute', right: 6, top: 6, width: 24, height: 24, border: 'none', background: 'transparent', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <CaretDown size={14} color="#a8a29e" style={{ transform: open ? 'rotate(180deg)' : undefined, transition: 'transform .15s' }} />
+        </button>
+      </>) : (<>
       <input
         value={value}
         onChange={(e) => { onChange(e.target.value); openDropdown() }}
@@ -372,6 +394,7 @@ export function ComboBox({
         size={14} color="#a8a29e"
         style={{ position: 'absolute', right: 10, top: '50%', transform: open ? 'translateY(-50%) rotate(180deg)' : 'translateY(-50%)', pointerEvents: 'none', transition: 'transform .15s' }}
       />
+      </>)}
       {open && pos && createPortal(
         <>
           <div onMouseDown={(e) => e.preventDefault()} onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 999998 }} />
@@ -406,7 +429,7 @@ export function ComboBox({
                 onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,122,69,0.06)' }}
                 onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
               >
-                + {createLabel}{value.trim() ? `: "${value.trim()}"` : ''}
+                + {createLabel}{typed ? `: "${typedShort}"` : ''}
               </div>
             )}
           </div>

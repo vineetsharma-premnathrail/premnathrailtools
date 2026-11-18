@@ -21,13 +21,25 @@ from sqlalchemy.orm import Session
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.main.models.user import User
 from app.modules.crm.models.document import CrmDocument
-from app.modules.crm.models.rnd_request import CrmRndRequest
+from app.modules.crm.models.rnd_request import CrmRndRequest, CrmRndRequestQuery
 from app.utils.notifications import notify_user
 
 IST = ZoneInfo("Asia/Kolkata")
 RESPONSE_DOC_CATEGORY = "rnd_response"
+QUERY_DOC_SUB_MODULE = "rnd_query"   # files BD attaches to its reply to an R&D question
 
 ACTION = "technical_offer_sent"
+# A send's log row that a same-revision correction replaced (kept for the audit trail, no longer listed as a send).
+CORRECTED_ACTION = "technical_offer_sent_corrected"
+
+CHANGE_REASONS = ("customer_changed", "bd_correction", "other")
+CHANGE_REASON_LABELS = {
+    "customer_changed": "Customer changed the requirement",
+    "bd_correction": "BD corrected what was sent",
+    "other": "Other reason",
+}
+ANSWER_CHANNELS = ("portal", "phone", "email", "meeting")
+MIN_NOTE = 10
 
 # Requirement fields captured from the TOR PDF context, in display order.
 SNAPSHOT_FIELDS: dict[str, str] = {
@@ -168,10 +180,44 @@ def ensure_requirement_changed(db: Session, *, module: str, record, ctx: dict) -
     if prev == now:
         sent = last.performed_at.astimezone(IST).strftime("%d %b %Y") if last.performed_at else "earlier"
         ref = data.get("offer_number")
+        how = ("use Change requirement on the R&D tab to send the new text as a new revision with a reason"
+               if module == "inquiry" else "click Edit, update the requirement, save, then send")
         raise HTTPException(status_code=409, detail=(
             f"R&D already has this Customer Requirement (sent{f' as {ref}' if ref else ''} on {sent}). "
-            f"Send it again only after the customer's requirement changes: click Edit, update Customer Requirement, save, then send. "
+            f"Send it again only after the customer's requirement changes: {how}. "
             f"Other changes (dates, documents, remarks, status) don't need a new send to R&D."))
+
+
+def reason_text(change_reason: str | None, change_note: str | None) -> str:
+    """"Customer changed the requirement — <note>" for notices and the timeline."""
+    label = CHANGE_REASON_LABELS.get(change_reason or "", change_reason or "")
+    note = (change_note or "").strip()
+    return f"{label} — {note}" if note and label else (label or note)
+
+
+def has_earlier_send(db: Session, *, module: str, record_id: int) -> bool:
+    return db.query(CrmRndRequest.id).filter(
+        CrmRndRequest.source == module, CrmRndRequest.record_id == record_id).first() is not None
+
+
+def check_change_reason(
+    db: Session, *, module: str, record_id: int, change_reason: str | None, change_note: str | None,
+) -> tuple[str | None, str | None]:
+    """A re-send must say why the requirement goes to R&D again (owner, 2026-11-17). Required
+    whenever an earlier send exists for the record; 'other' also needs a note. On the first
+    send nothing is asked and nothing is stored. Run BEFORE any change is made."""
+    if not has_earlier_send(db, module=module, record_id=record_id):
+        return None, None
+    note = (change_note or "").strip() or None
+    if change_reason not in CHANGE_REASONS:
+        raise HTTPException(status_code=422, detail=(
+            "Say why this requirement goes to R&D again — pick \"Customer changed the requirement\", "
+            "\"BD corrected what was sent\" or \"Other\" as the reason, so R&D knows what to expect."))
+    if change_reason == "other" and (not note or len(note) < MIN_NOTE):
+        raise HTTPException(status_code=422, detail=(
+            f"Write the reason for sending this to R&D again (at least {MIN_NOTE} characters) — "
+            "e.g. \"Drawing revision received from the customer\"."))
+    return change_reason, note
 
 
 def diff_snapshots(prev: dict, snap: dict) -> list[dict]:
@@ -277,6 +323,7 @@ def validate_request(db: Session, due_date: date | None) -> list[User]:
 def create_rnd_request(
     db: Session, *, module: str, record, user: User, log: AuditLog, offer_number: str | None,
     team: list[User], due_date: date, remarks: str | None,
+    change_reason: str | None = None, change_note: str | None = None,
 ) -> CrmRndRequest:
     """Opens the R&D ask for this send (to the R&D head(s)); any still-open ask on the same record is superseded.
 
@@ -296,7 +343,9 @@ def create_rnd_request(
     db.flush()
     from app.modules.rnd.services import events as rnd_events
     from app.modules.rnd.services import requirements as rnd_requirements  # rnd imports crm models
-    revision = rnd_requirements.on_bd_submit(db, source=module, record=record, user=user, crm_request=req, movement_log=log)
+    revision = rnd_requirements.on_bd_submit(
+        db, source=module, record=record, user=user, crm_request=req, movement_log=log,
+        change_reason=change_reason, change_note=change_note)
     if not offer_number:
         # No separate TOR number (owner, 2026-10-30): the send is known by its R&D revision code.
         offer_number = revision.revision_code
@@ -315,6 +364,7 @@ def create_rnd_request(
             title=f"New requirement {revision.revision_code} for R&D",
             message=f"{user.name or user.email} sent {revision.revision_code} — response due {due_date.strftime('%d %b %Y')}. "
                     "Open it in R&D › Requirements and accept it."
+                    + (f" Reason: {reason_text(change_reason, change_note)}." if change_reason and revision.revision_no > 0 else "")
                     + (f" Remark: {req.crm_remarks}" if req.crm_remarks else ""),
             notification_type="rnd_request_assigned", entity_type=f"rnd_req_{module}", entity_id=record.id,
         )
@@ -325,7 +375,11 @@ def create_rnd_request(
     return req
 
 
-def is_late(req: CrmRndRequest) -> bool:
+def is_late(req: CrmRndRequest, waiting_on_bd: bool = False, excused: bool = False) -> bool:
+    """`waiting_on_bd`: R&D's clock is paused while BD owes an answer. `excused`: R&D answered after
+    the due date only because it had waited on BD (it recorded BD's answer and gave no delay reason)."""
+    if waiting_on_bd or excused:
+        return False
     if req.status == "closed":
         return False  # nothing was delivered, so there is no late delivery
     if req.responded_at:
@@ -351,28 +405,42 @@ def serialize_requests(db: Session, reqs: list[CrmRndRequest]) -> dict[int, dict
     rd_numbers = {rq.id: rq.rd_number for rq in db.query(RndRequirement).filter(
         RndRequirement.id.in_({rv.requirement_id for rv in revs.values()})).all()} if revs else {}
     # R&D's "Ask BD for more details" questions (they leave the request open), oldest first.
-    queries: dict[int, list[dict]] = {}
-    req_ids = {r.id for r in reqs}
-    for lg in db.query(AuditLog).filter(
-        AuditLog.action == ASK_DETAILS_ACTION, AuditLog.entity_type.in_({r.source for r in reqs}),
-        AuditLog.entity_id.in_({r.record_id for r in reqs}),
-    ).order_by(AuditLog.performed_at.asc(), AuditLog.id.asc()).all():
-        data = json.loads(lg.new_value) if lg.new_value else {}
-        if data.get("request_id") in req_ids:
-            queries.setdefault(data["request_id"], []).append({"remarks": data.get("remarks"), "by_id": lg.performed_by_id, "at": _iso(lg.performed_at)})
-    asker_ids = {q["by_id"] for qs in queries.values() for q in qs if q["by_id"]}
-    reviewer_ids = {rv.reviewed_by_id for rv in revs.values() if rv.reviewed_by_id} | asker_ids
+    query_rows = db.query(CrmRndRequestQuery).filter(
+        CrmRndRequestQuery.request_id.in_([r.id for r in reqs]),
+    ).order_by(CrmRndRequestQuery.asked_at.asc(), CrmRndRequestQuery.id.asc()).all()
+    queries: dict[int, list[CrmRndRequestQuery]] = {}
+    for q in query_rows:
+        queries.setdefault(q.request_id, []).append(q)
+    query_docs: dict[int, list[dict]] = {}
+    if query_rows:
+        for d in db.query(CrmDocument).filter(
+            CrmDocument.related_sub_module == QUERY_DOC_SUB_MODULE, CrmDocument.related_sub_id.in_([q.id for q in query_rows]),
+            CrmDocument.is_deleted == False,  # noqa: E712
+        ).order_by(CrmDocument.id.asc()).all():
+            query_docs.setdefault(d.related_sub_id, []).append({"id": d.id, "name": d.file_name, "file_size": d.file_size})
+    people_ids = {i for q in query_rows for i in (q.asked_by_id, q.answered_by_id) if i}
+    reviewer_ids = {rv.reviewed_by_id for rv in revs.values() if rv.reviewed_by_id} | people_ids | {rv.corrected_by_id for rv in revs.values() if rv.corrected_by_id}
     names.update({u.id: (u.name or u.email or f"User #{u.id}") for u in db.query(User).filter(User.id.in_(reviewer_ids)).all()} if reviewer_ids else {})
+
+    def waiting(r: CrmRndRequest) -> bool:
+        return r.status == "open" and any(q.answer is None for q in queries.get(r.id, []))
+
+    def excused(r: CrmRndRequest) -> bool:
+        # Responded after the due date with no delay reason can only be the "BD told R&D" path (a late
+        # response otherwise demands a reason), where the waiting time doesn't count against R&D.
+        return r.status == "responded" and not r.delay_reason and any(q.answered_side == "rnd" for q in queries.get(r.id, []))
 
     def intake(r: CrmRndRequest) -> dict:
         rv = revs.get(r.id)
         if rv is None:
             return {"rd_number": None, "revision_no": None, "revision_code": None, "review_status": None, "review_remarks": None,
-                    "return_reason": None, "reviewed_by": None, "reviewed_at": None}
+                    "return_reason": None, "reviewed_by": None, "reviewed_at": None,
+                    "change_reason": None, "change_note": None, "corrected_at": None}
         return {
             "rd_number": rd_numbers.get(rv.requirement_id), "revision_no": rv.revision_no, "revision_code": rv.revision_code,
             "review_status": rv.status, "review_remarks": rv.review_remarks, "return_reason": rv.return_reason,
             "reviewed_by": names.get(rv.reviewed_by_id) if rv.reviewed_by_id else None, "reviewed_at": _iso(rv.reviewed_at),
+            "change_reason": rv.change_reason, "change_note": rv.change_note, "corrected_at": _iso(rv.corrected_at),
         }
 
     return {
@@ -387,10 +455,18 @@ def serialize_requests(db: Session, reqs: list[CrmRndRequest]) -> dict[int, dict
             "response_remarks": r.response_remarks, "delay_reason": r.delay_reason,
             "responded_by": names.get(r.responded_by_id) if r.responded_by_id else None,
             "responded_at": _iso(r.responded_at),
-            "is_late": is_late(r),
+            "is_late": is_late(r, waiting(r), excused(r)),
+            "waiting_on": "bd" if waiting(r) else None,
             "response_documents": docs.get(r.id, []),
-            "queries": [{"remarks": q["remarks"], "asked_by": names.get(q["by_id"]) if q["by_id"] else None, "asked_at": q["at"]}
-                        for q in queries.get(r.id, [])],
+            "queries": [{
+                "id": q.id, "remarks": q.question, "asked_by": names.get(q.asked_by_id) if q.asked_by_id else None,
+                "asked_at": _iso(q.asked_at), "answer": q.answer, "answer_channel": q.answer_channel,
+                "answered_by": names.get(q.answered_by_id) if q.answered_by_id else None, "answered_at": _iso(q.answered_at),
+                "answered_side": q.answered_side,
+                "due_date_before": q.due_date_before.isoformat() if q.due_date_before else None,
+                "due_date_after": q.due_date_after.isoformat() if q.due_date_after else None,
+                "answer_documents": query_docs.get(q.id, []),
+            } for q in queries.get(r.id, [])],
         }
         for r in reqs
     }
@@ -410,12 +486,27 @@ def latest_requests(db: Session, module: str, record_ids: list[int]) -> dict[int
 
 
 ASK_DETAILS_ACTION = "rnd_asked_details"
+ANSWER_ACTION = "rnd_query_answered"
+
+
+def unanswered_query(db: Session, request_id: int) -> CrmRndRequestQuery | None:
+    """The question BD still owes an answer on (at most one at a time), oldest first."""
+    return db.query(CrmRndRequestQuery).filter(
+        CrmRndRequestQuery.request_id == request_id, CrmRndRequestQuery.answer.is_(None),
+    ).order_by(CrmRndRequestQuery.asked_at.asc(), CrmRndRequestQuery.id.asc()).first()
+
+
+def _day(d: date | datetime | None) -> str:
+    if isinstance(d, datetime):
+        d = d.astimezone(IST).date()
+    return d.strftime("%d %b %Y") if d else "—"
 
 
 def ask_details(db: Session, *, req: CrmRndRequest, record, user: User, remarks: str | None) -> None:
     """R&D asks BD for more details (owner, 2026-10-30). Unlike a response it does NOT close
-    the request: it stays open with its due date, BD is told, and BD answers by updating the
-    requirement and sending it again (a new revision). Caller commits."""
+    the request: it stays open, but R&D's clock is paused (waiting_on = 'bd') until BD replies on
+    the same request ("Reply to R&D", answer_query) or R&D records what BD told it outside the
+    portal (mark_responded). One open question at a time. Caller commits."""
     if req.status != "open":
         raise HTTPException(status_code=409, detail="This request is no longer open — only an open request can get a question. Answer the latest request instead.")
     from app.modules.rnd.services import requirements as rnd_requirements
@@ -425,26 +516,110 @@ def ask_details(db: Session, *, req: CrmRndRequest, record, user: User, remarks:
     remarks = (remarks or "").strip()
     if len(remarks) < 10:
         raise HTTPException(status_code=400, detail="Write which details R&D needs from BD (at least 10 characters) — e.g. \"Axle load and gauge are missing\".")
+    pending = unanswered_query(db, req.id)
+    if pending is not None:
+        raise HTTPException(status_code=409, detail=(
+            f"BD has not answered R&D's earlier question yet (asked {_day(pending.asked_at)}: \"{pending.question}\"). "
+            "Wait for BD's reply on the R&D tab — or, if BD already told you by phone, email or in a meeting, "
+            "give the final response and record what BD said."))
     ref = getattr(record, "universal_id", None) or f"{req.source} #{req.record_id}"
+    db.add(CrmRndRequestQuery(
+        request_id=req.id, question=remarks, asked_by_id=user.id, asked_at=datetime.now(timezone.utc),
+        due_date_before=req.due_date,
+    ))
     db.add(AuditLog(
         entity_type=req.source, entity_id=req.record_id, action=ASK_DETAILS_ACTION, module_key="crm",
         new_value=json.dumps({"request_id": req.id, "remarks": remarks}),
         summary=f"{user.name or user.email} (R&D) asked for more details on {req.offer_number or ref}: {remarks}",
         performed_by_id=user.id,
     ))
+    db.flush()
     if req.requested_by_id:
         notify_user(
             db, req.requested_by_id,
             title=f"R&D needs more details on {req.offer_number or ref}",
-            message=f"{user.name or user.email}: {remarks} — update the requirement on {ref} and send it to R&D again.",
+            message=f"{user.name or user.email}: {remarks} — reply to R&D on {ref} (Reply to R&D on the R&D tab).",
             notification_type="rnd_request_details_asked", entity_type=req.source, entity_id=req.record_id,
+        )
+
+
+def parse_answer_date(value: str | None) -> date:
+    """BD's new R&D due date for the reply form (YYYY-MM-DD, today or later in IST)."""
+    text = (value or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Set R&D's new due date — the date R&D must reply by now that BD has answered (today or later).")
+    try:
+        due = date.fromisoformat(text)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"'{text}' is not a valid date — use the date picker (YYYY-MM-DD).") from None
+    if due < today_ist():
+        raise HTTPException(status_code=400, detail=f"R&D's new due date {due.strftime('%d %b %Y')} is in the past — pick today or a later date.")
+    return due
+
+
+def answer_query(
+    db: Session, *, req: CrmRndRequest, query: CrmRndRequestQuery, record, user: User,
+    answer: str | None, channel: str | None, due_date: date,
+) -> None:
+    """BD answers R&D's question on the SAME request (owner, 2026-11-17): the answer is stored on
+    the question, R&D's due date is replaced and R&D is told. No re-send, no new revision.
+    The caller has checked permission + data scope, uploads the files and commits."""
+    ref = getattr(record, "universal_id", None) or f"{req.source} #{req.record_id}"
+    if req.status != "open":
+        raise HTTPException(status_code=409, detail=(
+            f"{req.offer_number or 'This request'} is {req.status}, so R&D's question can't be answered on it any more. "
+            "Open the latest request on the R&D tab instead."))
+    if query.answer is not None:
+        by_rnd = " by R&D, who recorded what BD told them" if query.answered_side == "rnd" else ""
+        raise HTTPException(status_code=409, detail=(
+            f"This question was already answered ({_day(query.answered_at)}{by_rnd}) — nothing more to send. Refresh the R&D tab."))
+    answer = (answer or "").strip()
+    if len(answer) < MIN_NOTE:
+        raise HTTPException(status_code=400, detail=f"Write your answer to R&D (at least {MIN_NOTE} characters) — e.g. \"Axle load is 22.5 t, gauge 1676 mm\".")
+    if channel not in ANSWER_CHANNELS:
+        raise HTTPException(status_code=400, detail="Say how you are answering — pick Portal, Phone, Email or Meeting as the channel.")
+    now = datetime.now(timezone.utc)
+    query.answer, query.answer_channel, query.answered_side = answer, channel, "bd"
+    query.answered_by_id, query.answered_at = user.id, now
+    query.due_date_after = due_date
+    req.due_date = due_date
+    who = user.name or user.email
+    code = req.offer_number or ref
+    db.add(AuditLog(
+        entity_type=req.source, entity_id=req.record_id, action=ANSWER_ACTION, module_key="crm",
+        new_value=json.dumps({"request_id": req.id, "query_id": query.id, "channel": channel, "due_date": due_date.isoformat()}),
+        summary=f"{who} replied to R&D's question on {code} by {channel}; R&D due {due_date.strftime('%d %b %Y')}.",
+        performed_by_id=user.id,
+    ))
+    db.add(AuditLog(
+        entity_type=f"rnd_req_{req.source}", entity_id=req.record_id, action="requirement_query_answered", module_key="rnd",
+        summary=f"{who} (BD) answered R&D's question on {code} by {channel}: {answer} — R&D due {due_date.strftime('%d %b %Y')}.",
+        performed_by_id=user.id,
+    ))
+    recipients: set[int] = {query.asked_by_id} if query.asked_by_id else set()
+    if req.assigned_to_id:
+        recipients.add(req.assigned_to_id)
+    elif not recipients:
+        recipients = {h.id for h in rnd_team(db)}
+    for uid in recipients - {user.id}:
+        notify_user(
+            db, uid, title=f"BD replied to R&D's question on {code}",
+            message=f"{who}: {answer} — R&D's new due date is {due_date.strftime('%d %b %Y')}. Open {code} in R&D › Requirements.",
+            notification_type="rnd_query_answered", entity_type=f"rnd_req_{req.source}", entity_id=req.record_id,
         )
 
 
 def mark_responded(
     db: Session, *, req: CrmRndRequest, user: User, remarks: str | None, delay_reason: str | None, has_files: bool,
-) -> None:
-    """Validates and records R&D's answer. Caller uploads files + commits."""
+    bd_told_channel: str | None = None, bd_told_note: str | None = None,
+) -> CrmRndRequestQuery | None:
+    """Validates and records R&D's answer. Caller uploads files + commits. Returns the question
+    this answer closed on BD's behalf (None when none was open).
+
+    While BD still owes an answer to R&D's question the final response must also record how
+    BD told R&D (bd_told_channel + bd_told_note); that closes the question. R&D is not late for the
+    time it waited on BD: it is late only if the request was already past due when it asked (then a
+    delay reason is needed). The due date itself is never moved here."""
     if req.status == "returned":
         raise HTTPException(
             status_code=409,
@@ -476,12 +651,32 @@ def mark_responded(
     delay_reason = (delay_reason or "").strip() or None
     if not remarks and not has_files:
         raise HTTPException(status_code=400, detail="Add response remarks or attach at least one response document.")
-    late = today_ist() > req.due_date
+    pending = unanswered_query(db, req.id)
+    if pending is not None:
+        bd_told_note = (bd_told_note or "").strip()
+        if bd_told_channel not in ANSWER_CHANNELS or len(bd_told_note) < MIN_NOTE:
+            raise HTTPException(status_code=400, detail=(
+                f"BD has not answered R&D's question yet (asked {_day(pending.asked_at)}: \"{pending.question}\"). Either wait for BD's reply on the R&D tab, "
+                f"or — if BD told you the answer by phone, email or in a meeting — choose how BD told you and write what BD said "
+                f"(at least {MIN_NOTE} characters), then submit the response."))
+    if pending is not None:
+        # R&D's clock stopped when it asked: it is late only if the request was ALREADY past its due
+        # date at that moment (the time spent waiting on BD never counts against R&D).
+        asked_on = pending.asked_at.astimezone(IST).date() if pending.asked_at.tzinfo else pending.asked_at.date()
+        late = pending.due_date_before is not None and asked_on > pending.due_date_before
+        due_for_message = pending.due_date_before or req.due_date
+    else:
+        late = today_ist() > req.due_date
+        due_for_message = req.due_date
     if late and not delay_reason:
         raise HTTPException(
             status_code=400,
-            detail=f"This response is late — it was due on {req.due_date.strftime('%d %b %Y')}. Enter the reason for the delay before submitting.",
+            detail=f"This response is late — it was due on {due_for_message.strftime('%d %b %Y')}. Enter the reason for the delay before submitting.",
         )
+    if pending is not None:
+        pending.answer, pending.answer_channel, pending.answered_side = bd_told_note, bd_told_channel, "rnd"
+        pending.answered_by_id, pending.answered_at = user.id, datetime.now(timezone.utc)
+        pending.due_date_after = req.due_date  # unchanged: only BD's own answer sets a new due date
     req.status = "responded"
     req.response_remarks = remarks
     req.delay_reason = delay_reason if late else None
@@ -509,6 +704,7 @@ def mark_responded(
             entity_type=req.source, entity_id=req.record_id, actor=user, can_open=can_open_record(db, record),
             skip_user_ids={req.requested_by_id} if req.requested_by_id else None,
         )
+    return pending
 
 
 MIN_CLOSE_REASON = 10

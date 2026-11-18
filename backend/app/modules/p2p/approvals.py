@@ -123,6 +123,9 @@ _PR_CONTEXT_FIELDS = {
     # Requisitions carry no prices: the value is the estimate below (quantity x the best known rate).
     "amount": {"label": "Estimated value (₹, from Item Master prices)", "type": "number"},
     "has_unpriced_lines": {"label": "Some lines have no price in Item Master", "type": "bool"},
+    # Picked on the PR form for a project requisition (2026-11-18) - the "Project head" stage.
+    "project_head_id": {"label": "Project head (picked on the requisition)", "type": "user",
+                        "missing": "No Project Head is picked on this requisition - edit it, pick the Project Head, then submit again."},
 }
 _PO_CONTEXT_FIELDS = {
     **_COMMON_CONTEXT_FIELDS,
@@ -165,6 +168,7 @@ def _pr_context(pr: P2PRequest) -> dict:
         "project_type": pr.project_type, "purpose": pr.purpose, "category_code": _condition_category(pr), "priority": pr.priority,
         "requirement_type": pr.requirement_type, "department": pr.department, "project_manager_id": None,
         "department_id": _requester_department_id(db, pr) if db is not None else None,
+        "project_head_id": pr.project_head_id,
     }
     if pr.order_project_id:
         from app.modules.projects.models.project import PmProject

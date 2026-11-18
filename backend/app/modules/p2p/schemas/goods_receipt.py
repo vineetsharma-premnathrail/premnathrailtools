@@ -19,6 +19,10 @@ class P2PGoodsReceiptBatchInspectPayload(BaseModel):
 
 class P2PGoodsReceiptItemPayload(BaseModel):
     po_item_id: int
+    # A PO line with no item code (typed by hand on the PR): the Item Master item
+    # Store gives it on this GRN — links the PO / PR line, then posts as usual.
+    # Ignored on a line that already has one.
+    store_item_id: int | None = None
     received_quantity: float = Field(allow_inf_nan=False)
     # Required (summing to received_quantity) for a batch-tracked item.
     batches: list[P2PGoodsReceiptBatchPayload] = Field(default_factory=list)

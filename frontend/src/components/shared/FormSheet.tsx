@@ -196,7 +196,7 @@ export function FormSheet({ icon, iconColor = BLUE, title, subtitle, onClose, bu
 
 /** Full-page version of FormSheet for documents with line rows (PO, PR, GRN, SO, invoices, BOM, stock moves):
  * the same header / sections / right panel / footer, laid out in the page instead of a popup. */
-export function FormPage({ icon, iconColor = BLUE, title, titleExtra, subtitle, onBack, backLabel = '← Back', backTour, children, footer, tour, nav }: {
+export function FormPage({ icon, iconColor = BLUE, title, titleExtra, subtitle, onBack, backLabel = '← Back', backTour, children, footer, tour, nav, fill }: {
   icon: SheetIconName; iconColor?: string; title: string; subtitle: string
   /** Next to the title — e.g. a status badge. */
   titleExtra?: React.ReactNode
@@ -207,6 +207,8 @@ export function FormPage({ icon, iconColor = BLUE, title, titleExtra, subtitle, 
   children: React.ReactNode; footer: React.ReactNode; tour?: string
   /** Module sub-nav — renders above the header block. */
   nav?: React.ReactNode
+  /** Card takes the full available height (footer pinned to the bottom) instead of shrinking to its content. */
+  fill?: boolean
 }) {
   const cardRef = useRef<HTMLDivElement>(null)
   const maxHeight = useFitToMain(cardRef)
@@ -214,7 +216,7 @@ export function FormPage({ icon, iconColor = BLUE, title, titleExtra, subtitle, 
     <div>
       {nav}
       <div ref={cardRef} data-tour={tour} className="form-page-card"
-        style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 18, boxShadow: '0 1px 3px rgba(15,23,42,0.05)', display: 'flex', flexDirection: 'column', maxHeight, overflow: maxHeight ? 'hidden' : undefined }}>
+        style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 18, boxShadow: '0 1px 3px rgba(15,23,42,0.05)', display: 'flex', flexDirection: 'column', maxHeight, height: fill ? maxHeight : undefined, overflow: maxHeight ? 'hidden' : undefined }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '20px 24px', borderBottom: `1px solid ${LINE}`, flexWrap: 'wrap' }}>
           <span style={{ width: 42, height: 42, borderRadius: 12, background: iconColor, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><SheetIcon name={icon} size={22} color="#fff" /></span>
           <div style={{ flex: '1 1 240px', minWidth: 0 }}>

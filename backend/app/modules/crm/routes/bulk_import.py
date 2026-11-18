@@ -55,6 +55,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core import visibility
+from app.core.data_scope import can_change
 from app.core.permissions import require_tab_action
 from app.core.priority import map_legacy_priority
 from app.core.validators import validate_email_format, validate_gst_format
@@ -65,6 +66,7 @@ from app.modules.crm.models.organization import Organization, OrgContact
 from app.modules.crm.services.org_scope import ORG_SCOPES, check_foreign_id, wrong_scope_message
 from app.modules.crm.models.inquiry import Inquiry, InquiryLineItem
 from app.modules.crm.models.activity import Activity
+from app.modules.crm.services import requirement_change
 from app.modules.crm.services.org_code import generate_org_code
 from app.modules.crm.schemas.organization import normalize_org_type
 
@@ -249,7 +251,7 @@ async def bulk_import(
     # its own new (org, ref) pairs too.
     inquiry_by_ref: dict[tuple[int, str], Inquiry] = {
         (i.org_id, i.bulk_import_ref): i
-        for i in db.query(Inquiry).filter(Inquiry.bulk_import_ref.isnot(None)).all()
+        for i in db.query(Inquiry).filter(Inquiry.bulk_import_ref.isnot(None), Inquiry.is_deleted == False).all()  # noqa: E712
     }
     # Tracks which (org_id, ref) keys THIS run has already "touched" once —
     # the first touch updates the existing inquiry's primary fields (or
@@ -525,6 +527,18 @@ async def bulk_import(
                 # a PREVIOUS upload — first time this run has seen it, so
                 # refresh it with whatever non-blank fields this row
                 # supplies instead of creating a duplicate.
+                # The import changes someone's inquiry: it must be inside the importer's Edit scope.
+                if not can_change(db, user, inquiry):
+                    raise ValueError(
+                        f"Inquiry {inquiry.universal_id} is outside your Edit scope for Inquiries & Tenders, so the import can't update it — "
+                        "ask an admin to widen the Edit scope of your role (Organization › Role & Permissions › Data access), "
+                        "or ask its owner to update it.")
+                # Once R&D has the requirement its Customer Requirement text changes only through "Change requirement".
+                new_spec = inquiry_fields["product_spec"]
+                if new_spec and " ".join(new_spec.split()) != " ".join((inquiry.product_spec or "").split())                         and requirement_change.live_send(db, module="inquiry", record_id=inquiry.id) is not None:
+                    raise ValueError(
+                        f"Customer Requirement of {inquiry.universal_id} is already with R&D — use Change requirement on the inquiry "
+                        "(R&D tab) so R&D gets the change as a new revision; nothing in this row was imported.")
                 field_undo = []
                 for field, val in inquiry_fields.items():
                     if val is not None and val != "" and getattr(inquiry, field) != val:
@@ -556,6 +570,10 @@ async def bulk_import(
                         InquiryLineItem.inquiry_id == inquiry.id, InquiryLineItem.product == product_name,
                     ).first() is not None
                 )
+                if product_name and not already_present and _get(row, "product_spec") and                         requirement_change.live_send(db, module="inquiry", record_id=inquiry.id) is not None:
+                    raise ValueError(
+                        f"Customer Requirement of {inquiry.universal_id} is already with R&D — a new product line with a specification "
+                        "can't be added by import. Use Change requirement on the inquiry (R&D tab); nothing in this row was imported.")
                 if product_name and not already_present:
                     sort_order = line_item_count.get(inquiry.id, 0)
                     db.add(InquiryLineItem(

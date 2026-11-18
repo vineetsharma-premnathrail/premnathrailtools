@@ -46,11 +46,17 @@ def test_pr_line_must_be_an_active_item_master_item_and_master_fields_win(client
     requester = _requester(db, "im.req1@premnathrail.com")
     set_pr_workflow(db, [u.id for u in _pr_approvers(db).values()], requester)
 
-    # No store_item_id → 422 with what to do.
+    # No store_item_id and nothing typed → 422 with what to do.
+    r = client.post(BASE, json=_create_payload(items=[
+        {"quantity": 1, "project_inhouse": "Project"}]), headers=auth_header(requester))
+    assert r.status_code == 422, r.text
+    assert "Line 1: type the item name, or pick the item from the Item Master" in r.json()["detail"]
+    # A name alone is a typed (manual) line since 2026-11-18 — it needs its
+    # category and unit (test_p2p_manual_pr_lines covers the full rule).
     r = client.post(BASE, json=_create_payload(items=[
         {"item_name": "Typed only", "quantity": 1, "unit": "pcs", "project_inhouse": "Project"}]), headers=auth_header(requester))
     assert r.status_code == 422, r.text
-    assert "Line 1: pick the item from the Item Master" in r.json()["detail"]
+    assert "type the category" in r.json()["detail"]
 
     # Inactive master item → 422.
     old = master_item(db, "Old gasket", code="RM-GSK-OLD", status="inactive")
@@ -116,7 +122,7 @@ def test_unlinked_po_line_blocks_grn_until_linked_once(client, db):
 
     refused = _grn(client, buyer, po, loc, 2)
     assert refused.status_code == 409, refused.text
-    assert "Link to Item Master" in refused.json()["detail"]
+    assert "New item code" in refused.json()["detail"]  # Store gives it an item code on the GRN (2026-11-18)
 
     link_url = f"/api/v1/p2p/purchase-orders/{po['id']}/items/{line.id}/link-item"
     linked = client.post(link_url, json={"store_item_id": item.id}, headers=auth_header(buyer))

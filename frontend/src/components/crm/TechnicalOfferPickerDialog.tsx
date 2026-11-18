@@ -3,9 +3,10 @@
 import { useEffect, useState } from 'react'
 import { crmApi } from '@/lib/api'
 import { useCan } from '@/lib/permissions'
-import { CrmDocument, RndRequestAssignment } from '@/types'
+import { CrmDocument, RndRequestAssignment, RequirementChangeReason } from '@/types'
 import Checkbox from '@/components/Checkbox'
 import DateField from '@/components/erp/DateField'
+import { ChangeReasonFields, changeReasonError } from '@/components/crm/ChangeRequirementSheet'
 import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, SheetError } from '@/components/shared/FormSheet'
 
 
@@ -19,6 +20,8 @@ type Props = {
   relatedModule: 'inquiry' | 'tender'
   relatedId: number
   sending: boolean
+  /** The requirement was sent before: the dialog asks why it is sent again (change_reason / change_note go out with the send). */
+  askReason?: boolean
   onSend: (documentIds: number[], assignment: RndRequestAssignment) => void
   onCancel: () => void
 }
@@ -29,13 +32,15 @@ export default function TechnicalOfferPickerDialog(props: Props) {
   return <TorSheet {...props} />
 }
 
-function TorSheet({ relatedModule, relatedId, sending, onSend, onCancel }: Props) {
+function TorSheet({ relatedModule, relatedId, sending, askReason, onSend, onCancel }: Props) {
   const [clientDocs, setClientDocs] = useState<CrmDocument[]>([])
   const [selected, setSelected] = useState<number[]>([])
   const [loading, setLoading] = useState(true)
   const [dueDate, setDueDate] = useState('')
   const [remarks, setRemarks] = useState('')
   const [formError, setFormError] = useState('')
+  const [reason, setReason] = useState<RequirementChangeReason | ''>('')
+  const [reasonNote, setReasonNote] = useState('')
   // Picking reference documents needs Inquiries & Tenders › Documents › View; without it the list is skipped.
   const seeDocs = useCan().canFeature('crm', 'inquiries_tenders', 'documents', 'view')
 
@@ -53,10 +58,17 @@ function TorSheet({ relatedModule, relatedId, sending, onSend, onCancel }: Props
 
   // No Technical Offer document (owner, 2026-10-30): R&D works from the requirement itself.
   const submit = () => {
+    if (askReason) {
+      const msg = changeReasonError(reason, reasonNote)
+      if (msg) { setFormError(msg); return }
+    }
     if (!dueDate) { setFormError('Set the Response Due Date — the date R&D must reply by.'); return }
     if (dueDate < todayIso()) { setFormError('Response Due Date is in the past — pick today or a later date.'); return }
     setFormError('')
-    onSend(selected, { response_due_date: dueDate, remarks: remarks.trim() || undefined })
+    onSend(selected, {
+      response_due_date: dueDate, remarks: remarks.trim() || undefined,
+      ...(askReason && reason ? { change_reason: reason, change_note: reasonNote.trim() || undefined } : {}),
+    })
   }
 
   return (
@@ -71,6 +83,12 @@ function TorSheet({ relatedModule, relatedId, sending, onSend, onCancel }: Props
       </>}>
       <div style={{ padding: '20px 24px' }}>
         <SheetError error={formError} />
+        {askReason && (
+          <SheetSection icon="undo" title="Why are you sending this again?">
+            <ChangeReasonFields reason={reason} note={reasonNote} onReason={(v) => { setReason(v); setFormError('') }} onNote={setReasonNote} tourPrefix="tor" />
+            <p style={{ fontSize: 12, color: SHEET.MUTED, margin: '6px 0 0' }}>R&amp;D already has an earlier send of this requirement; the reason is shown with the new revision.</p>
+          </SheetSection>
+        )}
         <SheetSection icon="calendar" title="Response">
           <div data-tour="tor-due-date" style={{ maxWidth: 200 }}>
             <label style={sheetLabel}>Response Due Date <Req /></label>

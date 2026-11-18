@@ -194,15 +194,11 @@ def _reads(rfq_id, vq_id):
             f"{RFQS}/{rfq_id}/line-quotations/{vq_id}/files", f"{RFQS}/{rfq_id}/attachments/1/content"]
 
 
-def test_another_buyer_with_a_wide_scope_cannot_open_the_rfq_but_the_owner_and_head_can(client, db, quoted):
+def test_every_buyer_opens_another_buyers_rfq_like_the_head_but_cannot_work_it(client, db, quoted):
+    # Owner, 2026-11-18: buyers see all details like the Purchase head; working the RFQ stays its buyer's.
     q = quoted
-    for url in _reads(q["rfq"]["id"], q["q1"]["id"]):
-        denied = client.get(url, headers=_h(q["b"]))
-        assert denied.status_code == 403, (url, denied.text)
-        if not url.endswith("/export"):  # the export first asks for the price permission
-            d = denied.json()["detail"]
-            assert f"belongs to {q['a'].name}" in d and f"only {q['a'].name} or the Purchase head can open its quotes" in d, (url, d)
-    for who in (q["a"], q["head"]):
+    assert client.post(f"{RFQS}/{q['rfq']['id']}/submit", headers=_h(q["b"])).status_code == 403
+    for who in (q["a"], q["b"], q["head"]):
         for url in _reads(q["rfq"]["id"], q["q1"]["id"])[:-1]:
             r = client.get(url, headers=_h(who))
             assert r.status_code == 200, (who.email, url, r.text)
@@ -229,7 +225,7 @@ def test_the_header_buyer_no_longer_reaches_other_buyers_rfqs_or_pos_through_sco
     assert q["rfq"]["id"] in {r["id"] for r in client.get(RFQS, headers=_h(q["a"])).json()}
 
 
-def test_a_po_approver_opens_the_tally_po_document_through_the_requisition_but_other_buyers_do_not(client, db, quoted):
+def test_a_po_approver_and_other_buyers_open_the_tally_po_document_through_the_requisition(client, db, quoted):
     from app.tests.p2p_po_helpers import sharepoint_stub
 
     q = quoted
@@ -238,8 +234,7 @@ def test_a_po_approver_opens_the_tally_po_document_through_the_requisition_but_o
         po = _upload_l1(client, db, q, "TALLY-FX-DOC")
         url = f"{RFQS}/{q['rfq']['id']}/po-draft/{po['id']}/document/content"
         assert client.get(url, headers=_h(q["a"])).status_code == 200
-        other = client.get(url, headers=_h(q["b"]))
-        assert other.status_code == 403 and "belongs to" in other.json()["detail"]
+        assert client.get(url, headers=_h(q["b"])).status_code == 200  # every buyer sees like the head (2026-11-18)
         # A PO approver who also has the purchase desk reads what they sign off on, whoever bought it.
         approver = q["approver"]
         approver.assigned_apps = list(approver.assigned_apps or []) + ["purchase"]
@@ -405,7 +400,7 @@ def test_the_draft_quantity_floor_says_why_and_how_to_order_less(client, db, quo
 
 # ── list: another buyer's RFQ is only "RFQ of {buyer}" ────────────────────────
 
-def test_the_rfq_list_blanks_quotes_and_vendors_of_other_buyers_but_keeps_number_buyer_and_lines(client, db, quoted):
+def test_the_rfq_list_shows_other_buyers_rfqs_in_full_to_every_buyer(client, db, quoted):
     q = quoted
     _split_award(client, q)
     rfq = db.get(RFQ, q["rfq"]["id"])
@@ -422,8 +417,8 @@ def test_the_rfq_list_blanks_quotes_and_vendors_of_other_buyers_but_keeps_number
     other = seen[q["rfq"]["id"]]
     assert other["rfq_number"] == q["rfq"]["rfq_number"] and other["buyer_id"] == q["a"].id and other["buyer_name"] == q["a"].name
     assert other["status"] == "locked" and sorted(i["pr_item_id"] for i in other["items"]) == sorted([q["l1"], q["l3"]])
-    assert other["vendor_quotations"] == [] and other["attachments"] == [] and other["awarded_vendors"] == []
-    assert other["other_quoted_vendors"] == [] and other["awarded_line_count"] == 0 and other["payment_terms"] is None
+    # Every buyer sees another buyer's RFQ in full, like the head (owner, 2026-11-18).
+    assert len(other["vendor_quotations"]) == 2 and other["awarded_vendors"] and other["payment_terms"] == "30 days"
     assert seen[rb["id"]]["items"] and seen[rb["id"]]["buyer_id"] == q["b"].id          # B's own row is untouched
     head = rows(q["head"])[q["rfq"]["id"]]
     assert len(head["vendor_quotations"]) == 2 and head["awarded_vendors"]               # the Purchase head sees everything

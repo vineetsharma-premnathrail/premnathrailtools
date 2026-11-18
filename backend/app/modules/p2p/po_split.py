@@ -73,6 +73,31 @@ def can_work_all_lines(user) -> bool:
     return is_admin_user(user) or can_feature(user, "p2p", "purchase_requisitions", "all_lines", "edit")
 
 
+def is_purchaser(user) -> bool:
+    """A buyer: holds Create on Procurement > R.F.Q. (the tick decides, never a role name)."""
+    from app.core.permission_registry import can_perform
+
+    return user is not None and can_perform(user, "p2p", "rfq", "create")
+
+
+def can_see_all_lines(user) -> bool:
+    """Who SEES every buyer's lines, RFQs (quotes, comparison, files) and POs' vendors like the
+    Purchase head (owner, 2026-11-18: buyers get the head's full view). Working them - award,
+    upload PO, reassign, short-close another buyer's line - stays can_work_all_lines."""
+    from app.core.permission_registry import can_feature
+
+    if user is None:
+        return False
+    return (can_work_all_lines(user) or is_purchaser(user)
+            or can_feature(user, "p2p", "purchase_requisitions", "all_lines", "view"))
+
+
+def can_claim_line(user) -> bool:
+    """A line with no buyer is taken by the buyer who decides it is theirs, by putting it on their
+    RFQ (owner, 2026-11-18: 'buyer decide karega'); the Purchase head as before."""
+    return can_work_all_lines(user) or is_purchaser(user)
+
+
 def lock_pr(db: Session, pr_id: int) -> P2PRequest:
     """The requisition row, locked FOR UPDATE NOWAIT and re-read from the database
     (populate_existing), with its lines reloaded too. It is the one serialisation

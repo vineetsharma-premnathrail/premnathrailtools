@@ -511,7 +511,7 @@ def get_tracker(
     #   * an approver (or the person who decided) on that PO's approval;
     #   * management - a viewer outside the Purchase team who already passes the commercials check.
     # Any other buyer on the same requisition sees the PO number and stage only; a requester never sees either.
-    see_all = po_split.can_work_all_lines(user)
+    see_all = po_split.can_see_all_lines(user)  # every buyer sees like the head (2026-11-18)
     # A buyer (Purchase Desk, or a buyer on this requisition) among buyers sees only their own POs' vendors.
     purchase_team = _works_every_pr(user) or user.id in buyer_ids
     rfq_buyer = {rid: (b or c) for rid, b, c in db.query(RFQ.id, RFQ.buyer_id, RFQ.created_by_id)

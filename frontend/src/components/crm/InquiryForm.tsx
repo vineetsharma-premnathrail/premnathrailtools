@@ -98,6 +98,7 @@ export default function InquiryForm({
   subtitle,
   nav,
   onBack,
+  lockRequirement,
 }: {
   initial?: Inquiry
   defaultOrgId?: number
@@ -110,8 +111,13 @@ export default function InquiryForm({
   nav?: React.ReactNode
   /** Shows the "← Back" pill in the header. */
   onBack?: () => void
+  /** The Customer Requirement was sent to R&D: its text is read-only here and changes only through "Change requirement". Defaults to "was sent". */
+  lockRequirement?: boolean
 }) {
   const orgLocked = !!defaultOrgId
+  const specLocked = !!initial && (lockRequirement ?? !!initial.technical_offer_sent_at)
+  // Additional products that existed when the form opened keep their requirement text locked (the lock follows the row); a row added now is still typed here.
+  const lockedSpecStyle: React.CSSProperties = { background: '#f1f5f9', color: '#475569', cursor: 'not-allowed' }
   // Role-wise visibility (Organization › Role & Permissions › CRM › Inquiries & Tenders › Visibility): the
   // Priority / Status lists are narrowed to what the role offers (a saved record keeps its own value; an older
   // record's retired status stays selectable). The server refuses a disallowed value as well.
@@ -147,13 +153,14 @@ export default function InquiryForm({
   // The banner sits at the top of a long form — bring it into view when it appears.
   useEffect(() => { if (error && (!Array.isArray(error) || error.length)) errorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }) }, [error])
 
-  type ExtraProductRow = { product_category: string; product: string; product_spec: string; quantity: string }
+  type ExtraProductRow = { product_category: string; product: string; product_spec: string; quantity: string; specLocked?: boolean }
   const [extraProducts, setExtraProducts] = useState<ExtraProductRow[]>(
     (initial?.additional_items || []).map((it: InquiryLineItem) => ({
       product_category: it.product_category || '',
       product: it.product || '',
       product_spec: it.product_spec || '',
       quantity: it.quantity != null ? String(it.quantity) : '',
+      specLocked: specLocked || undefined,
     }))
   )
   // "+" beside Product adds one more Product + Customer Requirement pair; only when every
@@ -561,7 +568,11 @@ export default function InquiryForm({
             </F>
           </div>
         </div>
-        <F label="Customer Requirement" tourId="inq-product-spec"><textarea value={form.product_spec} onChange={(e) => set('product_spec', e.target.value)} rows={2} placeholder="e.g. High Speed Self Propelled, 1676mm BG, hydraulic braking, anti-climber arrangement..." style={{ ...inputStyle, resize: 'vertical' }} /></F>
+        <F label="Customer Requirement" tourId="inq-product-spec">
+          <textarea value={form.product_spec} onChange={(e) => set('product_spec', e.target.value)} rows={2} readOnly={specLocked} aria-readonly={specLocked}
+            placeholder="e.g. High Speed Self Propelled, 1676mm BG, hydraulic braking, anti-climber arrangement..." style={{ ...inputStyle, resize: 'vertical', ...(specLocked ? lockedSpecStyle : {}) }} />
+          {specLocked && <p data-tour="inq-spec-locked" style={{ fontSize: 12, color: '#1e40af', margin: '6px 0 0' }}>Sent to R&amp;D — to change a Customer Requirement, cancel this edit and use <strong>Change requirement</strong> at the top of the inquiry. R&amp;D then gets a new revision.</p>}
+        </F>
 
         {extraProducts.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -577,7 +588,8 @@ export default function InquiryForm({
                     </div>
                     <button type="button" onClick={() => removeExtraProduct(i)} style={{ ...sheetBtn('ghost', '#DC2626'), marginTop: 22 }}><XIcon /></button>
                   </div>
-                  <F label="Customer Requirement"><textarea value={row.product_spec} onChange={(e) => setExtraProduct(i, 'product_spec', e.target.value)} rows={2} placeholder="What the customer needs for this product" style={{ ...inputStyle, resize: 'vertical' }} /></F>
+                  <F label="Customer Requirement"><textarea value={row.product_spec} onChange={(e) => setExtraProduct(i, 'product_spec', e.target.value)} rows={2} readOnly={!!row.specLocked} aria-readonly={!!row.specLocked}
+                    placeholder="What the customer needs for this product" style={{ ...inputStyle, resize: 'vertical', ...(row.specLocked ? lockedSpecStyle : {}) }} /></F>
                   {isDup && <p style={{ fontSize: 11, color: '#b45309', fontWeight: 600, margin: 0 }}>⚠ This product is already added elsewhere in this inquiry.</p>}
                 </div>
               )

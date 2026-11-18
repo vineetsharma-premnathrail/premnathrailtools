@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { goodsReceiptsApi, storeApi, storeBatchesApi } from '@/lib/api'
-import { P2PReceivablePurchaseOrder, StoreLocation } from '@/types'
+import { P2PReceivablePurchaseOrder, StoreItem, StoreLocation } from '@/types'
 import { TEXT, BORDER } from '@/lib/theme'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
@@ -25,6 +25,15 @@ import { VisColumns } from '@/components/quality/VisColumns'
 import { VisSection, VisTd, VisTh } from '@/lib/visibilityComponents'
 import { sampleReceivablePos } from '@/lib/storePreviewSamples'
 import BeforePOReceiptForm from '@/components/store/BeforePOReceiptForm'
+import QuickAddItemDialog from '@/components/store/QuickAddItemDialog'
+import { itemOptionDetail } from '@/lib/itemOptions'
+
+// Item types a GRN puts into stock (a service is confirmed on a service entry, never here).
+const STANDARD_ITEM_TYPES = ['material', 'service', 'asset', 'consumable', 'tool_equipment']
+const GRN_TYPES = ['material', 'consumable', 'tool_equipment', 'asset']
+const grnTypeFits = (t: string | null | undefined) => !STANDARD_ITEM_TYPES.includes(t || '') || GRN_TYPES.includes(t || '')
+// A PR line typed by hand carries its technical details in its name ("Name — details").
+const MANUAL_SEP = ' — '
 
 const inputStyle: React.CSSProperties = sheetInput
 // PO-line columns a role may hide (Store › GRN & Inspection › Visibility); Variance follows Invoice Qty.
@@ -117,6 +126,19 @@ export default function NewStoreGrnPage() {
   const { canFeature } = useCan()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | string[]>('')
+  // PO lines with no item code (typed by hand on the PR, 2026-11-18): the Item Master item
+  // Store gives each one on this GRN (po line id -> item id), the items to pick from, and
+  // the quick-add popup (lineId null = opened from the Line Items header).
+  const [lineItem, setLineItem] = useState<Record<number, string>>({})
+  const [linkItems, setLinkItems] = useState<StoreItem[]>([])
+  const [quickAdd, setQuickAdd] = useState<{ lineId: number | null } | null>(null)
+  const linkItemsLoaded = useRef(false)
+  const loadLinkItems = () => {
+    if (linkItemsLoaded.current) return
+    linkItemsLoaded.current = true
+    storeApi.listItems({ status: 'active' }).then((rows: StoreItem[]) => setLinkItems(rows.filter((i) => grnTypeFits(i.item_type))))
+      .catch((err) => { linkItemsLoaded.current = false; setError(extractErrorMessages(err, 'Could not load the Item Master items — reload the page and try again.')) })
+  }
   // Kept per purchase order; waits until a PO is chosen (or opened from the list).
   const draft = useFormDraft(poId && !vis.preview ? `store-grn-new-${poId}` : null,
     { poId, storeLocationId, receivedDate, remarks, receivedQty, invoiceQty, lineBin, lineSerials, docs, docType, heats },
@@ -153,6 +175,9 @@ export default function NewStoreGrnPage() {
     if (ship && locations.some((l) => l.id === ship)) setStoreLocationId(String(ship))
   }, [poId, pos, locations]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const needsItemCodes = !!pos.find((p) => String(p.id) === poId)?.items.some((it) => !it.store_item_id && it.pending_quantity > 0)
+  useEffect(() => { if (needsItemCodes && !vis.preview) loadLinkItems() }, [needsItemCodes]) // eslint-disable-line react-hooks/exhaustive-deps
+
   if (isLoading || !isAuthorized) return null
   if (linkError) return (<div><StoreNav /><InvalidRecordLink message={linkError} listHref="/dashboard/store/grn" listLabel="Back to goods receipts" /></div>)
   if (poLoading) return <div><StoreNav /></div>
@@ -166,6 +191,12 @@ export default function NewStoreGrnPage() {
   }
 
   const selectedPo = pos.find((p) => String(p.id) === poId)
+  // A line with no item code takes its batch / serial / expiry rules from the item picked for it here.
+  const flagsOf = (it: P2PReceivablePurchaseOrder['items'][number]) => {
+    if (it.store_item_id) return { batch_controlled: it.batch_controlled, serial_controlled: it.serial_controlled, expiry_controlled: it.expiry_controlled }
+    const picked = linkItems.find((x) => String(x.id) === lineItem[it.id])
+    return { batch_controlled: !!picked?.batch_controlled, serial_controlled: !!picked?.serial_controlled, expiry_controlled: !!picked?.expiry_controlled }
+  }
   // The preview draws every column (hidden ones dimmed, with a toggle); normal use drops the hidden ones.
   const showLineCol = (h: string) => !LINE_HIDEABLE[h] || vis.preview || vis.showColumn('form_lines', LINE_HIDEABLE[h])
   const lineHeaders = ['Item', 'Unit', 'Ordered Qty', 'Already Received', 'Pending', 'Invoice Qty', 'Received Now *', 'Variance', 'Bin'].filter(showLineCol)
@@ -175,9 +206,16 @@ export default function NewStoreGrnPage() {
     setError('')
     if (!poId) { setError('Select a purchase order.'); return }
     if (!storeLocationId) { setError('Pick the store the goods were received into — the GRN puts them into that store’s stock.'); return }
+    for (const it of selectedPo?.items || []) {
+      if (!it.store_item_id && Number(receivedQty[it.id] || 0) > 0 && !lineItem[it.id]) {
+        setError(`'${it.item_name}' has no item code yet (typed by hand on the requisition). Pick its Item Master item on the line, or use '+ New item code' to add it, then save.`); return
+      }
+    }
     const items = (selectedPo?.items || [])
+      .map((it) => ({ ...it, ...flagsOf(it) }))
       .map((it) => ({
         po_item_id: it.id, received_quantity: Number(receivedQty[it.id] || 0),
+        store_item_id: !it.store_item_id && lineItem[it.id] ? Number(lineItem[it.id]) : undefined,
         invoice_quantity: invoiceQty[it.id] !== undefined && invoiceQty[it.id] !== '' ? Number(invoiceQty[it.id]) : undefined,
         bin_id: lineBin[it.id] ? Number(lineBin[it.id]) : undefined,
         serials: it.serial_controlled ? splitSerials(lineSerials[it.id] || '') : [],
@@ -189,7 +227,8 @@ export default function NewStoreGrnPage() {
       .filter((it) => it.received_quantity > 0)
     if (items.length === 0) { setError('Enter a received quantity for at least one item.'); return }
     for (const it of items) {
-      const line = selectedPo?.items.find((l) => l.id === it.po_item_id)
+      const raw = selectedPo?.items.find((l) => l.id === it.po_item_id)
+      const line = raw ? { ...raw, ...flagsOf(raw) } : undefined
       if (line?.serial_controlled && it.serials.length !== it.received_quantity) {
         setError(`'${line.item_name}' is serial-numbered — enter ${it.received_quantity} serial number(s), one per unit (${it.serials.length} entered).`); return
       }
@@ -395,7 +434,14 @@ export default function NewStoreGrnPage() {
 
       {selectedPo && (
         <VisSection vis={vis} k="line_items" frame={{ padding: '20px 24px', borderTop: `1px solid ${SHEET.LINE}` }}>
-          <SheetSection icon="box" title="Line Items" extra={showLineCol('Invoice Qty') &&
+          <SheetSection icon="box" title="Line Items" extra={<div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+            {!vis.preview && (
+              <button type="button" data-tour="store-grn-form-new-item-btn" onClick={() => { loadLinkItems(); setQuickAdd({ lineId: null }) }}
+                style={smallSecondaryBtnStyle} title="Add a new item to the Item Master without leaving this goods receipt">
+                + New item code
+              </button>
+            )}
+            {showLineCol('Invoice Qty') &&
             <button
               type="button"
               data-tour="store-grn-form-fill-btn"
@@ -403,8 +449,8 @@ export default function NewStoreGrnPage() {
               style={{ ...smallSecondaryBtnStyle, marginLeft: 'auto' }}
             >
               Invoice qty = pending
-            </button>
-          }>
+            </button>}
+          </div>}>
           <div data-tour="store-grn-form-lines" style={{ overflow: 'auto', border: `1px solid ${SHEET.LINE}`, borderRadius: 12 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
               <thead>
@@ -419,7 +465,8 @@ export default function NewStoreGrnPage() {
                 </tr>
               </thead>
               <tbody>
-                {selectedPo.items.map((it) => {
+                {selectedPo.items.map((raw) => {
+                  const it = { ...raw, ...flagsOf(raw) }
                   const now = Number(receivedQty[it.id] || 0)
                   const balance = it.pending_quantity - now
                   const inv = invoiceQty[it.id] !== undefined && invoiceQty[it.id] !== '' ? Number(invoiceQty[it.id]) : null
@@ -432,6 +479,23 @@ export default function NewStoreGrnPage() {
                         <div style={{ fontSize: 11.5, color: TEXT.muted, marginTop: 2 }}>{[it.make && `Make ${it.make}`, it.part_code && `Part ${it.part_code}`].filter(Boolean).join(' · ')}</div>
                       )}
                       {it.specification && <div style={{ fontSize: 11.5, color: TEXT.secondary, marginTop: 2, maxWidth: 320, whiteSpace: 'pre-wrap' }}>{it.specification}</div>}
+                      {!it.store_item_id && it.pending_quantity > 0 && (
+                        <div data-tour="store-grn-form-item-code" style={{ marginTop: 6, minWidth: 300, maxWidth: 420 }}>
+                          <div style={{ fontSize: 11.5, color: '#b45309', marginBottom: 4 }}>
+                            No item code yet (typed by hand on the requisition) — pick its Item Master item or add a new one, then receive it.
+                          </div>
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <SearchableSelect ariaLabel={`Item code for ${it.item_name}`} value={lineItem[it.id] || ''} searchable
+                                onChange={(v) => setLineItem((m) => ({ ...m, [it.id]: v }))}
+                                options={linkItems.map((x) => ({ value: String(x.id), label: `${x.item_code} — ${x.item_name}`, description: itemOptionDetail(x) }))}
+                                placeholder={linkItems.length ? 'Pick the Item Master item' : 'Loading items…'} />
+                            </div>
+                            <button type="button" onClick={() => setQuickAdd({ lineId: it.id })} style={{ ...smallSecondaryBtnStyle, whiteSpace: 'nowrap' }}
+                              title="Add this item to the Item Master and use it on this line">+ New item code</button>
+                          </div>
+                        </div>
+                      )}
                       {(it.pre_po_unsettled_qty ?? 0) > 0 && (
                         <div data-tour="grn-bpo-settle-hint" style={{ fontSize: 11.5, color: '#b45309', marginTop: 4, maxWidth: 320 }}>
                           {it.pre_po_unsettled_qty} {it.unit || ''} already in stock via {it.pre_po_receipt_number || 'a Before PO receipt'} — receiving it here settles it, stock is not added again
@@ -510,6 +574,30 @@ export default function NewStoreGrnPage() {
           </SheetSection>
         </VisSection>
       )}
+      {quickAdd && (() => {
+        const line = quickAdd.lineId !== null ? selectedPo?.items.find((l) => l.id === quickAdd.lineId) : undefined
+        const at = line ? line.item_name.indexOf(MANUAL_SEP) : -1
+        return (
+          <QuickAddItemDialog
+            initialName={line ? (at < 0 ? line.item_name : line.item_name.slice(0, at)) : undefined}
+            initialSpec={line && at >= 0 ? line.item_name.slice(at + MANUAL_SEP.length) : undefined}
+            initialCategory={line?.pr_item_category || undefined}
+            initialUom={line?.unit || undefined}
+            subtitle={line ? `Item code for "${line.item_name}" — the rest of its details are completed later in the Item Master` : 'Quick add from this goods receipt — the rest of its details are completed later in the Item Master'}
+            allowedTypes={grnTypeFits}
+            onClose={() => setQuickAdd(null)}
+            onCreated={(item) => {
+              setLinkItems((all) => [...all.filter((x) => x.id !== item.id), item].sort((a, b) => a.item_code.localeCompare(b.item_code, undefined, { numeric: true })))
+              if (line) setLineItem((m) => ({ ...m, [line.id]: String(item.id) }))
+              setQuickAdd(null)
+            }}
+            onPickExisting={(id) => {
+              if (line) setLineItem((m) => ({ ...m, [line.id]: String(id) }))
+              setQuickAdd(null)
+            }}
+          />
+        )
+      })()}
     </FormPage>
   )
 }

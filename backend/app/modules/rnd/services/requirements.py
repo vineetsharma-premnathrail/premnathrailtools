@@ -133,13 +133,17 @@ def _snapshot_of(db: Session, log_id: int | None) -> dict:
 
 def on_bd_submit(
     db: Session, *, source: str, record, user: User, crm_request: CrmRndRequest, movement_log: AuditLog | None,
+    change_reason: str | None = None, change_note: str | None = None,
 ) -> RndRequirementRevision:
     """BD sent / re-sent the requirement (same transaction as the send).
 
     First send: creates the requirement with its R&D ID and revision R0.
     Re-send: a new revision; a previous revision still unanswered
     (submitted / accepted) becomes superseded; returned / responded ones keep
-    their status. The requirement shows the status of the latest revision."""
+    their status. The requirement shows the status of the latest revision.
+
+    A re-send carries why BD sent it again (change_reason: customer_changed / bd_correction /
+    other, plus a note) — stored on the new revision for R&D's banner and Timeline."""
     now = _now()
     req = get(db, source, record.id, lock=True)
     previous = latest_revision(db, req, lock=True) if req else None
@@ -164,6 +168,8 @@ def on_bd_submit(
         requirement_id=req.id, revision_no=revision_no, revision_code=f"{req.rd_number}-R{revision_no}", status="submitted",
         crm_rnd_request_id=crm_request.id, movement_log_id=movement_log.id if movement_log else None,
         changed_fields=changed or None, submitted_by_id=user.id, submitted_at=now, created_at=now,
+        change_reason=change_reason if previous is not None else None,
+        change_note=(change_note or "").strip() or None if previous is not None else None,
     )
     db.add(rev)
     req.status = "submitted"
@@ -172,7 +178,8 @@ def on_bd_submit(
     db.flush()
     db.add(AuditLog(
         entity_type=f"rnd_req_{source}", entity_id=record.id, action="requirement_submitted", module_key="rnd",
-        summary=f"{_name(user)} sent {rev.revision_code} to R&D" + (f" — changed: {', '.join(changed)}." if changed else "."),
+        summary=f"{_name(user)} sent {rev.revision_code} to R&D" + (f" — changed: {', '.join(changed)}." if changed else ".")
+                + (f" Reason: {requirement_movement.reason_text(rev.change_reason, rev.change_note)}." if rev.change_reason else ""),
         performed_by_id=user.id,
     ))
     return rev
@@ -385,7 +392,7 @@ def revisions_out(db: Session, req: RndRequirement | None, movements: list[dict]
     if req is None:
         return []
     revs = revisions_of(db, req)
-    ids = {i for r in revs for i in (r.submitted_by_id, r.reviewed_by_id) if i}
+    ids = {i for r in revs for i in (r.submitted_by_id, r.reviewed_by_id, r.corrected_by_id) if i}
     users = {u.id: u for u in db.query(User).filter(User.id.in_(ids)).all()} if ids else {}
     by_log = {m["id"]: m for m in (movements or [])}
     by_label = {label: field for field, label in requirement_movement.SNAPSHOT_FIELDS.items()}
@@ -400,6 +407,8 @@ def revisions_out(db: Session, req: RndRequirement | None, movements: list[dict]
             "reviewed_by": _name(users.get(r.reviewed_by_id)), "reviewed_at": _iso(r.reviewed_at),
             "review_remarks": r.review_remarks, "return_reason": r.return_reason,
             "responded_at": _iso(r.responded_at),
+            "change_reason": r.change_reason, "change_note": r.change_note,
+            "corrected_at": _iso(r.corrected_at), "corrected_by": _name(users.get(r.corrected_by_id)),
             "changed_fields": [c["label"] for c in changes] if mv is not None else [
                 lab for lab in (r.changed_fields or []) if not mask or by_label.get(lab) not in mask],
             "changes": changes,

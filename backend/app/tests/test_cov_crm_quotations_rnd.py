@@ -239,11 +239,12 @@ def people(db):
 
 
 def send_tor(client, inq_id, user, due=None, **extra):
-    """CRM sends the requirement to the whole R&D team (no Technical Offer document since 2026-10-30)."""
+    """CRM sends the requirement to the whole R&D team (no Technical Offer document since 2026-10-30).
+    A re-send must say why (change_reason, 2026-11-17); the first send ignores it."""
     due = due or (date.today() + timedelta(days=5))
     return client.post(
         f"{API}/inquiries/{inq_id}/technical-offer-request",
-        json={"response_due_date": due.isoformat(), **extra},
+        json={"response_due_date": due.isoformat(), "change_reason": "customer_changed", **extra},
         headers=auth(user),
     )
 

@@ -8,6 +8,10 @@ import P2PNav from '@/components/p2p/P2PNav'
 import PurposeRulesCard from '@/components/p2p/PurposeRulesCard'
 import BuyerResponsibilityCard from '@/components/p2p/BuyerResponsibilityCard'
 
+// Buyer by category is off for now (owner, 2026-11-18) — lines get no buyer, Purchase assigns by hand.
+// Turn on together with BUYER_BY_CATEGORY_ENABLED in backend p2p/models/p2p_request.py.
+const BUYER_BY_CATEGORY = false
+
 export default function ProcurementSettingsPage() {
   // Procurement › Settings › View opens it (read-only unless allowed to edit) — the tick decides (2026-11-14).
   const { user, isLoading } = useAuth()
@@ -17,6 +21,6 @@ export default function ProcurementSettingsPage() {
   return (
     <ModuleSettingsPage title="Procurement settings" nav={<P2PNav />} backHref="/dashboard/p2p"
       load={p2pApi.getSettings} save={p2pApi.saveSettings} reset={p2pApi.resetSetting}
-      leadSections={<><PurposeRulesCard /><BuyerResponsibilityCard /></>} tourPrefix="p2p-settings" />
+      leadSections={<><PurposeRulesCard />{BUYER_BY_CATEGORY && <BuyerResponsibilityCard />}</>} tourPrefix="p2p-settings" />
   )
 }

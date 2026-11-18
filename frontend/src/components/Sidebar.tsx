@@ -85,8 +85,8 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
 
   const links = [
     { href: '/dashboard', label: 'Dashboard', icon: 'dashboard', visible: true },
-    // Every signed-in user has an approvals inbox (moved out of Organization 2026-10-31).
-    { href: '/dashboard/approvals', label: 'My Approvals', icon: 'approvals', visible: true },
+    // Only people given approvals in some workflow (owner, 2026-11-17; /auth/me is_approver).
+    { href: '/dashboard/approvals', label: 'My Approvals', icon: 'approvals', visible: !!user?.is_approver },
     { href: '/dashboard/erp', label: 'Service Module', icon: 'erp', visible: !!user?.apps?.includes('erp') },
     { href: '/dashboard/rnd', label: 'R&D', icon: 'rnd', visible: !!user?.apps?.includes('rnd') },
     { href: '/dashboard/crm', label: 'CRM', icon: 'crm', visible: !!user?.apps?.includes('crm') },

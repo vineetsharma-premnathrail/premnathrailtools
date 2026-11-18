@@ -369,13 +369,14 @@ class _AppMenuState extends State<AppMenu> {
                     selected: widget.current == null,
                     onTap: () => _go(null),
                   ),
-                  // Second, for everyone - same as the portal sidebar.
-                  _MenuItem(
-                    Icons.fact_check_outlined,
-                    'My Approvals',
-                    selected: false,
-                    onTap: _openApprovals,
-                  ),
+                  // Second, only for people given approvals - same as the portal sidebar (2026-11-17).
+                  if (AuthService.instance.user?['is_approver'] == true)
+                    _MenuItem(
+                      Icons.fact_check_outlined,
+                      'My Approvals',
+                      selected: false,
+                      onTap: _openApprovals,
+                    ),
                   for (final m in live)
                     _MenuItem(
                       m.icon,

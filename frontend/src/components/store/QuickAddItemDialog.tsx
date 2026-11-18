@@ -1,6 +1,7 @@
 'use client'
 
-// Add a new Item Master item without leaving the Before PO receipt (owner, 2026-11-14).
+// Add a new Item Master item without leaving the Before PO receipt (owner, 2026-11-14)
+// or the goods receipt (GRN) — a PR line typed by hand gets its item code here (2026-11-18).
 // Only what the receipt needs: type, category, name, unit, technical details (+ HSN / GST if known).
 // While the name / details are typed, the Item Master is searched for look-alikes
 // (same name on this vendor's bill, same or similar name) so an existing item is
@@ -25,9 +26,14 @@ const MATCH_LABEL: Record<StoreItemSimilar['match'], { label: string; hex: strin
   similar: { label: 'Similar', hex: '#d97706' },
 }
 
-export default function QuickAddItemDialog({ initialName, initialType, allowedTypes, vendorId, onClose, onCreated, onPickExisting }: {
+export default function QuickAddItemDialog({ initialName, initialType, initialCategory, initialSpec, initialUom, subtitle, allowedTypes, vendorId, onClose, onCreated, onPickExisting }: {
   initialName?: string
   initialType?: string
+  /** Pre-fills the category (and its type) — e.g. the PR line's category on a GRN. */
+  initialCategory?: string
+  initialSpec?: string
+  initialUom?: string
+  subtitle?: string
   /** Item types this receipt may carry (the form's stock types). */
   allowedTypes: (t: string) => boolean
   vendorId?: number
@@ -37,7 +43,7 @@ export default function QuickAddItemDialog({ initialName, initialType, allowedTy
 }) {
   const [meta, setMeta] = useState<StoreItemMeta | null>(null)
   const [categories, setCategories] = useState<StoreItemCategory[]>([])
-  const [form, setForm] = useState<Form>({ itemType: initialType || '', category: '', name: (initialName || '').trim(), uom: '', spec: '', hsn: '', gst: '' })
+  const [form, setForm] = useState<Form>({ itemType: initialType || '', category: '', name: (initialName || '').trim(), uom: (initialUom || '').toUpperCase(), spec: (initialSpec || '').trim(), hsn: '', gst: '' })
   const [similar, setSimilar] = useState<StoreItemSimilar[]>([])
   const [checking, setChecking] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -49,8 +55,13 @@ export default function QuickAddItemDialog({ initialName, initialType, allowedTy
   useEffect(() => {
     const fail = (what: string) => (err: unknown) => setError(extractErrorMessages(err, `Could not load ${what} — close this window and open it again.`))
     storeApi.getItemMeta().then(setMeta).catch(fail('the item types and units'))
-    storeApi.listCategories().then((c: StoreItemCategory[]) => setCategories(c)).catch(fail('the categories'))
-  }, [])
+    storeApi.listCategories().then((c: StoreItemCategory[]) => {
+      setCategories(c)
+      // A handed-in category (with its type) is pre-picked when it is an active one.
+      const hit = initialCategory ? c.find((x) => x.is_active && !x.parent_id && x.name === initialCategory) : undefined
+      if (hit) setForm((f) => ({ ...f, itemType: f.itemType || hit.item_type || '', category: !hit.item_type || !f.itemType || hit.item_type === f.itemType ? hit.name : f.category }))
+    }).catch(fail('the categories'))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const types = useMemo(() => (meta?.item_types || []).filter((t) => t.allowed !== false && allowedTypes(t.value)), [meta, allowedTypes])
   const cats = useMemo(() => categories
@@ -96,7 +107,7 @@ export default function QuickAddItemDialog({ initialName, initialType, allowedTy
 
   const strong = similar.some((s) => s.match !== 'similar')
   return (
-    <FormSheet icon="box" title="Add a new item" subtitle="Quick add from this receipt — the rest of its details are completed later in the Item Master"
+    <FormSheet icon="box" title="Add a new item" subtitle={subtitle || 'Quick add from this receipt — the rest of its details are completed later in the Item Master'}
       onClose={onClose} busy={busy} width={760} tour="store-quick-item" onSubmit={save}
       footer={<>
         <button type="button" style={sheetBtn('secondary', SHEET.INK)} onClick={onClose} disabled={busy}>Cancel</button>

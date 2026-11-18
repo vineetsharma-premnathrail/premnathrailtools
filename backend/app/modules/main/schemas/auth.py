@@ -38,6 +38,8 @@ class CurrentUserResponse(BaseModel):
     is_purchase_manager: bool = False
     # Approval-queue visibility (P2PNav): named as a PR approver on >= 1 PR /
     # holds any PO-approval role flag. Admins get both.
+    # Sidebar "My Approvals": given approvals by some switched-on workflow (approval_engine.is_approver).
+    is_approver: bool = False
     is_pr_approver: bool = False
     is_po_approver: bool = False
     notifications_enabled: bool = True

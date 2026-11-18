@@ -1251,6 +1251,85 @@ def inbox(db: Session, user: User) -> list[dict]:
     return out
 
 
+def _holds_perm(user: User, perm: str) -> bool:
+    """Cheap per-user form of permission_holders (no scan of every user)."""
+    mk, tk, action = (perm.split(":") + ["", "", ""])[:3]
+    return holds_deliberately(user, perm) or can_perform(user, mk, tk, action)
+
+
+def is_approver(db: Session, user: User) -> bool:
+    """Shows "My Approvals" in the Sidebar (owner, 2026-11-17): only people who
+    are given approvals — named by a stage of a switched-on workflow (role,
+    specific user, permission, flag, reporting manager, department / plant
+    head, also-allowed permission), or who ever had an approval step, or who
+    act as someone's delegate today. Record-field approvers (e.g. the project
+    manager picked on a document) qualify once their first step reaches them.
+    The portal admin always sees it (Reassign approver)."""
+    if is_admin_user(user):
+        return True
+    uid = user.id
+    if db.query(ApprovalRequestStep.id).filter(
+        or_(ApprovalRequestStep.approver_id == uid, ApprovalRequestStep.decided_by_id == uid)
+    ).first() is not None:
+        return True
+    today = date.today()
+    if db.query(ApprovalDelegation.id).filter(
+        ApprovalDelegation.delegate_id == uid, ApprovalDelegation.is_active.is_(True),
+        ApprovalDelegation.start_date <= today, ApprovalDelegation.end_date >= today,
+    ).first() is not None:
+        return True
+    stages = (
+        db.query(ApprovalWorkflowStage).join(ApprovalWorkflow, ApprovalWorkflow.id == ApprovalWorkflowStage.workflow_id)
+        .filter(ApprovalWorkflow.is_active.is_(True)).all()
+    )
+    if not stages:
+        return False
+    role_ids: set | None = None
+    dept_head: bool | None = None
+    for st in stages:
+        rule, cfg = st.approver_rule, st.rule_config or {}
+        plus = cfg.get("plus_permission") or []
+        for perm in ([plus] if isinstance(plus, str) else plus):
+            if perm and _holds_perm(user, perm):
+                return True
+        if rule in ("partner", "director", "user_flag"):
+            flag = {"partner": "is_partner", "director": "is_director"}.get(rule) or cfg.get("flag")
+            if flag and getattr(user, flag, False):
+                return True
+        elif rule == "specific_users":
+            if uid in (cfg.get("user_ids") or []):
+                return True
+        elif rule == "role":
+            if role_ids is None:
+                role_ids = {r for (r,) in db.query(user_roles.c.role_id).filter(user_roles.c.user_id == uid).all()}
+            if cfg.get("role_id") in role_ids:
+                return True
+        elif rule == "permission":
+            if cfg.get("permission") and _holds_perm(user, cfg["permission"]):
+                return True
+        elif rule == "reporting_manager":
+            if db.query(User.id).filter(User.reporting_manager_id == uid, User.is_active.is_(True)).first() is not None:
+                return True
+        elif rule == "department_head":
+            if dept_head is None:
+                from app.modules.organization.models.department import Department
+
+                dept_head = any(
+                    uid in (head, second) or uid in (extra or [])
+                    for head, second, extra in db.query(
+                        Department.head_user_id, Department.secondary_head_user_id, Department.additional_head_user_ids
+                    ).all()
+                )
+            if dept_head:
+                return True
+        elif rule == "plant_head":
+            from app.modules.organization.models.branch import Branch
+
+            if db.query(Branch.id).filter(Branch.head_user_id == uid).first() is not None:
+                return True
+    return False
+
+
 def my_requests(db: Session, user: User, limit: int = 100) -> list[dict]:
     rows = (
         db.query(ApprovalRequest).options(*_load()).filter(ApprovalRequest.requester_id == user.id)

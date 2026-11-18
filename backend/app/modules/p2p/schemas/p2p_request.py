@@ -23,13 +23,18 @@ class P2PRequestItemPayload(BaseModel):
     # project_inhouse must be "Project" or "Inhouse" — enforced with a
     # per-line message in create_p2p_request (kept optional here so the route
     # can name the offending line instead of a bare pydantic 422).
-    # store_item_id is the line's identity (picked from the Item Master; the
-    # route 422s a line without one). item_name / part_code / unit / category
-    # are filled in from the master by the server — anything sent is ignored.
+    # store_item_id is the line's identity (picked from the Item Master).
+    # item_name / part_code / unit / category are then filled in from the
+    # master by the server — anything sent is ignored. A MANUAL line
+    # (2026-11-18) has no store_item_id: item_type + category + item_name +
+    # unit are required, specification / make / part_code optional
+    # (p2p/item_link.manual_line); Store gives it an item code on the GRN.
     # id: on edit, the existing line this row updates (keeps its attachments).
     id: int | None = None
     store_item_id: int | None = None
     item_name: str = ""
+    item_type: str | None = None
+    specification: str | None = None
     make: str | None = None
     part_code: str | None = None
     unit: str | None = None
@@ -142,6 +147,9 @@ class P2PRequestCreate(BaseModel):
     # project_type is derived from it.
     purpose: str | None = None
     remarks: str | None = None
+    # The Project Head of a project requisition, picked on the form (2026-11-18): the approval
+    # workflow's "Project head" stage (Person named on the record) sends it to them.
+    project_head_id: int | None = None
     items: list[P2PRequestItemPayload] = Field(default_factory=list)
     # True = keep as a private draft (no approval, light validation).
     save_as_draft: bool = False

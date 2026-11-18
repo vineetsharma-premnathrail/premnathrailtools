@@ -232,10 +232,12 @@ function WrittenOff({ line }: { line: TrackerLine }) {
 /** Quantity not yet on any PO: what a Reassign or Short-close can still act on (never below 0). */
 const openToOrder = (l: TrackerLine) => nonNeg(l.quantity - (l.issued_qty || 0) - (l.short_closed_qty || 0) - (l.ordered_qty || 0))
 
-export default function PrTracker({ prId, refreshKey, rfqLinkable, meId, canReassign = false, canShortClose = false, allLines = false, onChanged }: {
+export default function PrTracker({ prId, refreshKey, rfqLinkable, meId, canReassign = false, canShortClose = false, allLines = false, seeAll = false, onChanged }: {
   prId: number; refreshKey: number; rfqLinkable: boolean
   /** Signed-in user, and what they may do to a line (the server checks again). */
   meId?: number; canReassign?: boolean; canShortClose?: boolean; allLines?: boolean
+  /** Sees every buyer's RFQs like the Purchase head (every buyer, 2026-11-18); working them stays allLines. */
+  seeAll?: boolean
   /** A line was reassigned or short-closed: the page reloads. */
   onChanged?: () => void
 }) {
@@ -330,7 +332,7 @@ export default function PrTracker({ prId, refreshKey, rfqLinkable, meId, canReas
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 12px', fontSize: 12.5 }}>
                     <div><p style={eyebrow}>Buyer</p>{l.buyer_name || '—'}</div>
-                    <div><p style={eyebrow}>RFQ</p><RfqLinks line={l} linkable={rfqLinkable && (allLines || l.buyer_id === meId)} /></div>
+                    <div><p style={eyebrow}>RFQ</p><RfqLinks line={l} linkable={rfqLinkable && (allLines || seeAll || l.buyer_id === meId)} /></div>
                     <div><p style={eyebrow}>PO</p><PoCell line={l} /></div>
                     <div><p style={eyebrow}>Goods received (GRN)</p><GrnCell line={l} /></div>
                     <div style={{ gridColumn: '1 / -1' }}><p style={eyebrow}>PO approval</p><ApprovalCell line={l} /></div>
@@ -390,7 +392,7 @@ export default function PrTracker({ prId, refreshKey, rfqLinkable, meId, canReas
                           <td style={{ ...tdStyle, minWidth: 190 }}>{l.item_code && <span style={{ fontWeight: 700, color: TEXT.heading }}>{l.item_code} — </span>}{l.item_name}</td>
                           <td style={{ ...tdStyle, color: TEXT.secondary }}>{l.buyer_name || '—'}</td>
                           <td style={tdStyle}><StageCell line={l} /></td>
-                          <td style={tdStyle}><RfqLinks line={l} linkable={rfqLinkable && (allLines || l.buyer_id === meId)} /></td>
+                          <td style={tdStyle}><RfqLinks line={l} linkable={rfqLinkable && (allLines || seeAll || l.buyer_id === meId)} /></td>
                           <td style={tdStyle}><PoCell line={l} /></td>
                           <td style={{ ...tdStyle, minWidth: 190 }}><ApprovalCell line={l} /></td>
                           <td style={tdStyle}><GrnCell line={l} /></td>

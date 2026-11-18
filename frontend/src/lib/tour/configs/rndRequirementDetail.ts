@@ -22,6 +22,12 @@ const config: TourConfig = {
       why: 'Accepting is R&D\'s commitment to do the work. Tasks, Technical Offers and the response to CRM open only after the latest revision is accepted.',
     },
     {
+      target: 'rnd-reqd-new-revision',
+      title: 'New revision from BD',
+      purpose: 'Appears when BD sent a changed requirement (R1 or later) that is not accepted yet. It names the revision and date, why BD changed it (Customer changed requirement, Correction of a BD mistake or Other), the BD note, and each changed field with the value before and now.',
+      why: 'Read what changed before you accept: tasks and offers already made may need rework. If BD fixed a typo before you accepted, a small note says so and the revision number stays the same.',
+    },
+    {
       target: 'rnd-reqd-accept-btn',
       title: 'Accept',
       purpose: 'Shown to the R&D head and to people with R&D › Requirements › Review while the latest revision is awaiting review. Asks you to confirm, then tells BD it is accepted.',
@@ -32,14 +38,21 @@ const config: TourConfig = {
       title: 'Assignment',
       purpose: 'Who in R&D must respond ("R&D team" = any R&D user), by which date, who asked, and the current response status.',
       options: RND_RESPONSE_OPTIONS,
+      after: 'While the R&D question is with BD it reads "Waiting for BD to send the details" with the date you asked and the days waiting; the due date shows "paused" and is never marked overdue. When BD replies it reads "BD replied on … · new due …".',
+    },
+    {
+      target: 'rnd-reqd-qa-thread',
+      title: 'Questions to BD',
+      purpose: 'Every question R&D asked, with the answer from BD under it: who answered, when, how (Portal, Phone, Email or Meeting), the due date before and after, and any files BD attached. An answer noted by R&D means BD gave the details outside the portal.',
+      why: 'The question and answer stay on the same request — no new revision is made for a clarification.',
     },
     {
       target: 'rnd-reqd-respond-btn',
       title: 'Respond to CRM',
       purpose: 'Shown when the request is open and assigned to you or to the whole R&D team. Greyed out until the latest revision is accepted.',
       options: [
-        { value: 'Final response', meaning: 'Your answer with remarks and / or documents. Closes the request; BD can prepare the quotation.' },
-        { value: 'Ask BD for more details', meaning: 'A question in remarks (at least 10 characters). The request stays open with its due date; BD is notified and answers by updating the requirement and sending it again.' },
+        { value: 'Final response', meaning: 'Your answer with remarks and / or documents. Closes the request; BD can prepare the quotation. If a question to BD is still open, also pick how BD gave you the details (Portal, Phone, Email, Meeting) and write what BD told you (at least 10 characters); no delay reason is needed.' },
+        { value: 'Ask BD for more details', meaning: 'A question in remarks (at least 10 characters). The request stays open and the R&D due date is paused; BD replies in the portal with the details and a new due date — no new revision. Off while a question is already open.' },
       ],
     },
     {

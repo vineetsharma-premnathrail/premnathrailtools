@@ -140,6 +140,9 @@ def test_upload_rejects_rnd_sub_modules_and_unknown_parents(client, db, docs, sp
     base = {"related_module": "inquiry", "related_id": "1", "folder_type": "internal"}
     resp = client.post(API, data={**base, "related_sub_module": "rnd_task", "related_sub_id": "5"}, files=files, headers=h)
     assert resp.status_code == 422 and "R&D task" in resp.json()["detail"]
+    # BD's replies to R&D's questions are filed only through the reply endpoint.
+    resp = client.post(API, data={**base, "related_sub_module": "rnd_query", "related_sub_id": "5"}, files=files, headers=h)
+    assert resp.status_code == 422
     resp = client.post(API, data={**base, "related_module": "secret"}, files=files, headers=h)
     assert resp.status_code == 422
     resp = client.post(API, data={**base, "related_id": "999"}, files=files, headers=h)

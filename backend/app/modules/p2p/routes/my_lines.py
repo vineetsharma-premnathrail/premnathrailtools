@@ -18,7 +18,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import and_, case, exists, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.permission_registry import can_feature
 from app.core.permissions import GRANT_HINT, ensure_feature_action, ensure_tab_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
@@ -48,7 +47,8 @@ def _natural(code: str | None):
 
 
 def _can_see_all_lines(user: User) -> bool:
-    return po_split.can_work_all_lines(user) or can_feature(user, "p2p", "purchase_requisitions", "all_lines", "view")
+    # Every buyer sees all lines and the unassigned ones (to decide which are theirs), 2026-11-18.
+    return po_split.can_see_all_lines(user)
 
 
 # States of lines that have nothing left to do (shown only when asked for by name).

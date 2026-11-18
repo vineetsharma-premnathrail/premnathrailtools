@@ -11,7 +11,7 @@ import { VisSection } from '@/lib/visibilityComponents'
 import { sampleContact, sampleOrganizations, sampleTenders } from '@/lib/crmPreviewSamples'
 import { crmApi } from '@/lib/api'
 import { recordVisit } from '@/lib/crmShortcuts'
-import { Tender, Organization, OrgContact, QuotationItem, CrmActivity, CrmDocument, CrmStageLogEntry, RndRequestAssignment } from '@/types'
+import { Tender, Organization, OrgContact, QuotationItem, CrmActivity, CrmDocument, CrmStageLogEntry, RndRequestAssignment, RequirementMovement } from '@/types'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import ReasonSheet from '@/components/shared/ReasonSheet'
 import CrmDocumentFolder, { DocumentSearch } from '@/components/crm/CrmDocumentFolder'
@@ -22,6 +22,8 @@ import ActivityForm from '@/components/crm/ActivityForm'
 import MomExportDialog from '@/components/crm/MomExportDialog'
 import TechnicalOfferPickerDialog from '@/components/crm/TechnicalOfferPickerDialog'
 import RndIntakeCard from '@/components/crm/RndIntakeCard'
+import { RndWaitingBanner, latestRndRequest, openBdQuestion, sentToRndBefore } from '@/components/crm/RequirementMovementTab'
+import RndReplySheet from '@/components/crm/RndReplySheet'
 import BdTechnicalOffers from '@/components/crm/BdTechnicalOffers'
 import { QuotationsTab, seesQuotationPrices } from '@/components/crm/InquiryDetailPanel'
 import type { CrmRndRequirement } from '@/types/rndIntake'
@@ -74,6 +76,10 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
   // R&D ID, revision and review state of the requirement sent to R&D (null = never sent / not visible to me).
   const [rnd, setRnd] = useState<CrmRndRequirement | null>(null)
   const loadRnd = () => crmApi.getRndRequirement('tender', tenderId).then(setRnd).catch(() => setRnd(null))
+  // Every send with its R&D request: shows whether R&D waits on BD and whether a new send needs a reason.
+  const [moves, setMoves] = useState<RequirementMovement[] | null>(null)
+  const loadMoves = () => crmApi.getTenderRequirementMovements(tenderId).then(setMoves).catch(() => setMoves(null))
+  const [showReply, setShowReply] = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -95,6 +101,7 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
       }
       crmApi.getTenderSpecRevisions(tenderId).then(setRevisions).catch(() => setRevisions([]))
       loadRnd()
+      loadMoves()
     } catch (err) {
       setError(extractErrorMessages(err, 'Tender not found.'))
     } finally {
@@ -167,6 +174,11 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
   // R&D returned it: BD can send again as soon as it has fixed what R&D asked for, even before editing the record.
   const rndReturned = rnd?.status === 'returned'
   const canSendAgain = torActive || rndReturned
+  const canSendTor = canFeature('crm', 'inquiries_tenders', 'send_tor', 'create') && !vis.preview
+  const sentBefore = sentToRndBefore(moves, tender?.technical_offer_sent_at)
+  const latestRequest = latestRndRequest(moves)
+  const bdQuestion = openBdQuestion(latestRequest)
+  const openTorPicker = () => setShowTorPicker(true)
 
   const sendTechnicalOfferRequest = async (documentIds: number[], assignment: RndRequestAssignment) => {
     if (!tender || !canSendAgain) return
@@ -177,6 +189,7 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
       setShowTorPicker(false)
       setTab('Info')
       loadRnd()
+      loadMoves()
     } catch (err) {
       setTorError(extractErrorMessages(err, 'Failed to send Technical Requirement to R&D.'))
     } finally {
@@ -229,7 +242,7 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
                 ← Back
               </button>}
               {!vis.preview && canFeature('crm', 'inquiries_tenders', 'send_tor', 'create') && <button
-                onClick={() => setShowTorPicker(true)}
+                onClick={openTorPicker}
                 disabled={!canSendAgain || sendingTOR}
                 data-tour="tender-tor-btn"
                 title={!canSendAgain ? `Already sent as ${tender.technical_offer_number} — edit the tender to send again.` : 'Emails R&D the Customer Organization, Project, and Product Requirement details as a PDF.'}
@@ -250,7 +263,10 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
         </div>
       )}</VisSection>
 
-      {!editing && <VisSection vis={vis} k="tnd_detail_rnd"><RndIntakeCard rnd={rnd} tourId="tender-rnd-status" canResend={canFeature('crm', 'inquiries_tenders', 'send_tor', 'create') && !vis.preview} sending={sendingTOR} onResend={() => setShowTorPicker(true)} /></VisSection>}
+      {!editing && <VisSection vis={vis} k="tnd_detail_rnd"><RndIntakeCard rnd={rnd} tourId="tender-rnd-status" canResend={canFeature('crm', 'inquiries_tenders', 'send_tor', 'create') && !vis.preview} sending={sendingTOR} onResend={openTorPicker} /></VisSection>}
+      {!editing && !vis.preview && bdQuestion && latestRequest && (
+        <VisSection vis={vis} k="tnd_detail_rnd"><RndWaitingBanner question={bdQuestion} canReply={canSendTor} onReply={() => setShowReply(true)} tourId="tender-rnd-waiting" /></VisSection>
+      )}
 
       <div className="hide-scrollbar" style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 20, overflowX: 'auto', overflowY: 'visible' }}>
         {TABS.filter((t) => seeTab(t)).map((t) => {
@@ -308,9 +324,18 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
         relatedModule="tender"
         relatedId={tender.id}
         sending={sendingTOR}
+        askReason={sentBefore}
         onSend={sendTechnicalOfferRequest}
         onCancel={() => setShowTorPicker(false)}
       />
+      {showReply && latestRequest && bdQuestion && (
+        <RndReplySheet
+          request={latestRequest}
+          question={bdQuestion}
+          onClose={() => setShowReply(false)}
+          onReplied={() => { setShowReply(false); loadRnd(); loadMoves() }}
+        />
+      )}
 
       <ConfirmDialog
         open={showDeleteConfirm}

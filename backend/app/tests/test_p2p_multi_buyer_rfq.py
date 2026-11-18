@@ -190,12 +190,17 @@ def test_a_buyer_cannot_take_another_buyers_line_and_the_head_can_raise_for_a_bu
     assert r.json()["buyer_id"] == w["b"].id and r.json()["created_by_id"] == w["head"].id and _line_ids(r.json()) == [w["l2"]]
     log = db.query(AuditLog).filter_by(entity_type="rfq", entity_id=r.json()["id"], action="created").one()
     assert w["head"].name in log.summary and "on behalf of" in log.summary
-    # A line nobody buys is refused for a buyer, claimable by the head.
-    row = db.get(P2PRequest, w["pr_id"]).items
-    next(i for i in row if i.id == w["l2"]).buyer_id = None
+    # A line nobody buys: the buyer decides it is theirs by putting it on their RFQ (owner, 2026-11-18).
+    pr = db.get(P2PRequest, w["pr_id"])
+    pr.assigned_buyer_id = None
+    next(i for i in pr.items if i.id == w["l2"]).buyer_id = None
+    db.query(RFQItem).delete()  # the head's RFQ above holds l2; free it so only the buyer rule decides
+    db.query(RFQ).filter(RFQ.p2p_request_id == pr.id).delete()
     db.commit()
-    no_buyer = _create(client, w["b"], w, pr_item_ids=[w["l2"]])
-    assert no_buyer.status_code == 409 and "has no buyer" in no_buyer.json()["detail"]
+    taken = _create(client, w["b"], w, pr_item_ids=[w["l2"]])
+    assert taken.status_code == 200, taken.text
+    db.expire_all()
+    assert next(i for i in db.get(P2PRequest, w["pr_id"]).items if i.id == w["l2"]).buyer_id == w["b"].id
 
 
 # ── submit (criterion 8) ──────────────────────────────────────────────────────

@@ -10,7 +10,8 @@ export const RND_REVIEW_OPTIONS = [
 
 export const RND_RESPONSE_OPTIONS = [
   { value: 'Awaiting R&D', meaning: 'Sent to R&D, not answered yet, still within the due date.' },
-  { value: 'Overdue', meaning: 'Not answered and the due date has passed — answer it first.' },
+  { value: 'Overdue', meaning: 'Not answered and the due date has passed — answer it first. Never shown while R&D is waiting for BD.' },
+  { value: 'Waiting for BD', meaning: 'R&D asked BD for more details and BD has not replied. R&D due date is paused, so it is never overdue meanwhile.' },
   { value: 'Responded on time', meaning: 'R&D answered on or before the due date.' },
   { value: 'Responded late', meaning: 'R&D answered after the due date (a delay reason was recorded).' },
   { value: 'Superseded by re-send', meaning: 'CRM sent an updated version; the newer request replaces this one.' },
@@ -60,7 +61,7 @@ const config: TourConfig = {
     {
       target: 'rnd-req-table',
       title: 'Requirement list',
-      purpose: 'R&D ID (with a blue "Review" tag when it waits for you), revision (open the requirement to see every revision and what BD changed), review status, source, customer, product, R&D response with assignee and due date, BD owner and when it was last received. R&D response is short and coloured: red "5d late", orange "Due today" / 2 days or less left / done late, blue "3d left", green "Done on time", purple "Query raised", grey closed; the assignee and due date sit below. An Urgent requirement has its whole row tinted light red. Requirements waiting for your review come first, then R&D ID ascending. Click a row to open it.',
+      purpose: 'R&D ID (with a blue "Review" tag when it waits for you), revision (open the requirement to see every revision and what BD changed), review status, source, customer, product, R&D response with assignee and due date, BD owner and when it was last received. R&D response is short and coloured: red "5d late", orange "Due today" / 2 days or less left / done late, blue "3d left", green "Done on time", purple "Waiting for BD" (R&D asked BD for details; the due date shows "paused" and no days late count), grey closed. Next to the R&D ID an orange "New revision" tag means BD sent a changed requirement (R1 or later) that is still waiting for review, and a purple "With BD" tag means the R&D question is with BD; the assignee and due date sit below. An Urgent requirement has its whole row tinted light red. Requirements waiting for your review come first, then R&D ID ascending. Click a row to open it.',
       options: RND_REVIEW_OPTIONS,
     },
   ],

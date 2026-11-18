@@ -39,3 +39,33 @@ class CrmRndRequest(Base, TimestampMixin):
     delay_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     responded_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
     responded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class CrmRndRequestQuery(Base):
+    """One question R&D put to BD about a requirement (Inquiry / Tender).
+
+    The R&D request stays open while a question is open; the R&D clock is paused
+    while `answer` is null (due_date_before / due_date_after keep the due date as it
+    was when the question was asked and as it stands after BD answered).
+    BD normally answers in the portal (`answer_channel` = 'portal'); when the answer
+    came by 'phone', 'email' or 'meeting', whoever records it sets the channel and
+    `answered_side` ('bd' = BD recorded it, 'rnd' = R&D recorded what BD told them).
+    Older questions were only audit-log rows (action 'rnd_asked_details'); the
+    migration copied them here with the answer left empty.
+    """
+
+    __tablename__ = "crm_rnd_request_queries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    request_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("crm_rnd_requests.id", ondelete="CASCADE"), nullable=False, index=True)
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    asked_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    asked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    answer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    answer_channel: Mapped[str | None] = mapped_column(String(20), nullable=True)  # portal | phone | email | meeting
+    answered_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    answered_side: Mapped[str | None] = mapped_column(String(10), nullable=True)  # bd | rnd
+    due_date_before: Mapped[date | None] = mapped_column(Date, nullable=True)
+    due_date_after: Mapped[date | None] = mapped_column(Date, nullable=True)

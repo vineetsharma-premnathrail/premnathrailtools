@@ -4,6 +4,8 @@ line's buyer (Procurement > Settings > Buyer responsibility — category-wise on
 since 2026-11-14), and numbers run P2P-[YEAR]-[NNNN]."""
 import re
 
+import pytest
+
 
 from app.modules.main.models.module_setting import ModuleSetting
 from app.modules.main.models.role import Role
@@ -79,6 +81,16 @@ def test_create_without_category_resolves_each_line_buyer(client, db):
     assert [i["buyer_name"] for i in pr["items"]] == [a.name, b.name]
     assert pr["assigned_buyer_id"] == a.id
     assert pr["requirement_type"]  # purpose default (stock) fills it
+
+
+@pytest.mark.buyer_by_category_off
+def test_buyer_by_category_switched_off_leaves_every_line_without_a_buyer(client, db):
+    # Owner 2026-11-18: buyer by category is off for now — even a category that has a
+    # buyer in Buyer responsibility gives the line no buyer; Purchase assigns by hand.
+    _a, _b, req, mat, svc = _setup(db, "off1")
+    r = _create(client, req, [mat, svc])
+    assert r.status_code == 200, r.text
+    assert [i["buyer_id"] for i in r.json()["items"]] == [None, None]
 
 
 def test_second_requisition_takes_next_number(client, db):

@@ -505,6 +505,10 @@ async def list_pending_purchase_orders(
                  "order_project_element_label": i.order_project_element_label,
                  "item_code": i.store_item.item_code if i.store_item is not None else None,
                  "make": i.make, "part_code": i.part_code, "specification": i.specification,
+                 # No item code yet (typed by hand on the PR): its PR line's Item Master
+                 # category, to pre-fill '+ New item code' on the GRN.
+                 "pr_item_category": None if i.store_item_id else next(
+                     (li.category for li in lines if li.id == i.pr_item_id), None),
                  "pre_po_receipt_number": pre_po_number if pre_po_left.get(i.id) else None,
                  "pre_po_unsettled_qty": pre_po_left.get(i.id, 0.0),
                  "delivery_date": i.delivery_date}
@@ -558,6 +562,29 @@ async def get_goods_receipt(
     if scope is not None:
         ensure_location_allowed(db, user, grn.store_location_id, allowed=scope)
     return _to_response(db, grn)
+
+
+def _link_line_on_grn(db: Session, po: P2PPurchaseOrder, po_item: P2PPurchaseOrderItem, store_item_id: int, user: User) -> None:
+    """A PO line with no item code (typed by hand on the PR, 2026-11-18) gets one
+    on its first GRN: the Item Master item Store picked or just added. The PO
+    line and its PR line are linked for good (the typed name stays as the
+    record of what was asked for); stock, valuation and project holds then run
+    on that id as for any other line. Rolled back with the GRN if it fails."""
+    from app.modules.p2p.item_link import item_category_for, purchasable_item
+    item = purchasable_item(db, store_item_id, f"'{po_item.item_name}'")
+    po_item.store_item_id = item.id
+    po_item.item_category = item_category_for(db, item.id)
+    pr_line = db.get(P2PRequestItem, po_item.pr_item_id) if po_item.pr_item_id else None
+    if pr_line is not None and not pr_line.store_item_id:
+        pr_line.store_item_id = item.id
+    db.flush()
+    if not po.p2p_request_id:
+        return
+    db.add(AuditLog(
+        entity_type="p2p_request", entity_id=po.p2p_request_id, action="po_line_linked", performed_by_id=user.id,
+        summary=f"{user.name or user.email} gave PO '{po.po_number}' line '{po_item.item_name}' item code "
+                f"{item.item_code} {item.item_name} on the goods receipt.",
+    ))
 
 
 @router.post("", response_model=P2PGoodsReceiptResponse)
@@ -628,11 +655,13 @@ async def create_goods_receipt(
         po_item = po_items_by_id.get(item_payload.po_item_id)
         if not po_item:
             raise HTTPException(status_code=422, detail=f"PO item {item_payload.po_item_id} does not belong to this purchase order")
+        if not po_item.store_item_id and item_payload.store_item_id:
+            _link_line_on_grn(db, po, po_item, item_payload.store_item_id, user)
         if not po_item.store_item_id:
             raise HTTPException(
                 status_code=409,
-                detail=f"PO line '{po_item.item_name}' isn't linked to an Item Master item, so the receipt can't go into stock. "
-                       f"Open PO {po.po_number} and use 'Link to Item Master' on that line, then record the GRN.",
+                detail=f"'{po_item.item_name}' has no item code yet (it was typed by hand on the requisition), so it can't go "
+                       "into stock. On the GRN line pick its Item Master item, or use '+ New item code' to add it, then save.",
             )
         if po_item.category == "service":
             raise HTTPException(

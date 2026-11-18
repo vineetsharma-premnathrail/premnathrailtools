@@ -22,6 +22,11 @@ export interface RndRevision {
   return_reason: string | null
   /** Labels of the fields BD changed against the previous revision. */
   changed_fields: string[] | null
+  /** Why BD sent this revision (null on R0 and older sends). */
+  change_reason?: import('@/types').RequirementChangeReason | null
+  change_note?: string | null
+  /** BD fixed a typo in this revision before R&D accepted it (no new revision). */
+  corrected_at?: string | null
 }
 
 /** The R&D header of a requirement (one per CRM inquiry / tender). */
@@ -61,6 +66,10 @@ export interface RndRequirementRow {
   revision_code: string | null
   last_received_at: string | null
   needs_my_review: boolean
+  /** Latest revision is R1+ and not yet accepted / returned by R&D. */
+  new_revision?: boolean
+  /** A question to BD is unanswered (R&D clock paused). */
+  waiting_on_bd?: boolean
 }
 
 export interface RndRequirementDetailV2 extends Omit<import('@/types').RndRequirementDetail, 'my_access'> {

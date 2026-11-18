@@ -71,7 +71,7 @@ const steps: TourStep[] = [
   {
     target: 'tender-rnd-status',
     title: 'R&D ID, revision and status',
-    purpose: 'Appears once the requirement has been sent to R&D: its R&D ID (RDR-year-number), the current revision (R0, R1, …) and where R&D\'s review stands — Awaiting R&D review, Accepted, R&D asked for details (the question is shown on the card — update the requirement and send it again), Responded, Closed by R&D (R&D had nothing to share — the reason is on the request card in the Requirement Movement tab; re-send if R&D work is needed later) or Superseded (older requirements may also show Returned to BD).',
+    purpose: 'Appears once the requirement has been sent to R&D: its R&D ID (RDR-year-number), the current revision (R0, R1, …) and where R&D\'s review stands — Awaiting R&D review, Accepted, R&D asked for details (the question shows in a purple "R&D is waiting for your response" banner — answer it with Reply to R&D; the requirement itself is not sent again), Responded, Closed by R&D (R&D had nothing to share — the reason is on the request card in the Requirement Movement tab; re-send if R&D work is needed later) or Superseded (older requirements may also show Returned to BD).',
     why: 'Each send is a new revision with its own ID. There is no Discussion channel any more — the return reason is how R&D asks for corrections.',
   },
   {
@@ -79,6 +79,63 @@ const steps: TourStep[] = [
     title: 'Re-send to R&D',
     purpose: 'Shown on the card when R&D returned the requirement. Opens the same send dialog as "Send Technical Requirement to R&D"; your re-send becomes the next revision and goes back to R&D for review. Never opened by the tour.',
     why: 'Available as soon as R&D has returned it, even before you edit the tender, because the fix may be in a document.',
+  },
+  {
+    target: 'tender-rnd-waiting',
+    title: 'R&D is waiting for your response',
+    purpose: 'Shown while R&D has asked for more details on the requirement and has not got them yet: R&D\'s question, who asked and when, and how many days it has been waiting. R&D\'s due date is on hold (R&D never shows overdue) until you reply.',
+    why: 'You answer on the same request, with no new revision. Rule of thumb: answer a question here; change the requirement itself only through Change requirement.',
+  },
+  {
+    target: 'tender-rnd-waiting-reply',
+    title: 'Reply to R&D',
+    purpose: 'Opens the reply window: how you gave the details (Portal, Phone, Email or Meeting), your answer (at least 10 characters; for a call or meeting, a summary of what you told R&D), optional attachments, and R&D\'s new due date (today or later). R&D is told by bell, Teams and email. Shown only to roles with Send Technical Requirement (TOR) to R&D > Create; others see it greyed out. Never opened by the tour.',
+    after: 'The same request stays open with the new due date and R&D\'s clock starts again.',
+  },
+  {
+    target: 'rnd-reply-question',
+    title: 'R&D\'s question',
+    purpose: 'What R&D asked, read-only, so you answer exactly that.',
+  },
+  {
+    target: 'rnd-reply-channel',
+    title: 'How did you give the details',
+    required: true,
+    purpose: 'Portal if you type the answer here; Phone, Email or Meeting if you already told R&D that way. Then write a short summary so the record shows what was told.',
+    options: [
+      { value: 'Portal', meaning: 'The answer is the text below' },
+      { value: 'Phone', meaning: 'You told R&D on a call; write a summary of the call' },
+      { value: 'Email', meaning: 'You emailed R&D; write what you sent and when' },
+      { value: 'Meeting', meaning: 'You discussed it in a meeting; write what was agreed' },
+    ],
+  },
+  {
+    target: 'rnd-reply-answer',
+    title: 'Answer',
+    required: true,
+    purpose: 'Your answer or the summary of what you told R&D.',
+    whatToEnter: 'At least 10 characters.',
+    validExample: 'Axle load is 22.5 t and track gauge 1676 mm, as per the customer\'s drawing',
+    invalidExample: 'Done (too short and tells R&D nothing)',
+  },
+  {
+    target: 'rnd-reply-files',
+    title: 'Attachments',
+    required: false,
+    purpose: 'Drawings, emails or photos that back up your answer. R&D can open them on the request.',
+  },
+  {
+    target: 'rnd-reply-due',
+    title: 'R&D due date',
+    required: true,
+    purpose: 'The date R&D must respond by now that you have answered. It replaces the earlier due date.',
+    whatToEnter: 'Today or a later date.',
+    invalidExample: 'Yesterday\'s date (rejected: the due date cannot be in the past)',
+  },
+  {
+    target: 'rnd-reply-send',
+    title: 'Send reply to R&D',
+    purpose: 'Sends your answer on the same request, sets R&D\'s new due date and tells R&D.',
   },
   {
     target: 'tender-tab-Technical Offers',

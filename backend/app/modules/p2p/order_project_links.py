@@ -96,7 +96,7 @@ def link_pr_lines(db: Session, pr: P2PRequest, rows: list[tuple], *, draft: bool
     overhead = pr.account_assignment in ("cost_center", "internal_order", "rnd_project")
 
     for idx, item, master, row in rows:
-        name = f"Line {idx} ({master.item_code} {master.item_name})"
+        name = f"Line {idx} ({(master.item_code + ' ') if master.item_code else ''}{master.item_name})"
         eid = getattr(item, "order_project_element_id", None)
         inhouse = (item.project_inhouse or "") == "Inhouse"
         el = None
