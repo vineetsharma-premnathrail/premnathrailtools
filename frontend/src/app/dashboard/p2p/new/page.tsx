@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
-import { organizationApi, p2pApi, storeApi, PrStockAvailability } from '@/lib/api'
+import { apiClient, p2pApi, storeApi, PrStockAvailability } from '@/lib/api'
 import { P2PPurposeMeta, P2PRequest, P2PRequestLineItemInput, StoreItem } from '@/types'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { itemOptionDetail } from '@/lib/itemOptions'
@@ -116,11 +116,12 @@ export default function NewP2PRequestPage() {
   // (categories offered are the ones used under the chosen type).
   // q = the line's item search text; custom = Ship To is a typed address (not a plant).
   const [lineFilters, setLineFilters] = useState<LineFilter[]>([{ type: '', category: '' }])
-  // Plants a line can ship to (Organization › Branches); a typed address is the other choice.
-  const [plants, setPlants] = useState<{ id: number; name: string; code: string; status?: string }[]>([])
+  // Plants a line can ship to: only active units that run an active store (a
+  // unit without a store, e.g. RDC, never receives goods); a typed address is the other choice.
+  const [plants, setPlants] = useState<{ id: number; name: string; code: string }[]>([])
   useEffect(() => {
-    organizationApi.listBranches()
-      .then((rows: { id: number; name: string; code: string; status?: string }[]) => setPlants((rows || []).filter((b) => b.status !== 'inactive')))
+    apiClient.get('/store/items/units')
+      .then(({ data }: { data: { id: number; name: string; code: string }[] }) => setPlants(data || []))
       .catch(() => setPlants([]))  // no plant list: Ship To stays a typed address
   }, [])
   const plantLabel = (b: { name: string; code: string }) => `${b.name} (${b.code})`
@@ -693,6 +694,13 @@ export default function NewP2PRequestPage() {
                           />
                         </div>
                       </div>
+                      {/* Technical details of the picked item (Item Master › Technical Specification). */}
+                      {m && (m.description || m.specification) && (
+                        <div data-tour="pr-new-item-spec" style={{ marginTop: 6, fontSize: 12, lineHeight: 1.45, color: SHEET.MUTED, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+                          <span style={{ fontWeight: 600, color: SHEET.BODY }}>Technical details: </span>
+                          {[m.description, m.specification].filter(Boolean).join(' · ')}
+                        </div>
+                      )}
                     </td>
                     <VisTd vis={vis} table="form_items" k="make" data-tour="pr-new-item-make" style={readCell}>{m?.make || '—'}</VisTd>
                     <VisTd vis={vis} table="form_items" k="part_code" data-tour="pr-new-item-partcode" style={readCell}>{m?.part_number || m?.manufacturer_part_number || '—'}</VisTd>
