@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { recordPath } from '@/lib/recordRef'
 import { useRequireOrgTab } from '@/app/dashboard/organization/_lib/useRequireOrgTab'
 import { usersApi, modulesApi } from '@/lib/api'
 import { User, ModuleMeta } from '@/types'
@@ -32,6 +34,7 @@ const APPROVAL_ROLE_FLAGS: { key: keyof User; label: string }[] = [
 // Permissions (reuses the existing Users & Roles edit screen), not here.
 export default function OrganizationUsersPage() {
   const { isAuthorized, isLoading } = useRequireOrgTab('users')
+  const router = useRouter()
   const [users, setUsers] = useState<User[]>([])
   const [apps, setApps] = useState<{ id: string; label: string }[]>([])
   const [loading, setLoading] = useState(true)
@@ -67,7 +70,7 @@ export default function OrganizationUsersPage() {
       </p>
       <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 8px' }}>Users</h1>
       <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 20px' }}>
-        View-only — module access and approval roles are granted from Organization &gt; Role &amp; Permissions.
+        Click a user to open their page — approval roles (Purchase Head, Department Head…) are set there. Module access comes from Organization &gt; Role &amp; Permissions.
       </p>
 
       <MessageDialog
@@ -107,7 +110,8 @@ export default function OrganizationUsersPage() {
               const isAdminRole = u.role === 'admin'
               const approvalRoles = APPROVAL_ROLE_FLAGS.filter((f) => u[f.key])
               return (
-                <tr key={u.id} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
+                <tr key={u.id} onClick={() => router.push(recordPath('/dashboard/users', u))} title={`Open ${u.name}`}
+                  style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
                   <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{u.name}</td>
                   <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{u.email}</td>
                   <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{u.department || '—'}</td>
