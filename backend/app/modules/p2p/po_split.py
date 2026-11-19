@@ -74,10 +74,13 @@ def can_work_all_lines(user) -> bool:
 
 
 def is_purchaser(user) -> bool:
-    """A buyer: holds Create on Procurement > R.F.Q. (the tick decides, never a role name)."""
-    from app.core.permission_registry import can_perform
+    """A buyer: holds the Purchase Desk AND Create on Procurement > R.F.Q. (the ticks decide, never
+    a role name). The desk is never granted by a module wildcard, so a role carrying all of
+    Procurement (p2p:*:*, e.g. a Partner's) does not make its holder a buyer (2026-11-19)."""
+    from app.core.permission_registry import can_perform, can_view_tab
 
-    return user is not None and can_perform(user, "p2p", "rfq", "create")
+    return (user is not None and can_view_tab(user, "p2p", "purchase_desk")
+            and can_perform(user, "p2p", "rfq", "create"))
 
 
 def can_see_all_lines(user) -> bool:

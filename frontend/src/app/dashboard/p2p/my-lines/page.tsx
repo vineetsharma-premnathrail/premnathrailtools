@@ -93,7 +93,9 @@ export default function MyLinesPage() {
   // Sees every buyer's lines and the unassigned ones: the Purchase head, and since 2026-11-18 every buyer
   // (Create on R.F.Q.), who decides which unassigned lines are theirs. Working others' lines stays canWorkAll.
   const canRaiseRfq = can('p2p', 'rfq', 'create')
-  const isHead = canFeature('p2p', 'purchase_requisitions', 'all_lines', 'view') || canRaiseRfq
+  // A buyer = Purchase Desk + R.F.Q › Create (same rule as the server's po_split.is_purchaser).
+  const isBuyer = canRaiseRfq && can('p2p', 'purchase_desk', 'view')
+  const isHead = canFeature('p2p', 'purchase_requisitions', 'all_lines', 'view') || isBuyer
   const canWorkAll = isAdmin || canFeature('p2p', 'purchase_requisitions', 'all_lines', 'edit')
   // Reassigning a line is the Purchase head's action (admin or All buyers' lines > edit); a plain buyer never sees it.
   const canMove = canWorkAll && can('p2p', 'purchase_requisitions', 'edit') && canFeature('p2p', 'purchase_requisitions', 'buyer', 'edit')
@@ -125,10 +127,10 @@ export default function MyLinesPage() {
   // A buyer (not the Purchase head) opens on their own lines; All buyers / Unassigned are one pick away.
   const ownFirst = useRef(false)
   useEffect(() => {
-    if (ownFirst.current || !user?.id || canFeature('p2p', 'purchase_requisitions', 'all_lines', 'view') || !canRaiseRfq) return
+    if (ownFirst.current || !user?.id || canFeature('p2p', 'purchase_requisitions', 'all_lines', 'view') || !isBuyer) return
     ownFirst.current = true
     Promise.resolve().then(() => { setBuyer(String(user.id)); setBuyerNames((m) => ({ [String(user.id)]: `${user.name || 'Me'} (you)`, ...m })) })
-  }, [user, canFeature, canRaiseRfq])
+  }, [user, canFeature, isBuyer])
 
   // Buyer filter list (head only): buyers who already hold POs, plus every buyer seen on a loaded page.
   useEffect(() => {

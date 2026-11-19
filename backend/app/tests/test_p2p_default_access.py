@@ -40,6 +40,10 @@ def test_apply_overwrites_procurement_ticks_adds_users_from_data_and_sets_workfl
     # and an Approver that held everything.
     db.add_all([Role(name="purchase user", permissions=["crm:inquiries_tenders:view", "p2p:*:*"], data_scopes={}, is_default=True),
                 Role(name="Procurement – Approver", permissions=["p2p:*:*"], data_scopes={})])
+    # Production: a Partner's own role carries all of Procurement - it must not make them "purchase team".
+    partner_role = Role(name="Partner", permissions=["p2p:*:*"], data_scopes={})
+    db.add(partner_role)
+    partner.roles.append(partner_role)
     db.commit()
 
     out = apply_default_procurement_access(db.connection())
@@ -77,8 +81,14 @@ def test_apply_overwrites_procurement_ticks_adds_users_from_data_and_sets_workfl
     assert [(s.name, s.approver_rule) for s in po.stages] == [
         ("Purchase head", "permission"), ("Project head", "record_field"), ("Partner (final approval)", "partner")]
     assert po.distinct_approvers
-    # The engine finds the right people for the permission stages.
-    assert set(engine.permission_holders(db, "p2p:rfq:create")) == {buyer.id, head_pur.id}
+    # The engine finds the right people for the permission stages: the PR's purchase team is the
+    # Purchase Desk, so the Partner whose role has p2p:*:* (and so R.F.Q › Create) is not in it.
+    assert pr.stages[2].rule_config == {"permission": "p2p:purchase_desk:view"}
+    assert partner.id in engine.permission_holders(db, "p2p:rfq:create")
+    assert set(engine.permission_holders(db, "p2p:purchase_desk:view")) == {buyer.id, head_pur.id}
+    # ...and that Partner is not a buyer either: no claiming lines, no every-RFQ view.
+    db.refresh(partner)
+    assert not po_split.is_purchaser(partner) and not po_split.can_see_all_lines(partner)
     assert engine.permission_holders(db, "p2p:purchase_requisitions.all_lines:edit") == [head_pur.id]
     assert admin.id not in members["Procurement – Approver"]
 

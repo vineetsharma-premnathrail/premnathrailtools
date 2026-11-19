@@ -511,7 +511,8 @@ export default function MyP2PRequestDetailPage() {
   // for anyone else the server answers 403, so those buttons and files are not shown (number, status, lines only).
   const rfqIsMine = (r: RFQ) => allLines || (r.buyer_id ?? r.created_by_id) == null || (r.buyer_id ?? r.created_by_id) === user?.id
   // Every buyer (Create on R.F.Q.) SEES all RFQs like the Purchase head (2026-11-18); working them stays rfqIsMine.
-  const seeAllRfqs = allLines || can('p2p', 'rfq', 'create') || canFeature('p2p', 'purchase_requisitions', 'all_lines', 'view')
+  // A buyer = Purchase Desk + R.F.Q › Create (a module wildcard never grants the desk) - same rule as po_split.is_purchaser.
+  const seeAllRfqs = allLines || (can('p2p', 'purchase_desk', 'view') && can('p2p', 'rfq', 'create')) || canFeature('p2p', 'purchase_requisitions', 'all_lines', 'view')
   const rfqReadable = (r: RFQ) => seeAllRfqs || rfqIsMine(r)
   const mayOpenRfq = (r: RFQ) => canOpenRfq && rfqReadable(r)
   // Discard a draft PO: the RFQ's own buyer or the Purchase head, with Edit on Purchase Orders (the server checks again).

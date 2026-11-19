@@ -21,7 +21,7 @@ Existing members are never removed.
 Workflows (stages replaced; admin can change them afterwards):
   PR  1 Department head (skipped when the department has none, or the head raised it)
       2 Project head picked on the requisition (skipped when none is picked)
-      3 Purchase team - anyone holding R.F.Q › Create, any one approves
+      3 Purchase team - holders of the Purchase Desk (Purchaser / Purchase Head), any one approves
   PO  1 Purchase head - holders of "All buyers' lines" (Purchase Head role), any one
       2 Project head picked on the requisition (skipped when none)
       3 Any one Partner
@@ -124,10 +124,14 @@ ROLES = {
 # Older names of the same roles on production, renamed on the way.
 OLD_NAMES = {"requester": ("purchase user",)}
 
+PURCHASE_TEAM_PERMISSION = "p2p:purchase_desk:view"
+
 PR_STAGES = [
     ("Department head", "department_head", {}, True),
     ("Project head", "record_field", {"field": "project_head_id"}, True),
-    ("Purchase team", "permission", {"permission": "p2p:rfq:create"}, False),
+    # Purchase Desk, not R.F.Q › Create: a module wildcard (p2p:*:*, e.g. on a Partner's role)
+    # never grants the desk, so only the Purchaser / Purchase Head roles land here (2026-11-19).
+    ("Purchase team", "permission", {"permission": PURCHASE_TEAM_PERMISSION}, False),
 ]
 PO_STAGES = [
     ("Purchase head", "permission", {"permission": "p2p:purchase_requisitions.all_lines:edit"}, False),
