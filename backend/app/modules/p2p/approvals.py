@@ -133,6 +133,9 @@ _PO_CONTEXT_FIELDS = {
     "qty_above_requisition": {"label": "Quantity above requisition", "type": "bool"},
     "non_l1_award": {"label": "Vendor is not the lowest quote (L1) on a line", "type": "bool"},
     "single_quotation": {"label": "Single / limited quotation", "type": "bool"},
+    # The Project Head picked on the PO's requisition (2026-11-19): a PO stage can go to the same person.
+    "project_head_id": {"label": "Project head (picked on the requisition)", "type": "user",
+                        "missing": "No Project Head is picked on this PO's requisition - edit the requisition, pick the Project Head, then submit the PO again."},
 }
 
 
