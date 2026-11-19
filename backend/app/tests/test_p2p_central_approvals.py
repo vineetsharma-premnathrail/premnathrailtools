@@ -83,7 +83,7 @@ def _po(client, team, pr):
     """The buyer uploads the Tally PO on the approved requisition (the PO goes into approval)."""
     db = object_session(team["buyer"])
     rfq = rfq_for_pr(db, pr["id"], team["buyer"].id)
-    r = post_upload_po(client, team["buyer"], rfq.id, upload_po_details(db, pr["id"], unit_price=10, tax_rate=None),
+    r = post_upload_po(client, team["buyer"], rfq.id, upload_po_details(db, pr["id"], unit_price=10, tax_rate=0),
                        f"PO-CA-{pr['id']}")
     assert r.status_code == 200, r.text
     return client.get(f"{BASE}/{pr['id']}", headers=_h(team["buyer"])).json()

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
-import { storeApi } from '@/lib/api'
+import { projectsApi, storeApi } from '@/lib/api'
 import { StoreItem, StoreLocation, StoreDocType, StoreIssueFormStandard, StoreStockBalance } from '@/types'
 import { CONTROL, TEXT } from '@/lib/theme'
 import { useFormDraft } from '@/lib/formDraft'
@@ -108,6 +108,9 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
   const [lookups, setLookups] = useState<Record<string, Option[]>>({})
   const [remarks, setRemarks] = useState('')
   const [projects, setProjects] = useState<{ id: number; label: string; third_party_inspection_required: boolean; inspection_agency?: string | null }[]>([])
+  // Production: every project — Project Management projects (PEW-78 …, value "pm:<id>") and past machines
+  // without one ("erp:<id>") — in one list, sorted by number; no work order no. / unit (owner, 2026-11-19).
+  const [pmProjects, setPmProjects] = useState<{ id: number; code: string; machineId: number | null }[]>([])
   const [lines, setLines] = useState<Line[]>([emptyLine()])
   const [storeHasBins, setStoreHasBins] = useState(false)
   useEffect(() => {
@@ -135,6 +138,9 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
     storeApi.listDocTypes('issue').then(setIssueTypes).catch(() => setIssueTypes([]))
     storeApi.getIssueFormStandard().then(setStandard).catch(() => setStandard({}))
     storeApi.listDispatchProjects().then(setProjects).catch(() => setProjects([]))
+    projectsApi.unitsLookup({ include_projects: true, any_status: true })
+      .then((rows) => setPmProjects(rows.filter((r) => r.element_id == null).map((r) => ({ id: r.project_id, code: r.project_code, machineId: r.machine_id ?? null }))))
+      .catch(() => setPmProjects([]))
   }, [isAuthorized])
 
   const loadStock = useCallback(() => {
@@ -168,6 +174,14 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
   const onDc = (spec?.fields || []).some((f) => f.key === 'challan_number')
   const setVal = (key: string, v: Val) => setVals((p) => ({ ...p, [key]: v }))
   const selectedProject = projects.find((p) => String(p.id) === String(vals.erp_project_id || ''))
+  const isProduction = issueType === 'production'
+  const allProjectOptions = useMemo(() => {
+    const viaPm = new Set(pmProjects.map((p) => p.machineId).filter((x): x is number => x != null))
+    return [
+      ...pmProjects.map((p) => ({ value: `pm:${p.id}`, label: p.code })),
+      ...projects.filter((m) => !viaPm.has(m.id) && m.label).map((m) => ({ value: `erp:${m.id}`, label: m.label })),
+    ].sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }))
+  }, [pmProjects, projects])
   // Fields of the picked type: "if:" fields appear only once their condition holds.
   const shownFields = (spec?.fields || []).filter((f) => !f.rule.startsWith('if:') || condHolds(f.rule.slice(3), vals))
   // One draft for the issue form and one for the job-work challan.
@@ -319,7 +333,7 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
         location_id: Number(locationId),
         issue_type: issueType,
         // Only the picked type's fields are sent (the server clears the rest).
-        ...Object.fromEntries(shownFields.filter((f) => filled(f.key)).map((f) => [
+        ...Object.fromEntries(shownFields.filter((f) => filled(f.key) && !(isProduction && f.kind === 'erp_project')).map((f) => [
           f.key,
           typeof vals[f.key] === 'boolean' ? vals[f.key]
             : (LOOKUP_OF[f.kind] || f.kind === 'erp_project' || f.kind === 'item') ? Number(vals[f.key])
@@ -327,6 +341,9 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
         ])),
         remarks: remarks.trim() || undefined,
         ...(validBack.length ? { output_items: validBack.map((l) => ({ item_id: Number(l.itemId), quantity: l.quantity ? Number(l.quantity) : undefined })) } : {}),
+        // Production's one project list: a Project Management project or a past machine.
+        ...(isProduction && String(vals.erp_project_id || '').startsWith('pm:') ? { order_project_id: Number(String(vals.erp_project_id).slice(3)) } : {}),
+        ...(isProduction && String(vals.erp_project_id || '').startsWith('erp:') ? { erp_project_id: Number(String(vals.erp_project_id).slice(4)) } : {}),
         ...(spec?.order_project && orderProject ? { order_project_id: orderProject.projectId, order_project_element_id: orderProject.elementId ?? undefined } : {}),
         ...(overrideReason.trim() ? { project_stock_override_reason: overrideReason.trim() } : {}),
         items: validLines.map((l) => ({
@@ -417,7 +434,7 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
           <div data-tour="issue-type-fields" style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 12 }}>
             {shownFields.map((f) => {
               const req = isRequired(f.rule)
-              const label = <>{f.label} {req ? <Req /> : f.rule.startsWith('one_of:') ? <span style={{ fontWeight: 400, color: SHEET.MUTED }}>(or the other)</span> : null}</>
+              const label = <>{isProduction && f.kind === 'erp_project' ? 'Project' : f.label} {req ? <Req /> : f.rule.startsWith('one_of:') ? <span style={{ fontWeight: 400, color: SHEET.MUTED }}>(or the other)</span> : null}</>
               const v = vals[f.key]
               let input: React.ReactNode
               if (f.kind === 'bool') {
@@ -435,6 +452,9 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
                 )
               } else if (f.kind === 'date') {
                 input = <DateField value={(v as string) || ''} onChange={(d) => setVal(f.key, d)} />
+              } else if (f.kind === 'erp_project' && isProduction) {
+                input = <SearchableSelect value={(v as string) || ''} onChange={(x) => setVal(f.key, x)} placeholder="Search project number…"
+                  options={allProjectOptions} />
               } else if (f.kind === 'erp_project') {
                 input = <SearchableSelect value={(v as string) || ''} onChange={(x) => setVal(f.key, x)} placeholder="Search project number or name…"
                   options={projects.map((p) => ({ value: String(p.id), label: `${p.label}${isDispatch && p.third_party_inspection_required ? ' · inspection required' : ''}` }))} />

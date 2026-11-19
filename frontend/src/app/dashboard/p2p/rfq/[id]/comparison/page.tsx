@@ -12,7 +12,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
 import { p2pApi, rfqApi, vendorsApi } from '@/lib/api'
 import { CompareCell, CompareLine, Comparison, LineQuotation, RfqInvites, RfqQuoteFile, mmQuotationsApi, rfqInvitesApi } from '@/lib/mmPurchasingApi'
-import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
+import FileViewDownload from '@/components/shared/FileViewDownload'
 import { P2PRequest, RFQ } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import { primaryBtnStyle, secondaryBtnStyle, smallSecondaryBtnStyle, RowCount } from '@/components/shared/ui'
@@ -51,7 +51,6 @@ function fmtDay(iso: string | null | undefined): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso)
   return m ? `${m[3]}-${m[2]}-${m[1]}` : iso
 }
-const fileLink: React.CSSProperties = { fontSize: 12, color: '#2563eb', cursor: 'pointer', background: 'none', border: 'none', padding: 0, textAlign: 'left', wordBreak: 'break-all' }
 
 export default function QuotationComparisonPage() {
   // Procurement module; the R.F.Q › Quotation comparison tick below decides the page (2026-11-14).
@@ -153,12 +152,6 @@ export default function QuotationComparisonPage() {
   const invitedQuoted = inviteList.filter((i) => i.quote_status === 'quoted').length
   const stillWaiting = inviteList.filter((i) => i.quote_status !== 'quoted')
 
-  const openQuoteFile = (f: RfqQuoteFile) => {
-    if (!rfqId) return
-    openAttachmentBlob(() => rfqApi.getAttachmentBlob(rfqId, f.id), f.filename)
-      .catch((err) => setError(extractErrorMessages(err, `Could not open ${f.filename}.`).join(' ')))
-  }
-
   const attachQuoteFiles = async (q: LineQuotation, files: File[]) => {
     if (!rfqId || !files.length) return
     setAttachingFor(q.id)
@@ -251,7 +244,11 @@ export default function QuotationComparisonPage() {
                     <div style={{ fontSize: 13.5, fontWeight: 700 }}>{q.vendor_name}</div>
                     <div style={{ fontSize: 12, color: TEXT.muted }}>{q.quote_ref || 'no ref'} · {q.items.length} line(s) · {money(q.quoted_price)} excl. GST{q.valid_until ? ` · valid till ${formatDate(q.valid_until)}` : ''}</div>
                     {(quoteFiles[q.id] || []).map((f) => (
-                      <div key={f.id}><button type="button" style={fileLink} onClick={() => openQuoteFile(f)} title="Open the vendor's quotation">📎 {f.filename}</button></div>
+                      <div key={f.id}>
+                        <FileViewDownload file={f}
+                          getBlob={() => rfqApi.getAttachmentBlob(rfqId as number, f.id)}
+                          getPreviewUrl={() => rfqApi.previewAttachment(rfqId as number, f.id)} />
+                      </div>
                     ))}
                     <div style={{ display: 'flex', gap: 12, marginTop: 2 }}>
                       {canEdit && canFeature('p2p', 'rfq', 'vendor_quotes', 'edit') && <span style={{ fontSize: 12, color: '#2563eb', cursor: 'pointer' }} onClick={() => setEditing(q)}>Edit</span>}

@@ -78,6 +78,10 @@ class P2PGoodsReceipt(Base, TimestampMixin):
     items: Mapped[list["P2PGoodsReceiptItem"]] = relationship(
         "P2PGoodsReceiptItem", back_populates="goods_receipt", cascade="all, delete-orphan"
     )
+    attachments: Mapped[list["P2PGoodsReceiptAttachment"]] = relationship(
+        "P2PGoodsReceiptAttachment", back_populates="goods_receipt", cascade="all, delete-orphan",
+        order_by="P2PGoodsReceiptAttachment.id",
+    )
 
 
 class P2PGoodsReceiptItem(Base, TimestampMixin, OrderProjectLineMixin):
@@ -162,3 +166,27 @@ class P2PGoodsReceiptItem(Base, TimestampMixin, OrderProjectLineMixin):
         if self.invoice_quantity is None:
             return None
         return round((self.received_quantity or 0) - self.invoice_quantity, 6)
+
+
+# Vendor paperwork that came with the goods (owner, 2026-11-19).
+GRN_ATTACHMENT_TYPES = ("invoice", "challan", "other")
+
+
+class P2PGoodsReceiptAttachment(Base, TimestampMixin):
+    """The vendor's tax invoice / delivery challan (or another paper) attached to a GRN
+    when the goods are received. Only the SharePoint pointer lives here."""
+
+    __tablename__ = "p2p_goods_receipt_attachments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    goods_receipt_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("p2p_goods_receipts.id", ondelete="CASCADE"), nullable=False, index=True)
+    doc_type: Mapped[str] = mapped_column(String(20), nullable=False, default="other", server_default="other")
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sharepoint_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    sharepoint_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    uploaded_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+
+    goods_receipt: Mapped["P2PGoodsReceipt"] = relationship("P2PGoodsReceipt", back_populates="attachments")

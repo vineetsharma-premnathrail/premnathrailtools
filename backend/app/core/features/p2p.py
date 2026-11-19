@@ -24,8 +24,11 @@ register_features(
     "p2p", "purchase_requisitions",
     _feature("my_requisitions", "Approved / Rejected segments", "subtab", {"view": "view"},
              "The Approved and Rejected segments on the Purchase Requisitions page."),
-    _feature("all_requisitions", "All segment", "subtab", {"view": "view"},
-             "The All segment on the Purchase Requisitions page: every requisition this person's data access allows them to see. "
+    # Explicit tick only (owner, 2026-11-19): View on the tab alone used to open every requisition in the
+    # data scope, so a requester saw colleagues' PRs, prices and files. Buyers get it via Purchase Desk.
+    _feature("all_requisitions", "All segment (other people's requisitions)", "subtab", {"view": None},
+             "The All segment on the Purchase Requisitions page: every requisition this person's data access allows them to see, "
+             "not only their own and the ones they approve or buy. Only ticking it on a role grants it. "
              "Data access (Role & Permissions > Data access) still decides which ones those are."),
     _feature("approvals", "Waiting for me segment", "subtab", {"view": "view"},
              "The Waiting for me segment: requisitions waiting for this person's decision. Only people named as PR approvers "

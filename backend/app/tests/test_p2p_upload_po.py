@@ -126,7 +126,7 @@ def test_zero_price_unknown_line_and_bad_details_are_422(client, db):
     zero = post_upload_po(client, buyer, rfq.id, upload_po_details(db, pr["id"], prices={line["id"]: 0}), "TALLY-B2")
     assert zero.status_code == 422 and "unit_price" in zero.json()["detail"] and "incomplete" in zero.json()["detail"]
     stray = upload_po_details(db, pr["id"])
-    stray["lines"] = [{"pr_item_id": line["id"] + 999, "unit_price": 5}]
+    stray["lines"] = [{"pr_item_id": line["id"] + 999, "unit_price": 5, "tax_rate": 0}]
     r = post_upload_po(client, buyer, rfq.id, stray, "TALLY-B2")
     assert r.status_code == 422 and "not open lines" in r.json()["detail"]
     with sharepoint_stub():
@@ -321,7 +321,7 @@ def test_upload_on_a_before_po_requisition_links_the_receipt(client, db):
     assert row.status == "pending_po" and row.p2p_request_id and row.purchase_order_id is None
     # The requisition's own page finds its hidden RFQ and uploads the Tally PO on it.
     assert [x["id"] for x in client.get(RFQS, params={"p2p_request_id": row.p2p_request_id}, headers=auth_header(buyer)).json()] == [rfq["id"]]
-    details = upload_po_details(db, row.p2p_request_id, unit_price=30, tax_rate=None)
+    details = upload_po_details(db, row.p2p_request_id, unit_price=30, tax_rate=0)
     details.pop("vendor_id")  # the receipt's vendor is the RFQ's one quote
     r = post_upload_po(client, buyer, rfq["id"], details, "TALLY-UPO-BPO")
     assert r.status_code == 200, r.text

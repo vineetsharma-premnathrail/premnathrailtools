@@ -371,10 +371,10 @@ def test_one_rfq_makes_two_pos_each_with_its_own_approval_and_other_buyers_keep_
     assert _open(db, q["pr_id"])[q["l1"]] == 0 and _open(db, q["pr_id"])[q["l2"]] == 5
     # B's line is still theirs to upload; A cannot upload it (not A's RFQ).
     by_a = post_upload_po(client, q["a"], rb["id"], {"vendor_quotation_id": qb["id"], "ship_to_location_id": make_ship_to(db).id,
-                                                      "lines": [{"pr_item_id": q["l2"], "unit_price": 7}]}, "TALLY-2PO-3")
+                                                      "lines": [{"pr_item_id": q["l2"], "unit_price": 7, "tax_rate": 0}]}, "TALLY-2PO-3")
     assert by_a.status_code == 403 and q["b"].name in by_a.json()["detail"]
     ok = post_upload_po(client, q["b"], rb["id"], {"vendor_quotation_id": qb["id"], "ship_to_location_id": make_ship_to(db).id,
-                                                    "lines": [{"pr_item_id": q["l2"], "unit_price": 7}]}, "TALLY-2PO-3")
+                                                    "lines": [{"pr_item_id": q["l2"], "unit_price": 7, "tax_rate": 0}]}, "TALLY-2PO-3")
     assert ok.status_code == 200, ok.text
 
 
@@ -401,7 +401,7 @@ def test_a_po_takes_only_what_is_awarded_to_the_vendor_and_a_lower_quantity_leav
 def test_without_a_vendor_quotation_an_rfq_with_awards_names_the_awarded_vendors(client, db, quoted):
     q = quoted
     _split_award(client, q)
-    details = {"vendor_id": q["v1"].id, "ship_to_location_id": make_ship_to(db).id, "lines": [{"pr_item_id": q["l1"], "unit_price": 9}]}
+    details = {"vendor_id": q["v1"].id, "ship_to_location_id": make_ship_to(db).id, "lines": [{"pr_item_id": q["l1"], "unit_price": 9, "tax_rate": 0}]}
     r = post_upload_po(client, q["a"], q["rfq"]["id"], details, "TALLY-NOV-1")
     assert r.status_code == 422 and "Alpha MB" in r.json()["detail"] and "Beta MB" in r.json()["detail"]
     both = post_upload_po(client, q["a"], q["rfq"]["id"], {**details, "vendor_quotation_id": q["q1"]["id"]}, "TALLY-NOV-1")
@@ -485,18 +485,18 @@ def test_shortcut_for_an_rfq_with_only_quote_files_needs_a_reason_and_takes_the_
     def go(tally, lines, **extra):
         return post_upload_po(client, w["a"], rfq["id"], {"vendor_tier": "L2", "ship_to_location_id": ship, "lines": lines, **extra}, tally)
 
-    no_reason = go("TALLY-SC-1", [{"pr_item_id": w["l1"], "unit_price": 9}])
+    no_reason = go("TALLY-SC-1", [{"pr_item_id": w["l1"], "unit_price": 9, "tax_rate": 0}])
     assert no_reason.status_code == 400 and "instead of L1" in no_reason.json()["detail"]
-    too_many = go("TALLY-SC-1", [{"pr_item_id": w["l1"], "quantity": 150, "unit_price": 9}], selection_reason="L1 cannot deliver in time")
+    too_many = go("TALLY-SC-1", [{"pr_item_id": w["l1"], "quantity": 150, "unit_price": 9, "tax_rate": 0}], selection_reason="L1 cannot deliver in time")
     assert too_many.status_code == 409 and "more than is left to order" in too_many.json()["detail"]
-    ok = go("TALLY-SC-1", [{"pr_item_id": w["l1"], "quantity": 60, "unit_price": 9}], selection_reason="L1 cannot deliver in time")
+    ok = go("TALLY-SC-1", [{"pr_item_id": w["l1"], "quantity": 60, "unit_price": 9, "tax_rate": 0}], selection_reason="L1 cannot deliver in time")
     assert ok.status_code == 200, ok.text
     po = ok.json()
     assert po["vendor_id"] == w["v2"].id and [(i["pr_item_id"], i["quantity"], i["price_source"], i["vendor_quotation_item_id"]) for i in po["items"]] == [
         (w["l1"], 60, "manual", None)]
     assert _open(db, w["pr_id"])[w["l1"]] == 40 and _open(db, w["pr_id"])[w["l3"]] == 10
     # A line of another buyer's RFQ cannot be smuggled onto this PO.
-    other = go("TALLY-SC-2", [{"pr_item_id": w["l2"], "unit_price": 9}], selection_reason="L1 cannot deliver in time")
+    other = go("TALLY-SC-2", [{"pr_item_id": w["l2"], "unit_price": 9, "tax_rate": 0}], selection_reason="L1 cannot deliver in time")
     assert other.status_code == 422 and "is not on RFQ" in other.json()["detail"]
 
 
@@ -515,7 +515,7 @@ def test_before_po_requisition_belongs_to_its_creator_and_uploads_at_the_receipt
     assert rfq["buyer_id"] == buyer.id and [(i["store_item_id"], i["quantity"]) for i in rfq["items"]] == [(item.id, 4)]
     pr = db.get(P2PRequest, db.get(StorePrePoReceipt, rec["id"]).p2p_request_id)
     assert pr.status == "vendor_selected" and all(i.buyer_id == buyer.id for i in pr.items)  # the creator buys every line
-    details = {"ship_to_location_id": make_ship_to(db).id, "lines": [{"pr_item_id": pr.items[0].id, "unit_price": 30}]}
+    details = {"ship_to_location_id": make_ship_to(db).id, "lines": [{"pr_item_id": pr.items[0].id, "unit_price": 30, "tax_rate": 0}]}
     r = post_upload_po(client, buyer, rfq["id"], details, "TALLY-MB-BPO")
     assert r.status_code == 200, r.text
     assert [(i["quantity"], i["unit_price"]) for i in r.json()["items"]] == [(4, 30)] and r.json()["rfq_id"] == rfq["id"]

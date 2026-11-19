@@ -1,5 +1,5 @@
 from app.core.like import like_escape
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import Response
 from sqlalchemy import or_
@@ -60,7 +60,7 @@ from app.modules.store.models.stock_balance import StoreStockBalance
 from app.modules.store.models.material_issue import StoreMaterialIssue, StoreMaterialIssueItem
 from app.modules.store.service import generate_material_issue_number
 from app.modules.store.services.stock_ledger import post_stock_transaction
-from app.utils.sharepoint import upload_file_to_sharepoint, build_sharepoint_folder_path, download_file_content
+from app.utils.sharepoint import upload_file_to_sharepoint, build_sharepoint_folder_path, download_file_content, get_preview_url
 from app.utils.notifications import notify_user
 from app.utils.email import send_p2p_pr_approval_email, send_p2p_po_approval_email
 
@@ -1210,6 +1210,16 @@ async def get_p2p_request(
     return _to_response(db, pr, include_po=include_po, user=user, with_approval=True)
 
 
+def _own_history(pr: P2PRequest) -> list:
+    """Audit rows written before this requisition existed belong to an earlier, deleted requisition
+    that had the same id (a reset/re-used id, prod 2026-11-19: P2P-PNH-2026-0002's history showed
+    on P2P-2026-0002). The audit trail keeps them; this requisition's History does not show them."""
+    if not pr.created_at:
+        return []
+    created = pr.created_at if pr.created_at.tzinfo else pr.created_at.replace(tzinfo=timezone.utc)
+    return [AuditLog.performed_at >= created - timedelta(minutes=1)]
+
+
 @router.get("/{pr_id}/audit")
 async def get_p2p_request_audit(
     pr_id: int,
@@ -1221,7 +1231,7 @@ async def get_p2p_request_audit(
     pr = _get_pr_or_404(db, pr_id, user=user)
     _check_view_access(pr, user)
     logs = db.query(AuditLog).filter(
-        AuditLog.entity_type == "p2p_request", AuditLog.entity_id == pr_id
+        AuditLog.entity_type == "p2p_request", AuditLog.entity_id == pr_id, *_own_history(pr)
     ).order_by(AuditLog.performed_at.asc()).all()
 
     user_ids = {log.performed_by_id for log in logs if log.performed_by_id}
@@ -1265,7 +1275,7 @@ async def get_p2p_request_audit_document(
         raise HTTPException(status_code=403, detail="The PO document shows the vendor's prices — only Purchase and the PO approvers can open it.")
     log = db.query(AuditLog).filter(
         AuditLog.id == log_id, AuditLog.entity_type == "p2p_request", AuditLog.entity_id == pr.id,
-        AuditLog.action == "po_document_uploaded",
+        AuditLog.action == "po_document_uploaded", *_own_history(pr),
     ).first()
     if log is None or not log.attachment_url:
         raise HTTPException(status_code=404, detail="That history entry has no PO document — reload the requisition.")
@@ -2198,6 +2208,36 @@ async def upload_attachments(
     return saved
 
 
+def _readable_pr_attachment(db: Session, pr_id: int, attachment_id: int, user: User) -> P2PRequestAttachment:
+    pr = _get_pr_or_404(db, pr_id, user=user)
+    # Anyone who may see the PR (incl. its named PR/PO approvers) may open
+    # its files — approvers must see the specs they sign off on.
+    _check_view_access(pr, user)
+    if not _sees_pr_feature(user, "attachments", "view"):
+        ensure_feature_action(user, "p2p", "purchase_requisitions", "attachments", "view")
+    attachment = db.query(P2PRequestAttachment).filter(
+        P2PRequestAttachment.id == attachment_id, P2PRequestAttachment.p2p_request_id == pr_id
+    ).first()
+    if not attachment:
+        raise HTTPException(status_code=404, detail="This file is no longer on the requisition — refresh the page to see its current files.")
+    if not settings.SHAREPOINT_SITE_ID:
+        raise HTTPException(status_code=503, detail="File storage (SharePoint) is not configured on the server — ask the administrator to set SHAREPOINT_SITE_ID.")
+    return attachment
+
+
+@router.get("/{pr_id}/attachments/{attachment_id}/preview")
+async def preview_p2p_attachment(
+    pr_id: int,
+    attachment_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_requester_or_purchase),
+):
+    """Short-lived Microsoft-viewer link for the in-portal viewer (Word, Excel,
+    PowerPoint, ...), minted via the app-only token after the same checks as /content."""
+    attachment = _readable_pr_attachment(db, pr_id, attachment_id, user)
+    return {"getUrl": await get_preview_url(settings.SHAREPOINT_SITE_ID, attachment.sharepoint_path or "")}
+
+
 @router.get("/{pr_id}/attachments/{attachment_id}/content")
 async def get_p2p_attachment_content(
     pr_id: int,
@@ -2207,21 +2247,7 @@ async def get_p2p_attachment_content(
 ):
     """Raw bytes for in-app preview, fetched via the app-only Graph token —
     never the raw SharePoint webUrl."""
-    pr = _get_pr_or_404(db, pr_id, user=user)
-    # Anyone who may see the PR (incl. its named PR/PO approvers) may open
-    # its files — approvers must see the specs they sign off on.
-    _check_view_access(pr, user)
-    if not _sees_pr_feature(user, "attachments", "view"):
-        ensure_feature_action(user, "p2p", "purchase_requisitions", "attachments", "view")
-
-    attachment = db.query(P2PRequestAttachment).filter(
-        P2PRequestAttachment.id == attachment_id, P2PRequestAttachment.p2p_request_id == pr_id
-    ).first()
-    if not attachment:
-        raise HTTPException(status_code=404, detail="Attachment not found")
-    if not settings.SHAREPOINT_SITE_ID:
-        raise HTTPException(status_code=503, detail="SharePoint site is not configured")
-
+    attachment = _readable_pr_attachment(db, pr_id, attachment_id, user)
     content, content_type = await download_file_content(settings.SHAREPOINT_SITE_ID, attachment.sharepoint_path or "")
     return Response(
         content=content,

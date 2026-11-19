@@ -147,7 +147,7 @@ def test_cancel_needs_a_reason_and_only_while_pending(client, db):
 def _upload_on(client, db, buyer, rfq_id, pr_id, tally="TALLY-BPO-1", **kw):
     """Upload the Tally PO on a Before-PO requisition: the vendor is the receipt's (the RFQ's one quote), so
     the payload names none."""
-    details = upload_po_details(db, pr_id, unit_price=kw.pop("unit_price", 20), tax_rate=kw.pop("tax_rate", None), **kw)
+    details = upload_po_details(db, pr_id, unit_price=kw.pop("unit_price", 20), tax_rate=kw.pop("tax_rate", 0), **kw)
     details.pop("vendor_id")
     return post_upload_po(client, buyer, rfq_id, details, tally)
 
@@ -186,7 +186,7 @@ def test_procurement_raises_the_requisition_uploads_the_po_it_is_approved_receiv
     # Upload PO: a line that isn't on the requisition is refused; the receipt stays waiting.
     stray = upload_po_details(db, pr.id, unit_price=5)
     stray.pop("vendor_id")
-    stray["lines"] = [{"pr_item_id": pr.items[0].id + 999, "unit_price": 5}]
+    stray["lines"] = [{"pr_item_id": pr.items[0].id + 999, "unit_price": 5, "tax_rate": 0}]
     bad = post_upload_po(client, buyer, rfq["id"], stray, "TALLY-BPO-0")
     assert bad.status_code == 422 and "not open lines" in bad.json()["detail"]
     db.expire_all()

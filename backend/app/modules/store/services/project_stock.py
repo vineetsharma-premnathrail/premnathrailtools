@@ -274,7 +274,8 @@ def resolve_issue_project(db: Session, issue_type: str | None, payload) -> dict:
         line_elements.append(el.id if el is not None else None)
 
     # A historic sales-order project (units) needs its unit; a project without units never does.
-    if has_units and header_el is None and not (items and all(line_elements)):
+    # Production picks the project only - no unit asked there (owner, 2026-11-19).
+    if has_units and header_el is None and issue_type != "production" and not (items and all(line_elements)):
         what = source or f"project {project.project_code}"
         raise HTTPException(status_code=422, detail=(
             f"{what[0].upper() + what[1:]} is for {project.project_code}, a project created from a sales order that has "

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, Fragment } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
-import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
+import FileViewDownload from '@/components/shared/FileViewDownload'
 
 import { p2pApi, rfqApi, purchaseOrdersApi, storeApi } from '@/lib/api'
 import { formatDate, formatDateTime } from '@/lib/format'
@@ -271,20 +271,6 @@ export default function MyP2PRequestDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthorized, prId])
 
-  // Open an RFQ / PO file; a refusal (e.g. 403 "This RFQ belongs to X ...") is shown with the server's words.
-  // The file comes back as a blob, so its error body has to be read as text first.
-  const openFile = async (fetchBlob: () => Promise<Blob>, filename: string) => {
-    try {
-      await openAttachmentBlob(fetchBlob, filename)
-    } catch (err) {
-      const data = (err as { response?: { data?: unknown } })?.response?.data
-      let msg = ''
-      if (data instanceof Blob) {
-        try { const j = JSON.parse(await data.text()); if (typeof j?.detail === 'string') msg = j.detail } catch { /* not JSON */ }
-      }
-      setError(msg || extractErrorMessages(err, `Could not open ${filename}. Reload the page and try again; if it keeps failing, ask the buyer of that RFQ.`).join(' '))
-    }
-  }
 
 
 
@@ -750,14 +736,11 @@ export default function MyP2PRequestDetailPage() {
                 <td style={{ ...tdStyle, fontSize: 12.5 }}>
                   {(it.attachments.length === 0 || !seeAttachments) && <span style={{ color: TEXT.muted }}>—</span>}
                   {seeAttachments && it.attachments.map((a) => (
-                    <a
-                      key={a.id}
-                      href="#"
-                      onClick={(e) => { e.preventDefault(); openAttachmentBlob(() => p2pApi.getAttachmentBlob(pr.id, a.id), a.filename) }}
-                      style={{ display: 'block', color: TEXT.heading, textDecoration: 'none' }}
-                    >
-                      {a.filename}
-                    </a>
+                    <div key={a.id}>
+                      <FileViewDownload compact file={a}
+                        getBlob={() => p2pApi.getAttachmentBlob(pr.id, a.id)}
+                        getPreviewUrl={() => p2pApi.previewAttachment(pr.id, a.id)} />
+                    </div>
                   ))}
                 </td>
                 <td style={{ ...tdStyle, fontSize: 12.5 }}>
@@ -992,13 +975,9 @@ export default function MyP2PRequestDetailPage() {
               <div key={a.id} style={{ borderRadius: 12, border: `1px solid ${BORDER.normal}`, padding: 12 }}>
                 <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 6px' }}>{a.vendor_tier}</p>
                 <p style={{ fontSize: 13.5, fontWeight: 600, color: TEXT.heading, margin: '0 0 2px' }}>{a.vendor_name || '—'}</p>
-                <a
-                  href="#"
-                  onClick={(e) => { e.preventDefault(); openFile(() => rfqApi.getAttachmentBlob(r.id, a.id), a.filename) }}
-                  style={{ fontSize: 12.5, color: '#2563eb', textDecoration: 'none' }}
-                >
-                  {a.filename}
-                </a>
+                <FileViewDownload file={a}
+                  getBlob={() => rfqApi.getAttachmentBlob(r.id, a.id)}
+                  getPreviewUrl={() => rfqApi.previewAttachment(r.id, a.id)} />
               </div>
             ))}
           </div>
@@ -1046,13 +1025,8 @@ export default function MyP2PRequestDetailPage() {
             {canFeature('p2p', 'purchase_orders', 'po_document', 'view') && (
               <DetailRow label="Tally PO (PDF)">
                 {po.document_filename && (po.rfq_id ?? rfqs[0]?.id) ? (
-                  <a
-                    href="#"
-                    onClick={(e) => { e.preventDefault(); openFile(() => rfqApi.getPoDocumentBlob((po.rfq_id ?? rfqs[0]?.id) as number, po.id), po.document_filename!) }}
-                    style={{ color: '#2563eb', textDecoration: 'none' }}
-                  >
-                    {po.document_filename}
-                  </a>
+                  <FileViewDownload file={{ id: po.id, filename: po.document_filename }}
+                    getBlob={() => rfqApi.getPoDocumentBlob((po.rfq_id ?? rfqs[0]?.id) as number, po.id)} />
                 ) : <span style={{ color: TEXT.muted }}>No document attached yet</span>}
               </DetailRow>
             )}
@@ -1238,14 +1212,12 @@ export default function MyP2PRequestDetailPage() {
           <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Attachments</h2>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {pr.attachments.map((a) => (
-              <a
-                key={a.id}
-                href="#"
-                onClick={(e) => { e.preventDefault(); openAttachmentBlob(() => p2pApi.getAttachmentBlob(pr.id, a.id), a.filename) }}
-                style={{ fontSize: 13, color: TEXT.heading, textDecoration: 'none' }}
-              >
-                {a.filename} <span style={{ color: TEXT.muted, fontSize: 11 }}>({a.doc_type})</span>
-              </a>
+              <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <FileViewDownload file={a}
+                  getBlob={() => p2pApi.getAttachmentBlob(pr.id, a.id)}
+                  getPreviewUrl={() => p2pApi.previewAttachment(pr.id, a.id)} />
+                <span style={{ color: TEXT.muted, fontSize: 11 }}>({a.doc_type})</span>
+              </div>
             ))}
           </div>
         </div>
@@ -1265,10 +1237,8 @@ export default function MyP2PRequestDetailPage() {
                   {h.document_name && seePoDocument && (
                     <>
                       {' '}
-                      <a href="#" onClick={(e) => { e.preventDefault(); openAttachmentBlob(() => p2pApi.getAuditDocumentBlob(pr.id, h.id), h.document_name!) }}
-                        style={{ color: '#2563eb', textDecoration: 'none', fontWeight: 600 }}>
-                        Open PO PDF
-                      </a>
+                      <FileViewDownload file={{ id: h.id, filename: h.document_name }} label="PO PDF"
+                        getBlob={() => p2pApi.getAuditDocumentBlob(pr.id, h.id)} />
                     </>
                   )}
                 </span>

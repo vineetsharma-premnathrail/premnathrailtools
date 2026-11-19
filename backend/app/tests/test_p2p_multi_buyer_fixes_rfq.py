@@ -173,7 +173,7 @@ def test_a_draft_po_made_for_a_before_po_receipt_reopens_the_receipt_when_discar
     set_po_workflow(db, [approver.id], buyer)
     rfq = client.post(f"{PROC}/{rec['id']}/create-requisition", headers=_h(buyer)).json()["rfq"]
     pr = db.get(P2PRequest, db.get(StorePrePoReceipt, rec["id"]).p2p_request_id)
-    details = {"ship_to_location_id": make_ship_to(db).id, "lines": [{"pr_item_id": pr.items[0].id, "unit_price": 30}]}
+    details = {"ship_to_location_id": make_ship_to(db).id, "lines": [{"pr_item_id": pr.items[0].id, "unit_price": 30, "tax_rate": 0}]}
     po = post_upload_po(client, buyer, rfq["id"], details, "TALLY-FX-BPO")
     assert po.status_code == 200, po.text
     req = engine.latest_request(db, "p2p_purchase_order", po.json()["id"])

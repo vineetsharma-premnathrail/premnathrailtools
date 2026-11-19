@@ -269,8 +269,8 @@ function Viewer({ files, startIndex, onClose, getBlob, getPreviewUrl }: DialogPr
   )
 
   return createPortal(
+    // No close on a backdrop click — popups close only via X / Esc (owner rule, 2026-11-12).
     <div
-      onClick={onClose}
       className="dialog-backdrop"
       style={{ position: 'fixed', inset: 0, background: 'rgba(20,14,8,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 16 }}
     >

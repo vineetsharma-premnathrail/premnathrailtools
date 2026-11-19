@@ -58,8 +58,10 @@ FIELDS: dict[str, dict] = {
 # 2026-11-14 it is NOT a gate — Store › Issues › Create plus the role's Issue Type list decide).
 # remarks_label → remarks are required, with this prompt.
 ISSUE_FORMS: dict[str, dict] = {
-    # Every project / machine (past projects too) can be picked on a production issue (owner, 2026-11-06).
-    "production": {"fields": {"erp_project_id": "optional", "project_or_work_order": "optional"}},
+    # Every project (Project Management projects and past machines) can be picked on a production issue
+    # (owner, 2026-11-06); no work order no. / project unit asked (owner, 2026-11-19) - the form sends a
+    # Project Management project as order_project_id, a past machine as erp_project_id.
+    "production": {"fields": {"erp_project_id": "optional"}},
     "maintenance": {"fields": {"maintenance_work_order_id": "one_of:against", "asset_id": "one_of:against"}},
     "project": {"leaves_factory": True, "fields": {
         "erp_project_id": "required", "site_address": "optional", "returnable": "optional",
@@ -108,7 +110,8 @@ def public_standard() -> dict:
             # validated there, not by validate_issue): shown for these types.
             # Not on Project / Site: the project comes from the machine picked
             # above and no unit is required there (owner, 2026-11-05).
-            "order_project": t in PROJECT_ISSUE_TYPES and t != "project",
+            # Not on Production either: it picks the project only, never a unit (owner, 2026-11-19).
+            "order_project": t in PROJECT_ISSUE_TYPES and t not in ("project", "production"),
             "fields": [{"key": k, "rule": rule, **FIELDS[k]} for k, rule in spec["fields"].items()],
         }
     return out

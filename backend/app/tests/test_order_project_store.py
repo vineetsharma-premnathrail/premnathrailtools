@@ -151,9 +151,12 @@ def test_rrv_order_issue_must_carry_the_element(client, db, env):
     r = _issue(client, env, 1, project_or_work_order=bno, order_project_element_id=v2.id)
     assert r.status_code == 422 and v1.element_no.split("/")[1] in r.json()["detail"]
 
-    # Work order of the RRV order without a build → the element is mandatory.
-    r = _issue(client, env, 1, project_or_work_order="WO-OPS-0001")
+    # Work order of the RRV order without a build → the element is mandatory (rework still asks for the unit) ...
+    r = _issue(client, env, 1, issue_type="rework", project_or_work_order="WO-OPS-0001")
     assert r.status_code == 422 and env["project"].project_code in r.json()["detail"]
+    # ... but a production issue picks the project only, never a unit (owner, 2026-11-19).
+    r = _issue(client, env, 1, project_or_work_order="WO-OPS-0001")
+    assert r.status_code == 200, r.text
     r = _issue(client, env, 1, project_or_work_order="WO-OPS-0001", order_project_element_id=v2.id)
     assert r.status_code == 200, r.text
     assert r.json()["order_project_element_id"] == v2.id
@@ -268,6 +271,9 @@ def test_store_cell_warns_when_build_material_is_not_held(client, db, env):
 def test_form_standard_flags_project_types(client, db, env):
     r = client.get(f"{ISS}/form-standard", headers=hdr(env["keeper"]))
     std = r.json()
-    assert std["production"]["order_project"] and std["dispatch"]["order_project"] and std["rework"]["order_project"]
+    assert std["dispatch"]["order_project"] and std["rework"]["order_project"]
+    # Production asks for the project only - no unit picker, no work order no. (owner, 2026-11-19).
+    assert not std["production"]["order_project"]
+    assert [f["key"] for f in std["production"]["fields"]] == ["erp_project_id"]
     assert not std["scrap"]["order_project"] and not std["maintenance"]["order_project"]
     assert db.query(StoreMaterialIssue).count() == 0

@@ -118,6 +118,17 @@ class P2PGoodsReceiptInspectPayload(BaseModel):
     items: list[P2PGoodsReceiptItemInspectPayload] = Field(default_factory=list)
 
 
+class P2PGoodsReceiptAttachmentResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: int
+    doc_type: str
+    filename: str
+    content_type: str | None = None
+    size: int | None = None
+    created_at: datetime | None = None
+
+
 class P2PGoodsReceiptResponse(BaseModel):
     model_config = {"from_attributes": True}
 
@@ -146,6 +157,8 @@ class P2PGoodsReceiptResponse(BaseModel):
     lr_number: str | None = None
     created_at: datetime | None = None
     items: list[P2PGoodsReceiptItemResponse] = Field(default_factory=list)
+    # Vendor invoice / delivery challan files added at receipt (2026-11-19).
+    attachments: list[P2PGoodsReceiptAttachmentResponse] = Field(default_factory=list)
 
     # Denormalized display fields, filled in by the route.
     po_number: str | None = None

@@ -66,7 +66,7 @@ from app.modules.p2p.models.rfq_item import RFQItem  # noqa: F401
 from app.modules.p2p.models.rfq_attachment import RFQAttachment
 from app.modules.p2p.models.rfq_invite import RFQVendorInvite
 from app.modules.p2p.models.vendor_quotation import VendorQuotation
-from app.modules.p2p.models.goods_receipt import P2PGoodsReceipt, P2PGoodsReceiptItem
+from app.modules.p2p.models.goods_receipt import P2PGoodsReceipt, P2PGoodsReceiptAttachment, P2PGoodsReceiptItem
 from app.modules.p2p.models.vendor_return import P2PVendorReturn, P2PVendorReturnItem  # noqa: F401
 from app.modules.p2p.models.service_entry import P2PServiceEntry  # noqa: F401
 from app.modules.p2p.models.landed_cost import P2PLandedCostAllocation, P2PLandedCostVoucher, P2PPOCharge  # noqa: F401

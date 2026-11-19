@@ -1380,6 +1380,11 @@ export const p2pApi = {
     return data
   },
 
+  previewAttachment: async (id: number, attachmentId: number): Promise<{ getUrl: string }> => {
+    const { data } = await apiClient.get(`/p2p/requests/${id}/attachments/${attachmentId}/preview`)
+    return data
+  },
+
   // MIS Report
   getMisSummary: async (params: Record<string, unknown> = {}) => {
     const { data } = await apiClient.get('/p2p/mis/summary', { params })
@@ -1823,6 +1828,11 @@ export const rfqApi = {
     return data
   },
 
+  previewAttachment: async (id: number, attachmentId: number): Promise<{ getUrl: string }> => {
+    const { data } = await apiClient.get(`/p2p/rfqs/${id}/attachments/${attachmentId}/preview`)
+    return data
+  },
+
   submit: async (id: number) => {
     const { data } = await apiClient.post(`/p2p/rfqs/${id}/submit`)
     return data
@@ -1993,6 +2003,22 @@ export const goodsReceiptsApi = {
   /** Cancels a wrongly entered GRN as a whole (stock taken back out at the PO rate). */
   reverse: async (id: number, reason: string) => {
     const { data } = await apiClient.post(`/p2p/goods-receipts/${id}/reverse`, { reason })
+    return data
+  },
+  /** Vendor invoice / delivery challan file that came with the goods (2026-11-19). */
+  uploadAttachment: async (id: number, file: File, docType: 'invoice' | 'challan' | 'other') => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('doc_type', docType)
+    const { data } = await apiClient.post(`/p2p/goods-receipts/${id}/attachments`, form, { headers: { 'Content-Type': 'multipart/form-data' } })
+    return data
+  },
+  getAttachmentBlob: async (id: number, attachmentId: number): Promise<Blob> => {
+    const { data } = await apiClient.get(`/p2p/goods-receipts/${id}/attachments/${attachmentId}/content`, { responseType: 'blob' })
+    return data
+  },
+  previewAttachment: async (id: number, attachmentId: number): Promise<{ getUrl: string }> => {
+    const { data } = await apiClient.get(`/p2p/goods-receipts/${id}/attachments/${attachmentId}/preview`)
     return data
   },
 }

@@ -52,7 +52,7 @@ def env(db):
     s1b = StoreLocation(name="U1 Tool Room", code="U1-TR", branch_id=p1.id)
     s2 = StoreLocation(name="U2 Main Store", code="U2-MS", branch_id=p2.id)
     vendor = Vendor(code="V-001", name="Pune Steels", city="Pune")
-    bolt = StoreItem(item_code="01", item_name="Hex Bolt M30", uom="PCS", category="Hardware")
+    bolt = StoreItem(item_code="01", item_name="Hex Bolt M30", uom="PCS", category="Hardware", specification="Gr 8.8,  zinc plated")
     wire = StoreItem(item_code="02", item_name="Copper Wire", uom="KG", category="Electrical")
     admin = User(email="admin@premnathrail.com", name="admin", role="admin", is_active=True)
     viewer = User(email="viewer@premnathrail.com", name="viewer", role="user", is_active=True,
@@ -116,9 +116,10 @@ def test_issue_slip_fills_grid_and_grows_with_footer_below(client, env):
     wb = _open(client.get(f"{API}/store/material-issues/{issue.id}/print-slip", headers=env["admin"]))
     ws = wb.worksheets[0]
     _header_ok(ws, "F/STR/04", "K1")
-    assert "ISS-0001" in ws["A5"].value and "WO-77" in ws["A5"].value
+    # No "(No. ISS-…, Issued to: …)" after the heading; DESCRIPTION = name + technical details, no item code.
+    assert "ISS-0001" not in ws["A5"].value and "Issued to" not in ws["A5"].value
     assert _col(ws, 1, 8, 23) == list(range(1, 17))
-    assert ws["C8"].value == "Hex Bolt M30 (01)" and ws["H8"].value == 1 and ws["I8"].value == "PCS"
+    assert ws["C8"].value == "Hex Bolt M30 — Gr 8.8, zinc plated" and ws["H8"].value == 1 and ws["I8"].value == "PCS"
     assert ws["J8"].value == "U1 Main Store / 1A"
     assert ws["B8"].value.date() == date(2026, 10, 9)
     # Two extra rows: the signature / Prepared-Approved rows moved down by two, merges and images with them.

@@ -192,6 +192,26 @@ def test_named_pr_approver_can_open_attachment(client, db, monkeypatch):
     assert r.content == b"pdf"
 
 
+def test_attachment_view_link_follows_the_same_access_as_download(client, db, monkeypatch):
+    """View (in-portal viewer) mints a SharePoint link only for people who may open the file (2026-11-19)."""
+    pr, pr_appr, _, requester = _pr(client, db)
+    att = _attach(db, pr["id"], requester.id)
+    monkeypatch.setattr("app.modules.p2p.routes.p2p_requests.settings.SHAREPOINT_SITE_ID", "site")
+
+    async def _fake_preview(site, path):
+        assert path == "p2p/spec.pdf"
+        return "https://tenant.sharepoint.com/view/spec"
+    monkeypatch.setattr("app.modules.p2p.routes.p2p_requests.get_preview_url", _fake_preview)
+    url = f"{BASE}/{pr['id']}/attachments/{att.id}/preview"
+    for who in (requester, pr_appr["store_manager"]):
+        r = client.get(url, headers=_h(who))
+        assert r.status_code == 200, r.text
+        assert r.json() == {"getUrl": "https://tenant.sharepoint.com/view/spec"}
+    outsider = _user(db, f"rf.view.{pr['id']}@premnathrail.com", apps=("crm",))  # no Procurement access
+    assert client.get(url, headers=_h(outsider)).status_code in (403, 404)
+    assert client.get(f"{BASE}/{pr['id']}/attachments/999999/preview", headers=_h(requester)).status_code == 404
+
+
 def test_requester_cannot_delete_attachment_after_approval(client, db):
     pr, pr_appr, _, requester = _pr(client, db)
     att = _attach(db, pr["id"], requester.id)
@@ -222,3 +242,43 @@ def test_upload_po_orders_only_the_unissued_shortfall(client, db):
     db.expire_all()
     po = db.query(P2PPurchaseOrder).filter_by(p2p_request_id=pr["id"]).one()
     assert [i.quantity for i in po.items] == [3]
+
+
+def test_history_leaves_out_rows_of_an_earlier_requisition_with_the_same_id(client, db):
+    """Prod 2026-11-19: an old, deleted P2P-PNH-2026-0002's audit rows showed on the new P2P-2026-0002 (same id)."""
+    from datetime import datetime, timedelta, timezone
+
+    pr, _, _, requester = _pr(client, db)
+    old = AuditLog(entity_type="p2p_request", entity_id=pr["id"], action="closed", performed_by_id=requester.id,
+                   summary="P2P-OLD-0002 closed automatically", performed_at=datetime.now(timezone.utc) - timedelta(days=50))
+    db.add(old)
+    db.commit()
+    r = client.get(f"{BASE}/{pr['id']}/audit", headers=_h(requester))
+    assert r.status_code == 200, r.text
+    summaries = [row["summary"] for row in r.json()]
+    assert "P2P-OLD-0002 closed automatically" not in summaries
+    assert summaries  # its own rows (raised / submitted) are still there
+
+
+def test_view_on_the_tab_alone_does_not_open_other_peoples_requisitions(client, db):
+    """#1 (2026-11-19): 'All requisitions' is granted only by its own tick, never by View on the tab."""
+    pr, _, _, _ = _pr(client, db)
+    viewer = _user(db, f"rf.tabview.{pr['id']}@premnathrail.com", apps=())  # PR + PO tab View only, not on this PR
+    assert client.get(f"{BASE}/{pr['id']}", headers=_h(viewer)).status_code == 403
+    allseg = _user(db, f"rf.allseg.{pr['id']}@premnathrail.com", apps=())
+    allseg.granular_permissions = [*allseg.granular_permissions, "p2p:purchase_requisitions.all_requisitions:view"]
+    db.commit()
+    assert client.get(f"{BASE}/{pr['id']}", headers=_h(allseg)).status_code == 200
+
+
+def test_upload_po_refuses_a_line_without_tax(client, db):
+    """#4 (2026-11-19): a blank GST / tax % left GST out of the PO value."""
+    from app.tests.p2p_po_helpers import post_upload_po, rfq_for_pr, upload_po_details
+    pr, pr_appr, _, _ = _pr(client, db)
+    _approve_pr(client, pr, pr_appr)
+    buyer = _user(db, f"rf.notax.{pr['id']}@premnathrail.com", apps=("purchase", "p2p"))
+    rfq = rfq_for_pr(db, pr["id"], buyer.id)
+    r = post_upload_po(client, buyer, rfq.id, upload_po_details(db, pr["id"], tax_rate=None), "PO-NOTAX-1")
+    assert r.status_code == 422 and "tax %" in r.json()["detail"]
+    r = post_upload_po(client, buyer, rfq.id, upload_po_details(db, pr["id"], tax_rate=0), "PO-NOTAX-1")
+    assert r.status_code == 200, r.text  # 0 % (exempt) is a real answer

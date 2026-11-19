@@ -4214,6 +4214,8 @@ export interface P2PVendorReturn {
 
 export interface P2PGoodsReceipt {
   id: number
+  /** Vendor invoice / delivery challan files added at receipt (2026-11-19). */
+  attachments?: { id: number; doc_type: 'invoice' | 'challan' | 'other'; filename: string; content_type?: string | null; size?: number | null; created_at?: string | null }[]
   grn_number: string
   purchase_order_id: number
   po_number?: string

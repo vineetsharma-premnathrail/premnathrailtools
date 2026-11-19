@@ -20,6 +20,7 @@ import { OrderProjectChip } from '@/components/sales/ProjectUnitPicker'
 import Select from '@/components/shared/Select'
 import { useFormDraft } from '@/lib/formDraft'
 import DraftBanner from '@/components/shared/DraftBanner'
+import FileUploadField from '@/components/shared/FileUploadField'
 import { useVisibility } from '@/lib/visibility'
 import { VisColumns } from '@/components/quality/VisColumns'
 import { VisSection, VisTd, VisTh } from '@/lib/visibilityComponents'
@@ -117,6 +118,8 @@ export default function NewStoreGrnPage() {
   const [lineSerials, setLineSerials] = useState<Record<number, string>>({})
   const [docs, setDocs] = useState<GrnDocs>(emptyDocs)
   const [docType, setDocType] = useState<DocType>('invoice')
+  // The invoice / challan scan or photo — uploaded right after the GRN is saved (not kept in the draft).
+  const [docFile, setDocFile] = useState<File | null>(null)
   const [bins, setBins] = useState<{ id: number; code: string; name?: string | null; is_active?: boolean }[]>([])
   const [heats, setHeats] = useState<Record<number, HeatRow[]>>({})
   const [tcNote, setTcNote] = useState('')
@@ -252,7 +255,11 @@ export default function NewStoreGrnPage() {
           .filter(([, v]) => String(v).trim()).map(([k, v]) => [k, String(v).trim()])),
         items,
       })
-      // Mill TC scans go up after the GRN exists; a failed upload doesn't undo the receipt.
+      // Invoice / challan file and mill TC scans go up after the GRN exists; a failed upload doesn't undo the receipt.
+      let docFailed = ''
+      if (docFile) {
+        try { await goodsReceiptsApi.uploadAttachment(grn.id, docFile, docType) } catch (e) { docFailed = extractErrorMessages(e, 'the upload failed').join(' ') }
+      }
       const failed: string[] = []
       for (const line of grn.items || []) {
         const rows = heats[line.po_item_id] || []
@@ -264,8 +271,11 @@ export default function NewStoreGrnPage() {
         }
       }
       draft.clear()
-      if (failed.length) {
-        setTcNote(`GRN ${grn.grn_number} is saved, but the mill TC for heat ${failed.join(', ')} couldn't be uploaded — attach it from Store › Batches.`)
+      if (failed.length || docFailed) {
+        setTcNote([
+          docFailed ? `GRN ${grn.grn_number} is saved, but the ${docType === 'invoice' ? 'invoice' : 'challan'} file "${docFile?.name}" couldn't be uploaded (${docFailed.replace(/\.$/, '')}) — open the GRN and add it under Vendor Documents.` : '',
+          failed.length ? `GRN ${grn.grn_number} is saved, but the mill TC for heat ${failed.join(', ')} couldn't be uploaded — attach it from Store › Batches.` : '',
+        ].filter(Boolean).join(' '))
         return
       }
       router.push(recordPath('/dashboard/store/grn', grn))
@@ -302,7 +312,7 @@ export default function NewStoreGrnPage() {
           onSaved={(r, note) => { setPoNotInList(false); if (note) setSavedNote(note); else router.push('/dashboard/store/before-po') }} />
       )}
       <MessageDialog open={!!savedNote} variant="error" title="File Not Attached" message={savedNote} onClose={() => { setSavedNote(''); router.push('/dashboard/store/before-po') }} />
-      <MessageDialog open={!!tcNote} variant="error" title="Mill TC Not Uploaded" message={tcNote} onClose={() => { setTcNote(''); router.push('/dashboard/store/grn') }} />
+      <MessageDialog open={!!tcNote} variant="error" title="File Not Uploaded" message={tcNote} onClose={() => { setTcNote(''); router.push('/dashboard/store/grn') }} />
 
       <VisColumns vis={vis} rightKeys={['remarks', 'blind_receipt']}
         left={<>
@@ -407,6 +417,10 @@ export default function NewStoreGrnPage() {
             <div style={{ flex: '0 1 140px', minWidth: 130 }}>
               <label style={labelStyle}>LR No.</label>
               <input style={inputStyle} value={docs.lr_number} onChange={(e) => setDocs({ ...docs, lr_number: e.target.value })} />
+            </div>
+            <div data-tour="store-grn-form-doc-file" style={{ flex: '1 1 260px', maxWidth: 380 }}>
+              <label style={labelStyle}>{docType === 'invoice' ? 'Invoice File' : 'Challan File'} <span style={{ fontWeight: 400, color: SHEET.MUTED }}>(PDF or photo)</span></label>
+              <FileUploadField file={docFile} onChange={setDocFile} onRemove={() => setDocFile(null)} disabled={busy} accept=".pdf,image/*" />
             </div>
           </div>
                 <p style={sheetHint}>{docType === 'invoice'

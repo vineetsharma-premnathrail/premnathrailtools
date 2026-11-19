@@ -112,7 +112,7 @@ def test_no_po_upload_to_a_blocked_vendor(client, db):
     db.commit()
     from app.tests.p2p_po_helpers import make_ship_to, post_upload_po
     details = {"vendor_tier": "L1", "ship_to_location_id": make_ship_to(db).id,
-               "lines": [{"pr_item_id": it.id, "unit_price": 5} for it in pr.items]}
+               "lines": [{"pr_item_id": it.id, "unit_price": 5, "tax_rate": 0} for it in pr.items]}
     r = post_upload_po(client, buyer, rfq.id, details, "TALLY-BLK-1")
     assert r.status_code == 409, r.text
     assert "blocked" in r.json()["detail"]

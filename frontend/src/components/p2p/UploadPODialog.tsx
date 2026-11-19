@@ -170,7 +170,14 @@ export default function UploadPODialog({ rfq, pr, onClose, onUploaded }: {
 
   const ticked = lines.filter(isOn)
   const priceOf = (l: POLine) => Number(rowOf(l).unitPrice) || 0
-  const total = ticked.reduce((sum, l) => sum + qtyOf(l) * priceOf(l) * (1 + (Number(rowOf(l).taxRate) || 0) / 100), 0)
+  // Tax %: what the buyer typed, else the vendor's quoted GST shown in the box (2026-11-19: a blank box
+  // used to send no tax at all, so the PO value left GST out). null = still to be entered.
+  const taxOf = (l: POLine): number | null => {
+    const t = rowOf(l).taxRate
+    if (t !== undefined && t !== '') return Number(t)
+    return l.quotedTax != null ? Number(l.quotedTax) : null
+  }
+  const total = ticked.reduce((sum, l) => sum + qtyOf(l) * priceOf(l) * (1 + (taxOf(l) ?? 0) / 100), 0)
 
   const close = () => { if (!busy) onClose() }
 
@@ -188,7 +195,9 @@ export default function UploadPODialog({ rfq, pr, onClose, onUploaded }: {
     if (badQty.length) problems.push(`Quantity must be more than 0 and not above what is left to order for: ${badQty.join(', ')}.`)
     const unpriced = ticked.filter((l) => !(priceOf(l) > 0)).map((l) => l.itemName)
     if (unpriced.length) problems.push(`Enter the unit price (as on the Tally PO) for: ${unpriced.join(', ')}.`)
-    const badTax = ticked.filter((l) => { const t = rowOf(l).taxRate; return !!t && !(Number(t) >= 0 && Number(t) <= 100) }).map((l) => l.itemName)
+    const noTax = ticked.filter((l) => taxOf(l) === null).map((l) => l.itemName)
+    if (noTax.length) problems.push(`Enter the GST / tax % (as on the Tally PO; type 0 if the item is exempt) for: ${noTax.join(', ')}.`)
+    const badTax = ticked.filter((l) => { const t = taxOf(l); return t !== null && !(t >= 0 && t <= 100) }).map((l) => l.itemName)
     if (badTax.length) problems.push(`Tax % must be between 0 and 100 for: ${badTax.join(', ')}.`)
     if (problems.length) { setError(problems.join(' ')); return }
     setBusy(true)
@@ -206,7 +215,7 @@ export default function UploadPODialog({ rfq, pr, onClose, onUploaded }: {
           pr_item_id: l.prItemId,
           quantity: qtyOf(l),
           unit_price: priceOf(l),
-          tax_rate: rowOf(l).taxRate ? Number(rowOf(l).taxRate) : null,
+          tax_rate: taxOf(l),
         })),
       }, files[0])
       draft.clear()
@@ -338,7 +347,7 @@ export default function UploadPODialog({ rfq, pr, onClose, onUploaded }: {
                       <th style={{ ...th, textAlign: 'right' }}>Left to order</th>
                       <th style={th}>Quantity <Req /></th>
                       <th style={th}>Unit price <Req /></th>
-                      <th style={th}>Tax %</th>
+                      <th style={th}>Tax % *</th>
                     </tr>
                   </thead>
                   <tbody>

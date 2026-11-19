@@ -737,7 +737,7 @@ export default function NewP2PRequestPage() {
               <thead>
                 <tr>
                   {['SL', 'Item *', 'Make', 'Part Code', 'UOM', 'Qty *', 'Ship To', 'Files', 'Actions'].map((h, i) => ITEM_COL_KEYS[h] ? (
-                    <VisTh key={h} vis={vis} table="form_items" k={ITEM_COL_KEYS[h]} style={th}>{h}</VisTh>
+                    <VisTh key={h} vis={vis} table="form_items" k={ITEM_COL_KEYS[h]} style={th}>{h === 'UOM' ? 'UOM *' : h}</VisTh>
                   ) : (
                     <th key={h} style={th}>{h === 'Actions' ? <span style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' }}>Actions</span> : h}{i === 0 && <RowCount count={items.length} />}</th>
                   ))}

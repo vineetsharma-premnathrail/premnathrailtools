@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
-import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
+import FileViewDownload from '@/components/shared/FileViewDownload'
 import { p2pApi, rfqApi, purchaseOrdersApi, vendorsApi } from '@/lib/api'
 import { rfqInvitesApi, RfqInvite, RfqInvites } from '@/lib/mmPurchasingApi'
 import SearchableSelect from '@/components/erp/SearchableSelect'
@@ -407,13 +407,9 @@ export default function RfqDetailPage() {
                 <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 6px' }}>{tier} Vendor</p>
                 <p style={{ fontSize: 13.5, fontWeight: 600, color: TEXT.heading, margin: '0 0 2px' }}>{attachment.vendor_name || '—'}</p>
                 <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 8px' }}>{attachment.vendor_contact || '—'}</p>
-                <a
-                  href="#"
-                  onClick={(e) => { e.preventDefault(); openAttachmentBlob(() => rfqApi.getAttachmentBlob(rfq.id, attachment.id), attachment.filename) }}
-                  style={{ fontSize: 12.5, color: '#2563eb', textDecoration: 'none' }}
-                >
-                  {attachment.filename}
-                </a>
+                <FileViewDownload file={attachment}
+                  getBlob={() => rfqApi.getAttachmentBlob(rfq.id, attachment.id)}
+                  getPreviewUrl={() => rfqApi.previewAttachment(rfq.id, attachment.id)} />
               </div>
             )
           })}

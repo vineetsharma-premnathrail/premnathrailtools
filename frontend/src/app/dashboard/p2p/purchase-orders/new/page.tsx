@@ -29,7 +29,7 @@ import { FormPage, SheetColumns, SheetSection, SheetIcon, Req, SHEET, sheetBtn, 
 import P2PNav from '@/components/p2p/P2PNav'
 import DateField from '@/components/erp/DateField'
 import ManagedDocumentPanel from '@/components/shared/ManagedDocumentPanel'
-import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
+import FileViewDownload from '@/components/shared/FileViewDownload'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
@@ -522,7 +522,7 @@ export default function CreatePurchaseOrderPage() {
                     <span style={label}>Uploaded</span>
                     Tally PO <b>{po.external_ref || '—'}</b> ·{' '}
                     {canDownload
-                      ? <a href="#" onClick={(e) => { e.preventDefault(); openAttachmentBlob(() => rfqApi.getPoDocumentBlob(rfq.id, po.id), po.document_filename!) }} style={{ color: '#2563eb' }}>📎 {po.document_filename}</a>
+                      ? <FileViewDownload file={{ id: po.id, filename: po.document_filename }} getBlob={() => rfqApi.getPoDocumentBlob(rfq.id, po.id)} />
                       : <span>📎 {po.document_filename}</span>}
                     {po.document_uploaded_at && <span style={{ color: SHEET.MUTED }}> · {formatDate(po.document_uploaded_at)}{po.document_uploaded_by_name ? ` by ${po.document_uploaded_by_name}` : ''}</span>}
                   </div>

@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { approvalsApi } from '@/lib/api'
-import { ApprovalEntityStatus, ApprovalRequestInfo, ApprovalStep } from '@/types'
+import { ApprovalEntityStatus, ApprovalRequestInfo } from '@/types'
+import ApprovalStages from '@/components/shared/ApprovalStages'
 import { BORDER, TEXT } from '@/lib/theme'
 import { Section, dangerBtnStyle, inputStyle, primaryBtnStyle, secondaryBtnStyle, pillStyle } from '@/components/shared/ui'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
@@ -12,9 +13,6 @@ import { extractErrorMessages } from '@/lib/validation'
 
 const REQ_LABEL: Record<string, string> = { pending: 'Waiting for approval', approved: 'Approved', rejected: 'Rejected', returned: 'Returned for changes', cancelled: 'Cancelled' }
 const REQ_HEX: Record<string, string> = { pending: '#F59E0B', approved: '#16A34A', rejected: '#DC2626', returned: '#7c3aed', cancelled: '#78716c' }
-const STEP_LABEL: Record<string, string> = { waiting: 'Not yet', pending: 'Waiting', approved: 'Approved', rejected: 'Rejected', returned: 'Returned', skipped: 'Not needed', cancelled: 'Cancelled' }
-const STEP_HEX: Record<string, string> = { waiting: '#a8a29e', pending: '#F59E0B', approved: '#16A34A', rejected: '#DC2626', returned: '#7c3aed', skipped: '#a8a29e', cancelled: '#a8a29e' }
-const VIA_LABEL: Record<string, string> = { delegation: 'as delegate', escalation: 'after escalation', admin: 'admin stand-in' }
 
 function fmt(d?: string | null) {
   if (!d) return ''
@@ -27,36 +25,7 @@ function Pill({ text, hex }: { text: string; hex: string }) {
 }
 
 function StageList({ req }: { req: ApprovalRequestInfo }) {
-  const stages: { seq: number; name: string; mode: string; steps: ApprovalStep[] }[] = []
-  for (const s of req.steps) {
-    const g = stages.find((x) => x.seq === s.sequence)
-    if (g) g.steps.push(s)
-    else stages.push({ seq: s.sequence, name: s.stage_name, mode: s.approval_mode, steps: [s] })
-  }
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      {stages.map((g) => (
-        <div key={g.seq} style={{ borderLeft: `3px solid ${g.seq === req.current_sequence ? '#F59E0B' : BORDER.light}`, paddingLeft: 12 }}>
-          <div style={{ fontSize: 12.5, fontWeight: 700, color: TEXT.heading, marginBottom: 4 }}>
-            {g.seq}. {g.name}
-            {g.steps.length > 1 && <span style={{ fontWeight: 500, color: TEXT.muted }}> — {g.mode === 'all' ? 'every one must approve' : 'any one approves'}</span>}
-          </div>
-          {g.steps.map((s) => (
-            <div key={s.id} style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap', fontSize: 12.5, color: TEXT.body, marginBottom: 2 }}>
-              <Pill text={STEP_LABEL[s.status] || s.status} hex={STEP_HEX[s.status] || '#78716c'} />
-              <span>{s.approver_name || '—'}</span>
-              {s.decided_by_name && s.decided_by_id !== s.approver_id && (
-                <span style={{ color: TEXT.muted }}>decided by {s.decided_by_name}{s.via && VIA_LABEL[s.via] ? ` (${VIA_LABEL[s.via]})` : ''}</span>
-              )}
-              {s.decided_at && <span style={{ color: TEXT.muted }}>{fmt(s.decided_at)}</span>}
-              {s.status === 'pending' && s.due_at && <span style={{ color: TEXT.muted }}>escalates {fmt(s.due_at)}</span>}
-              {s.comment && <span style={{ fontStyle: 'italic' }}>&ldquo;{s.comment}&rdquo;</span>}
-            </div>
-          ))}
-        </div>
-      ))}
-    </div>
-  )
+  return <ApprovalStages steps={req.steps} currentSequence={req.status === 'pending' ? req.current_sequence : null} />
 }
 
 /**

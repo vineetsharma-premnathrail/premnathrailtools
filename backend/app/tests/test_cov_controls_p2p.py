@@ -302,7 +302,7 @@ def test_c04_upload_po_refuses_unpriced_lines(client, db):
     r = post_upload_po(client, buyer, rfq.id, zero, "PO-C04-1")
     assert r.status_code == 422 and "unit_price" in r.json()["detail"]
     other = upload_po_details(db, pr["id"])
-    other["lines"] = [{"pr_item_id": line["id"] + 9999, "unit_price": 5}]
+    other["lines"] = [{"pr_item_id": line["id"] + 9999, "unit_price": 5, "tax_rate": 0}]
     r = post_upload_po(client, buyer, rfq.id, other, "PO-C04-1")
     assert r.status_code == 422 and "not open lines" in r.json()["detail"]
     assert client.get(f"{BASE}/{pr['id']}", headers=_h(buyer)).json()["status"] == "vendor_quotations"
@@ -314,7 +314,7 @@ def test_c04_po_value_is_derived_from_line_prices_not_typed(client, db):
     buyer = _user(db, "c04.buyer2@premnathrail.com", apps=("purchase",))
     _approve_pr(client, pr)
     # A typed po_value in the details is not part of the contract and is ignored.
-    po = upload_po_for_pr(client, db, pr["id"], buyer, tally_po_no="PO-C04-2", unit_price=50, tax_rate=None, po_value=1)
+    po = upload_po_for_pr(client, db, pr["id"], buyer, tally_po_no="PO-C04-2", unit_price=50, tax_rate=0, po_value=1)
     assert po["total_value"] == 100.0  # 2 x 50
     assert client.get(f"{BASE}/{pr['id']}", headers=_h(buyer)).json()["po_value"] == 100.0
 

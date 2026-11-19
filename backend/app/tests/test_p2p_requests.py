@@ -505,7 +505,7 @@ def test_upload_po_totals_the_priced_lines_and_orders_the_item_sum(client, db):
 
     # The PO value is computed from the priced lines (5 x 10 + 5 x 20), never typed.
     po = upload_po_for_pr(client, db, pr["id"], buyer, tally_po_no="PO-100",
-                          prices={bolt["id"]: 10, nut["id"]: 20}, tax_rate=None)
+                          prices={bolt["id"]: 10, nut["id"]: 20}, tax_rate=0)
     assert po["status"] == "issued" and po["external_ref"] == "PO-100"
     body = client.get(f"{BASE}/{pr['id']}", headers=auth_header(buyer)).json()
     assert body["status"] == "po_raised"

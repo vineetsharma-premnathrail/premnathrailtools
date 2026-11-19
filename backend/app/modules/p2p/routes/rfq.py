@@ -45,7 +45,7 @@ from app.modules.p2p.routes.p2p_requests import (
     BUYER_RULE_KEY, _write_audit as _write_pr_audit, _send_p2p_po_approval_emails_background,
 )
 from app.utils.notifications import notify_user
-from app.utils.sharepoint import upload_file_to_sharepoint, build_sharepoint_folder_path, download_file_content, delete_file_from_sharepoint
+from app.utils.sharepoint import upload_file_to_sharepoint, build_sharepoint_folder_path, download_file_content, delete_file_from_sharepoint, get_preview_url
 
 router = APIRouter(prefix="/p2p/rfqs", tags=["P2P"])
 
@@ -675,6 +675,32 @@ async def delete_rfq_attachment(
     return {"detail": "Attachment deleted"}
 
 
+def _readable_rfq_attachment(db: Session, rfq_id: int, attachment_id: int, user: User) -> RFQAttachment:
+    ensure_feature_action(user, "p2p", "rfq", "vendor_quotes", "view")
+    rfq = _get_rfq_or_404(db, rfq_id, user)  # 404 / data-scope check
+    ensure_rfq_readable(db, rfq, user)
+    attachment = db.query(RFQAttachment).filter(
+        RFQAttachment.id == attachment_id, RFQAttachment.rfq_id == rfq_id
+    ).first()
+    if not attachment:
+        raise HTTPException(status_code=404, detail="This file is no longer on the R.F.Q — refresh the page to see its current files.")
+    if not settings.SHAREPOINT_SITE_ID:
+        raise HTTPException(status_code=503, detail="File storage (SharePoint) is not configured on the server — ask the administrator to set SHAREPOINT_SITE_ID.")
+    return attachment
+
+
+@router.get("/{rfq_id}/attachments/{attachment_id}/preview")
+async def preview_rfq_attachment(
+    rfq_id: int,
+    attachment_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_p2p_tab("rfq", "view")),
+):
+    """Short-lived Microsoft-viewer link for the in-portal viewer, after the same checks as /content."""
+    attachment = _readable_rfq_attachment(db, rfq_id, attachment_id, user)
+    return {"getUrl": await get_preview_url(settings.SHAREPOINT_SITE_ID, attachment.sharepoint_path or "")}
+
+
 @router.get("/{rfq_id}/attachments/{attachment_id}/content")
 async def get_rfq_attachment_content(
     rfq_id: int,
@@ -684,17 +710,7 @@ async def get_rfq_attachment_content(
 ):
     """Raw bytes for in-app preview, fetched via the app-only Graph token —
     never the raw SharePoint webUrl."""
-    ensure_feature_action(user, "p2p", "rfq", "vendor_quotes", "view")
-    rfq = _get_rfq_or_404(db, rfq_id, user)  # 404 / data-scope check
-    ensure_rfq_readable(db, rfq, user)
-    attachment = db.query(RFQAttachment).filter(
-        RFQAttachment.id == attachment_id, RFQAttachment.rfq_id == rfq_id
-    ).first()
-    if not attachment:
-        raise HTTPException(status_code=404, detail="Attachment not found")
-    if not settings.SHAREPOINT_SITE_ID:
-        raise HTTPException(status_code=503, detail="SharePoint site is not configured")
-
+    attachment = _readable_rfq_attachment(db, rfq_id, attachment_id, user)
     content, content_type = await download_file_content(settings.SHAREPOINT_SITE_ID, attachment.sharepoint_path or "")
     return Response(
         content=content,
@@ -1122,6 +1138,12 @@ async def upload_po(
     if data.vendor_id and has_quote:
         raise HTTPException(status_code=422, detail=f"{rfq.rfq_number} has vendor quotes — pick the vendor from its quotes (L1 by default), not from the vendor master.")
     vendor = _active_vendor_or_400(db, data.vendor_id) if data.vendor_id else None
+    # Every PO line carries its GST / tax % (0 for exempt) — a blank one left GST out of the PO value (2026-11-19).
+    untaxed = sum(1 for ln in data.lines if ln.tax_rate is None)
+    if untaxed:
+        raise HTTPException(status_code=422, detail=(
+            f"{untaxed} PO line{'s have' if untaxed > 1 else ' has'} no GST / tax % — enter it as on the Tally PO "
+            "(type 0 if the item is exempt) and upload again."))
 
     # The PDF goes to SharePoint BEFORE the requisition is locked: one event
     # loop serves every request, so no await may sit between the row lock and

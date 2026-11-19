@@ -1,5 +1,5 @@
 from datetime import date, datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.data_scope import apply_scope, ensure_in_scope
@@ -11,7 +11,7 @@ from app.modules.main.models.audit_log import AuditLog
 from app.modules.p2p.models.p2p_request import P2PRequest, P2P_PURPOSES, P2P_ROLE_LABELS
 from app.modules.p2p.models.p2p_request_item import P2PRequestItem
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder, P2PPurchaseOrderItem
-from app.modules.p2p.models.goods_receipt import P2PGoodsReceipt, P2PGoodsReceiptItem
+from app.modules.p2p.models.goods_receipt import GRN_ATTACHMENT_TYPES, P2PGoodsReceipt, P2PGoodsReceiptAttachment, P2PGoodsReceiptItem
 from app.modules.p2p.schemas.goods_receipt import (
     P2PGoodsReceiptCreate,
     P2PGoodsReceiptInspectPayload,
@@ -562,6 +562,90 @@ async def get_goods_receipt(
     if scope is not None:
         ensure_location_allowed(db, user, grn.store_location_id, allowed=scope)
     return _to_response(db, grn)
+
+
+# ── Vendor invoice / delivery challan files (owner, 2026-11-19) ──────────────
+
+def _grn_in_reach(db: Session, grn_id: int, user: User) -> P2PGoodsReceipt:
+    grn = _get_grn_or_404(db, grn_id, user=user)
+    scope = _grn_store_scope(db, user)
+    if scope is not None:
+        ensure_location_allowed(db, user, grn.store_location_id, allowed=scope)
+    return grn
+
+
+def _grn_attachment(db: Session, grn_id: int, attachment_id: int, user: User) -> P2PGoodsReceiptAttachment:
+    from app.core.config import settings
+    grn = _grn_in_reach(db, grn_id, user)
+    att = next((a for a in grn.attachments if a.id == attachment_id), None)
+    if att is None:
+        raise HTTPException(status_code=404, detail=f"That file is not on {grn.grn_number} any more — reload the GRN to see its current files.")
+    if not settings.SHAREPOINT_SITE_ID:
+        raise HTTPException(status_code=503, detail="File storage (SharePoint) is not configured on the server — ask the administrator to set SHAREPOINT_SITE_ID.")
+    return att
+
+
+@router.post("/{grn_id}/attachments", response_model=P2PGoodsReceiptResponse)
+async def attach_file_to_goods_receipt(
+    grn_id: int,
+    file: UploadFile = File(...),
+    doc_type: str = Form("invoice"),
+    db: Session = Depends(get_db),
+    user: User = Depends(_grn_tab("create")),
+):
+    """Store adds the vendor's tax invoice / delivery challan (photo or PDF) that came with the goods —
+    while receiving, or later on the GRN. Size / type checks live in utils/sharepoint.py."""
+    from app.core.config import settings
+    from app.utils.sharepoint import build_sharepoint_folder_path, upload_file_to_sharepoint
+    grn = _grn_in_reach(db, grn_id, user)
+    if doc_type not in GRN_ATTACHMENT_TYPES:
+        raise HTTPException(status_code=400, detail=f"File type '{doc_type}' isn't valid — choose one of: {', '.join(GRN_ATTACHMENT_TYPES)}.")
+    if grn.status == "reversed":
+        raise HTTPException(status_code=409, detail=f"{grn.grn_number} was reversed, so files can't be added to it — attach them to the GRN that replaced it.")
+    if not settings.SHAREPOINT_SITE_ID:
+        raise HTTPException(status_code=503, detail="File storage (SharePoint) is not configured on the server, so files can't be stored — ask the administrator to set SHAREPOINT_SITE_ID.")
+    folder = build_sharepoint_folder_path(user.name or user.email or "", "grn", grn.grn_number)
+    result = await upload_file_to_sharepoint(settings.SHAREPOINT_SITE_ID, folder, file)
+    db.add(P2PGoodsReceiptAttachment(
+        goods_receipt_id=grn.id, doc_type=doc_type, filename=result["name"], content_type=file.content_type,
+        size=result["size"], sharepoint_path=result["path"], sharepoint_url=result.get("webUrl"), uploaded_by_id=user.id))
+    if grn.purchase_order and grn.purchase_order.p2p_request_id:
+        label = {"invoice": "vendor invoice", "challan": "delivery challan"}.get(doc_type, "file")
+        _write_audit(db, grn.purchase_order.p2p_request_id, "grn_file_attached", user,
+                     f"{user.name or user.email} attached the {label} '{result['name']}' to {grn.grn_number}.")
+    db.commit()
+    db.refresh(grn)
+    return _to_response(db, grn)
+
+
+@router.get("/{grn_id}/attachments/{attachment_id}/content")
+async def get_goods_receipt_attachment(
+    grn_id: int,
+    attachment_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_grn_tab("view")),
+):
+    from fastapi.responses import Response
+    from app.core.config import settings
+    from app.utils.sharepoint import download_file_content
+    att = _grn_attachment(db, grn_id, attachment_id, user)
+    content, content_type = await download_file_content(settings.SHAREPOINT_SITE_ID, att.sharepoint_path or "")
+    return Response(content=content, media_type=att.content_type or content_type,
+                    headers={"Content-Disposition": f'inline; filename="{att.filename}"'})
+
+
+@router.get("/{grn_id}/attachments/{attachment_id}/preview")
+async def preview_goods_receipt_attachment(
+    grn_id: int,
+    attachment_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_grn_tab("view")),
+):
+    """Short-lived Microsoft-viewer link for the in-portal viewer, after the same checks as /content."""
+    from app.core.config import settings
+    from app.utils.sharepoint import get_preview_url
+    att = _grn_attachment(db, grn_id, attachment_id, user)
+    return {"getUrl": await get_preview_url(settings.SHAREPOINT_SITE_ID, att.sharepoint_path or "")}
 
 
 def _link_line_on_grn(db: Session, po: P2PPurchaseOrder, po_item: P2PPurchaseOrderItem, store_item_id: int, user: User) -> None:

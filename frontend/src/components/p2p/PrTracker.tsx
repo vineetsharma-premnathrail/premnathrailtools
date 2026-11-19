@@ -14,6 +14,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
 import { GLASS, SHADOWS, TEXT, BORDER } from '@/lib/theme'
 import ReassignLineDialog from '@/components/p2p/ReassignLineDialog'
+import ApprovalStages from '@/components/shared/ApprovalStages'
 import ShortCloseLineDialog from '@/components/p2p/ShortCloseLineDialog'
 import { Pill, RowCount, smallSecondaryBtnStyle, thStyle, numThStyle, tdStyle, numTdStyle } from '@/components/shared/ui'
 
@@ -48,10 +49,7 @@ const PR_HEX: Record<string, string> = {
   vendor_selected: '#0ea5e9', po_drafted: '#64748b', po_raised: '#f59e0b', po_approved: '#22c55e', partially_received: '#d97706',
   received: '#16a34a', closed: '#22c55e', rejected: '#dc2626', cancelled: '#94a3b8', returned: '#7c3aed', submitted: '#3b82f6', draft: '#64748b',
 }
-const STEP_LABEL: Record<string, string> = { waiting: 'Not yet', pending: 'Waiting', approved: 'Approved', rejected: 'Rejected', returned: 'Returned', skipped: 'Not needed', cancelled: 'Cancelled' }
-const STEP_HEX: Record<string, string> = { waiting: '#a8a29e', pending: '#F59E0B', approved: '#16A34A', rejected: '#DC2626', returned: '#7c3aed', skipped: '#a8a29e', cancelled: '#a8a29e' }
 const REQ_LABEL: Record<string, string> = { pending: 'Waiting for approval', approved: 'Approved', rejected: 'Rejected', returned: 'Returned for changes', cancelled: 'Cancelled' }
-const VIA_LABEL: Record<string, string> = { delegation: 'as delegate', escalation: 'after escalation', admin: 'admin stand-in' }
 
 const qty = (n: number | null | undefined) => (n ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 3 })
 const nonNeg = (n: number | null | undefined) => Math.max(0, n ?? 0)
@@ -92,23 +90,9 @@ function approvalText(a: TrackerApproval | null, stage?: string): string {
   return names.length ? `Waiting for ${names.join(' / ')}` : 'Waiting for approval'
 }
 
+/** One-line chain: ✓ Department head · Jasbir → ✓ Project head · Vineet → … Pending stage names who it waits for. */
 function StepList({ approval }: { approval: TrackerApproval }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      {approval.steps.map((s, i) => (
-        <div key={`${s.sequence}-${i}`} style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap', fontSize: 12.5, color: TEXT.body }}>
-          <Pill label={STEP_LABEL[s.status] || s.status} hex={STEP_HEX[s.status] || '#78716c'} />
-          <span style={{ fontWeight: 600, color: TEXT.heading }}>{s.stage_name}</span>
-          <span>{s.approver_name || '—'}</span>
-          {s.decided_by_name && s.decided_by_name !== s.approver_name && (
-            <span style={muted}>decided by {s.decided_by_name}{s.via && VIA_LABEL[s.via] ? ` (${VIA_LABEL[s.via]})` : ''}</span>
-          )}
-          {s.decided_at && <span style={muted}>{formatDateTime(s.decided_at)}</span>}
-          {s.comment && <span style={{ fontStyle: 'italic', color: TEXT.secondary }}>&ldquo;{s.comment}&rdquo;</span>}
-        </div>
-      ))}
-    </div>
-  )
+  return <ApprovalStages compact steps={approval.steps} />
 }
 
 /** One line of the summary chip: "3 of 5 lines ordered · 2 waiting for an RFQ · 1 PO in approval". */

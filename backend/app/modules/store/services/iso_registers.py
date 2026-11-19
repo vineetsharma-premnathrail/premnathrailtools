@@ -202,6 +202,17 @@ def _desc(item: StoreItem | None, fallback: str | None = None) -> str:
     return f"{item.item_name} ({item.item_code})" if item.item_code else item.item_name
 
 
+def _slip_desc(item: StoreItem | None) -> str:
+    """Issue slip DESCRIPTION: item name + its technical details (Item Master › Technical
+    Specification, else its description) — no item code (owner, 2026-11-19)."""
+    if item is None:
+        return ""
+    detail = " ".join((item.specification or item.description or "").split())
+    if detail and detail.lower() != (item.item_name or "").strip().lower():
+        return f"{item.item_name} — {detail}"
+    return item.item_name
+
+
 def _issue_query(db: Session, user, location_ids: set[int] | None):
     from app.core.data_scope import apply_scope
     from app.modules.store.models.material_issue import StoreMaterialIssue
@@ -272,7 +283,7 @@ def build_issue_slip(db: Session, issue) -> bytes:
     for n, line in enumerate(sorted(issue.items, key=lambda l: l.id), start=1):
         item = items.get(line.item_id)
         uom = item.uom if item else None
-        desc = _desc(item)
+        desc = _slip_desc(item)
         if line.batch_number:
             desc += f" — Batch {line.batch_number}"
         b = bins.get(line.bin_id)
@@ -285,11 +296,7 @@ def build_issue_slip(db: Session, issue) -> bytes:
         for c in (10, 11):
             ws.cell(r, c)._style = copy.copy(ws.cell(20, c)._style)
     _fill_grid(ws, 8, 21, rows, date_cols={2}, style_row=20)
-    ref = [f"No. {issue.issue_number}"]
-    to = _issued_to(db, [issue]).get(issue.id)
-    if to:
-        ref.append(f"Issued to: {to}")
-    _set(ws["A5"], f"{ws['A5'].value}   ({', '.join(ref)})")
+    # No "(No. MI-…, Issued to: …)" after the heading — the owner's form has neither (2026-11-19).
     return to_bytes(wb)
 
 

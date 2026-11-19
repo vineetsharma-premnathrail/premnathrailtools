@@ -161,7 +161,7 @@ def test_upload_po_release_and_rollup_makes_info_records(client, db, setup):
     assert _po_approval_block_reason(db, db.get(P2PPurchaseOrder, p_a["id"])) is not None  # still in approval
     # Every line is on the PO, so a second upload has nothing left to order (it names the RFQ, not an old rule).
     again = post_upload_po(client, s["buyer"], s["rfq"].id, {"vendor_id": s["v1"].id, "ship_to_location_id": _loc.id,
-                           "lines": [{"pr_item_id": s["line_a"], "unit_price": 1}]}, "TALLY-MM-DUP")
+                           "lines": [{"pr_item_id": s["line_a"], "unit_price": 1, "tax_rate": 0}]}, "TALLY-MM-DUP")
     assert again.status_code == 409 and "Nothing is left to order on RFQ" in again.json()["detail"]
 
     _decide_all(client, db, "p2p_purchase_order", p_a["id"], s["approvers"])
@@ -263,7 +263,7 @@ def test_source_list_and_info_record_keyed_by_item(client, db, setup):
     r = client.post(f"{IR}/source-list", json={"store_item_id": s["a"].id, "vendor_id": s["v1"].id, "is_fixed": True}, headers=auth_header(admin))
     assert r.status_code == 201, r.text
     loc = _store(db, "MMSRC")
-    prices = [{"pr_item_id": s["line_a"], "unit_price": 95}, {"pr_item_id": s["line_b"], "unit_price": 50}]
+    prices = [{"pr_item_id": s["line_a"], "unit_price": 95, "tax_rate": 0}, {"pr_item_id": s["line_b"], "unit_price": 50, "tax_rate": 0}]
     r = post_upload_po(client, buyer, s["rfq"].id, {"vendor_id": s["v2"].id, "ship_to_location_id": loc.id, "lines": prices}, "TALLY-SRC-1")
     assert r.status_code == 409 and "approved-vendor list" in r.json()["detail"]
     db.rollback()  # a refused request leaves nothing behind (the app's session is rolled back per request)

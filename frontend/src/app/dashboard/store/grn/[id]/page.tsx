@@ -19,6 +19,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import { OrderProjectChip } from '@/components/sales/ProjectUnitPicker'
 import Select from '@/components/shared/Select'
+import FileViewDownload from '@/components/shared/FileViewDownload'
 
 const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
@@ -113,6 +114,21 @@ export default function StoreGrnDetailPage() {
   const [rtvRemarks, setRtvRemarks] = useState('')
   const [reversing, setReversing] = useState(false)
   const [notice, setNotice] = useState('')
+  // Vendor invoice / delivery challan files (2026-11-19): added on receipt, or later here.
+  const [uploading, setUploading] = useState(false)
+  const addFile = async (file: File | undefined) => {
+    if (!grn || !file) return
+    setUploading(true)
+    setError('')
+    try {
+      const kind = grn.vendor_invoice_number ? 'invoice' : grn.delivery_challan_number ? 'challan' : 'other'
+      setGrn(await goodsReceiptsApi.uploadAttachment(grn.id, file, kind))
+    } catch (e) {
+      setError(extractErrorMessages(e, `Could not upload ${file.name} — check the file (PDF or photo, within the size limit) and try again.`))
+    } finally {
+      setUploading(false)
+    }
+  }
 
   const load = () => {
     goodsReceiptsApi.get(grnId).then((g: P2PGoodsReceipt) => {
@@ -319,6 +335,25 @@ export default function StoreGrnDetailPage() {
             <DetailRow label="E-way Bill">{grn.eway_bill_number}</DetailRow>
             <DetailRow label="Vehicle / Transporter">{[grn.vehicle_number, grn.transporter_name].filter(Boolean).join(' · ') || null}</DetailRow>
             <DetailRow label="LR No.">{grn.lr_number}</DetailRow>
+            <DetailRow label="Files">
+              {(grn.attachments?.length || (can('store', 'grn', 'create') && grn.status !== 'reversed')) ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
+                  {(grn.attachments || []).map((a) => (
+                    <FileViewDownload key={a.id} file={a}
+                      label={`${a.doc_type === 'invoice' ? 'Invoice' : a.doc_type === 'challan' ? 'Challan' : 'File'} · ${a.filename}`}
+                      getBlob={() => goodsReceiptsApi.getAttachmentBlob(grn.id, a.id)}
+                      getPreviewUrl={() => goodsReceiptsApi.previewAttachment(grn.id, a.id)} />
+                  ))}
+                  {can('store', 'grn', 'create') && grn.status !== 'reversed' && (
+                    <label data-tour="store-grn-detail-add-file" style={{ ...smallSecondaryBtnStyle, cursor: uploading ? 'wait' : 'pointer', opacity: uploading ? 0.6 : 1 }}>
+                      {uploading ? 'Uploading…' : '+ Add invoice / challan file'}
+                      <input type="file" accept=".pdf,image/*" disabled={uploading} style={{ display: 'none' }}
+                        onChange={(e) => { addFile(e.target.files?.[0]); e.target.value = '' }} />
+                    </label>
+                  )}
+                </div>
+              ) : null}
+            </DetailRow>
           </DetailGroup>
         </div>
         {grn.remarks && (
