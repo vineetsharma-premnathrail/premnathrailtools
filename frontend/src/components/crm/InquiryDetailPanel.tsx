@@ -22,7 +22,7 @@ import CrmDocumentFolder, { DocumentSearch } from '@/components/crm/CrmDocumentF
 import DateField from '@/components/erp/DateField'
 import InquiryForm from '@/components/crm/InquiryForm'
 import ActivityForm from '@/components/crm/ActivityForm'
-import { RichText } from '@/components/RichTextEditor'
+import RichTextEditor, { RichText, stripHtml } from '@/components/RichTextEditor'
 import ActivityViewDialog from '@/components/crm/ActivityViewDialog'
 import MomExportDialog from '@/components/crm/MomExportDialog'
 import TechnicalOfferPickerDialog from '@/components/crm/TechnicalOfferPickerDialog'
@@ -518,7 +518,6 @@ const emptyLineItem = { custom: '', product_id: '', application_id: '', descript
 // A valid Delivery Time must carry a unit, not just a bare number — "7" is ambiguous,
 // "7 days" isn't. Accepts day/week/month/hour in singular or plural, any case, with
 // any words in between the number and the unit (e.g. "120 working days").
-const DELIVERY_TIME_PATTERN = /\d+.*\b(day|days|week|weeks|month|months|hour|hours|hrs?)\b/i
 
 type QuotationItemErrors = { product?: string; application?: string; description?: string; quantity?: string; unit_price?: string; gst_percent?: string }
 type QuotationFormErrors = {
@@ -532,12 +531,45 @@ type QuotationFormErrors = {
   discount?: string
   quote_conditions?: string
   payment_terms?: string
+  terms_html?: string
   price?: string
   lump_sum_gst_percent?: string
 }
 
 // Default quote validity: 30 days from the quote date (yyyy-mm-dd in, yyyy-mm-dd out).
 const QUOTE_VALIDITY_DAYS = 30
+
+// Terms & Conditions are one rich-text field since 2026-11-18 (Delivery Time included). An older
+// quotation (or one made in the mobile app) has plain fields: they open in the editor as ONE
+// numbered list of clauses, without made-up headings, numbers typed as text ("1.The prices…
+// 2.One-year…", even on one line) becoming real list items. Same split as the server's
+// _split_numbered_points: a decimal like "2.5 tonnes" is never cut.
+const NUMBERED_POINT = /(?:^|\s)(?=\d{1,2}[.)](?:\s|\p{L}))/u
+function clausesOf(text?: string | null): string[] {
+  const t = (text || '').trim()
+  if (!t) return []
+  const parts = t.split(NUMBERED_POINT).map((p) => p.replace(/^\d{1,2}[.)]\s*/, '').trim()).filter(Boolean)
+  if (parts.length > 1) return parts
+  return t.split(/\r?\n/).map((l) => l.replace(/^\s*(?:[-•*]|\d{1,2}[.)])\s*/, '').trim()).filter(Boolean)
+}
+const clauseListHtml = (clauses: string[]) =>
+  clauses.length ? `<ol>${clauses.map((c) => `<li>${escapeHtml(c)}</li>`).join('')}</ol>` : ''
+function legacyTermsHtml(q: { payment_terms?: string | null; quote_conditions?: string | null; notes?: string | null; delivery_time?: string | null }): string {
+  const payment = clausesOf(q.payment_terms)
+  const notes = clausesOf(q.notes)
+  const all = [...payment, ...notes].join(' ')
+  const clauses: string[] = []
+  const basis = (q.quote_conditions || '').trim()
+  // "Standard T&C" only pointed at the company's standard terms - the clauses below are those terms now.
+  if (basis && basis !== 'Standard T&C' && !all.toLowerCase().includes(basis.toLowerCase())) clauses.push(`Price basis: ${basis}`)
+  clauses.push(...payment)
+  const delivery = (q.delivery_time || '').trim()
+  if (delivery && !/deliver/i.test(all)) clauses.push(`Delivery: ${delivery}`)
+  clauses.push(...notes)
+  return clauseListHtml(clauses)
+}
+const termsOf = (q: { terms_html?: string | null; payment_terms?: string | null; quote_conditions?: string | null; notes?: string | null; delivery_time?: string | null }) =>
+  q.terms_html || legacyTermsHtml(q)
 const addDaysIso = (iso: string, days: number) => {
   const d = new Date(`${iso}T00:00:00Z`)
   if (Number.isNaN(d.getTime())) return ''
@@ -597,6 +629,7 @@ export function QuotationsTab({ parent, record, org, contact }: { parent: { kind
     technical_offer_id: currentOffer ? String(currentOffer.id) : '',
     valid_until: addDaysIso(todayIso, QUOTE_VALIDITY_DAYS), delivery_time: '', payment_terms: '', notes: '',
     discount: '', discount_type: 'percent', quote_conditions: '', quote_conditions_custom: '',
+    terms_html: '',
     // 'lumpsum' = official Commercial Offer: items are a Particulars list, one Total Price + GST for the whole offer.
     pricing_mode: 'itemwise', price: '', lump_sum_gst_percent: '18',
   }
@@ -677,20 +710,24 @@ export function QuotationsTab({ parent, record, org, contact }: { parent: { kind
     }).catch(() => {})
   }
 
-  // Saves whatever the user already typed into the Payment Terms field as a new Payment Term —
-  // no separate popup, the typed text becomes both the label and the terms text.
-  const createPaymentTermFromField = async (typedText: string) => {
-    const text = typedText.trim()
-    if (!text) return
-    let created
-    try {
-      created = await crmApi.createPaymentTerm({ label: text, description: text })
-    } catch (err) {
-      setTabError({ title: 'Cannot Add Payment Term', message: extractErrorMessages(err, `Payment term "${text}" was not added to the list. Try again, or ask an admin to add it under CRM settings.`) })
-      return
-    }
-    setPaymentTerms((p) => [...p, created])
-    setForm((f) => ({ ...f, payment_terms: created.description || created.label }))
+  // Reuse terms (2026-11-18): an earlier quotation's whole Terms & Conditions, or a saved payment term.
+  // An empty editor takes the text as it is; otherwise it is added at the end, ready to edit.
+  const termsSources = useMemo(() => [
+    ...quotations
+      .filter((q) => q.id !== revisingQuot?.id && stripHtml(termsOf(q)).trim())
+      .map((q) => ({ key: `q:${q.id}`, html: termsOf(q), group: 'Earlier quotations', label: `${q.quot_number || `Quotation #${q.id}`} · ${q.client_name || '—'}`, description: stripHtml(termsOf(q)).slice(0, 110) })),
+    ...paymentTerms
+      .filter((t) => (t.description || t.label || '').trim())
+      .map((t) => ({ key: `t:${t.id}`, html: clauseListHtml(clausesOf(t.description || t.label)), group: 'Saved payment terms', label: t.label, description: t.description && t.description !== t.label ? t.description.slice(0, 110) : undefined })),
+  ], [quotations, paymentTerms, revisingQuot])
+  // Reuse REPLACES the editor's text (appending stacked two quotations' terms, 2026-11-18); a non-empty
+  // editor asks first.
+  const [reusePending, setReusePending] = useState<{ html: string; label: string } | null>(null)
+  const reuseTerms = (key: string) => {
+    const src = termsSources.find((s) => s.key === key)
+    if (!src) return
+    if (stripHtml(form.terms_html).trim()) setReusePending({ html: src.html, label: src.label })
+    else setForm((f) => ({ ...f, terms_html: src.html }))
   }
 
   useEffect(() => {
@@ -746,6 +783,7 @@ export function QuotationsTab({ parent, record, org, contact }: { parent: { kind
       delivery_time: q.delivery_time || '', payment_terms: q.payment_terms || '', notes: q.notes || '',
       discount: q.discount != null ? String(q.discount) : '', discount_type: q.discount_type || 'percent',
       quote_conditions: known ? conditions : 'Other/Custom', quote_conditions_custom: known ? '' : conditions,
+      terms_html: termsOf(q),
       pricing_mode: q.pricing_mode || 'itemwise', price: q.price != null ? String(q.price) : '',
       lump_sum_gst_percent: q.lump_sum_gst_percent != null ? String(q.lump_sum_gst_percent) : '18',
     }
@@ -879,8 +917,6 @@ export function QuotationsTab({ parent, record, org, contact }: { parent: { kind
       if (!isExport && form.lump_sum_gst_percent !== '' && (Number(form.lump_sum_gst_percent) < 0 || Number(form.lump_sum_gst_percent) > 100)) errs.lump_sum_gst_percent = 'GST % must be between 0 and 100.'
     }
 
-    if (!form.delivery_time.trim()) errs.delivery_time = 'Delivery Time is required.'
-    else if (!DELIVERY_TIME_PATTERN.test(form.delivery_time.trim())) errs.delivery_time = 'Include a unit, e.g. "7 days" or "2 weeks".'
 
     if (!form.valid_until) errs.valid_until = 'Quote Validity Date is required.'
     else if (form.quote_date && form.valid_until < form.quote_date) {
@@ -894,10 +930,8 @@ export function QuotationsTab({ parent, record, org, contact }: { parent: { kind
       else if (form.discount_type === 'flat' && d > itemsTotal) errs.discount = `Flat discount (${d}) is more than the line items total (${itemsTotal.toFixed(2)}). Reduce the discount.`
     }
 
-    const conditionsValue = form.quote_conditions === 'Other/Custom' ? form.quote_conditions_custom : form.quote_conditions
-    if (!isLumpSum && !conditionsValue.trim()) errs.quote_conditions = 'Quote Conditions is required.'
-
-    if (!form.payment_terms.trim()) errs.payment_terms = 'Payment Terms is required.'
+    // One rich-text Terms & Conditions field replaces Quote Conditions / Payment Terms / Notes (2026-11-18).
+    if (!stripHtml(form.terms_html).trim()) errs.terms_html = 'Terms & Conditions is required — write or paste the terms of this quotation (price basis, payment, delivery, warranty…).'
 
     return errs
   }
@@ -921,7 +955,8 @@ export function QuotationsTab({ parent, record, org, contact }: { parent: { kind
       return
     }
     const validItems = items.filter((it) => !isItemRowEmpty(it))
-    const { quote_conditions_custom, ...rest } = form
+    const { quote_conditions_custom: _legacyCustom, ...rest } = form
+    void _legacyCustom
     const payload: Record<string, unknown> = {
       ...rest,
       technical_offer_id: form.technical_offer_id ? Number(form.technical_offer_id) : undefined,
@@ -929,7 +964,11 @@ export function QuotationsTab({ parent, record, org, contact }: { parent: { kind
       discount_type: form.discount && !isLumpSum ? form.discount_type : undefined,
       price: isLumpSum ? Number(form.price) : undefined,
       lump_sum_gst_percent: isLumpSum && !isExport && form.lump_sum_gst_percent !== '' ? Number(form.lump_sum_gst_percent) : undefined,
-      quote_conditions: form.quote_conditions === 'Other/Custom' ? (quote_conditions_custom || undefined) : (form.quote_conditions || undefined),
+      // The editor's text is the quotation's terms; the three older fields are cleared so the
+      // document never prints both (they stay readable on quotations saved before 2026-11-18).
+      terms_html: form.terms_html,
+      delivery_time: null,  // written in the Terms & Conditions now (owner, 2026-11-18)
+      quote_conditions: null, payment_terms: null, notes: null,
       items: validItems
         .map((it) => ({
           product_id: it.product_id ? Number(it.product_id) : undefined,
@@ -1129,7 +1168,11 @@ export function QuotationsTab({ parent, record, org, contact }: { parent: { kind
                         {!isLumpSum && <>
                         <input {...(idx === 0 ? { 'data-tour': 'quot-item-price' } : {})} type="number" value={row.unit_price} onChange={(e) => updateItemRow(idx, 'unit_price', e.target.value)} placeholder={`Price/unit (${currencySymbol})`} style={{ ...sheetInput, ...errInputStyle(!!rowErr?.unit_price) }} />
                         {!isExport && <input {...(idx === 0 ? { 'data-tour': 'quot-item-gst' } : {})} type="number" value={row.gst_percent} onChange={(e) => updateItemRow(idx, 'gst_percent', e.target.value)} placeholder="GST %" style={{ ...sheetInput, ...errInputStyle(!!rowErr?.gst_percent) }} />}
-                        <input {...(idx === 0 ? { 'data-tour': 'quot-item-subtotal' } : {})} type="number" value={row.subtotal} readOnly placeholder="Subtotal" style={{ ...sheetInput, background: 'rgba(0,0,0,0.04)', color: '#57534e' }} />
+                        {/* The line's amount WITH tax (owner, 2026-11-18): Qty × Price/unit + GST; Export has no GST. */}
+                        <input {...(idx === 0 ? { 'data-tour': 'quot-item-subtotal' } : {})} type="number" value={row.total || row.subtotal} readOnly
+                          placeholder={isExport ? 'Total' : 'Total incl. GST'} aria-label={isExport ? 'Line total' : 'Line total including GST'}
+                          title={isExport ? 'Qty × Price/unit' : `Qty × Price/unit + GST${row.subtotal ? ` (before GST: ${currencySymbol}${Number(row.subtotal).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})` : ''}`}
+                          style={{ ...sheetInput, background: 'rgba(0,0,0,0.04)', color: '#57534e' }} />
                         </>}
                         <button type="button" onClick={() => removeItemRow(idx)} aria-label="Remove line item" style={sheetBtn('ghost', '#DC2626')}><SheetIcon name="trash" size={16} /></button>
                       </div>
@@ -1182,10 +1225,6 @@ export function QuotationsTab({ parent, record, org, contact }: { parent: { kind
               <SheetSection icon="doc" title="Terms">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-                <SF label={<>Delivery Time <Req /></>} tourId="quot-delivery-time">
-                  <input value={form.delivery_time} onChange={(e) => setForm((f) => ({ ...f, delivery_time: e.target.value }))} placeholder="e.g. 7 days or 2 weeks" style={{ ...sheetInput, ...errInputStyle(!!fieldErrors.delivery_time) }} />
-                  {fieldErrors.delivery_time && <p style={fieldErrorTextStyle}>{fieldErrors.delivery_time}</p>}
-                </SF>
                 <SF label={<>Quote Validity Date <Req /></>} tourId="quot-valid-until">
                   <DateField value={form.valid_until} onChange={(v) => setForm((f) => ({ ...f, valid_until: v }))} style={errInputStyle(!!fieldErrors.valid_until)} />
                   {fieldErrors.valid_until && <p style={fieldErrorTextStyle}>{fieldErrors.valid_until}</p>}
@@ -1200,32 +1239,44 @@ export function QuotationsTab({ parent, record, org, contact }: { parent: { kind
                   </div>
                   {fieldErrors.discount && <p style={fieldErrorTextStyle}>{fieldErrors.discount}</p>}
                 </SF>}
-                <SF label={isLumpSum ? 'Quote Conditions (not printed on a Commercial Offer)' : <>Quote Conditions <Req /></>} tourId="quot-conditions">
-                  <Select value={form.quote_conditions} onChange={(e) => setForm((f) => ({ ...f, quote_conditions: e.target.value }))} style={{ ...sheetInput, ...errInputStyle(!!fieldErrors.quote_conditions) }}>
-                    <option value="">— Select —</option>
-                    {QUOTE_CONDITIONS.map((c) => <option key={c} value={c}>{c}</option>)}
-                  </Select>
-                  {fieldErrors.quote_conditions && <p style={fieldErrorTextStyle}>{fieldErrors.quote_conditions}</p>}
-                </SF>
               </div>
-              {form.quote_conditions === 'Other/Custom' && (
-                <SF label="Custom Quote Conditions">
-                  <textarea value={form.quote_conditions_custom} onChange={(e) => setForm((f) => ({ ...f, quote_conditions_custom: e.target.value }))} rows={2} placeholder="e.g. Prices are ex-works; freight and insurance extra." style={{ ...sheetInput, resize: 'vertical', ...errInputStyle(!!fieldErrors.quote_conditions) }} />
-                </SF>
-              )}
-              <SF label={<>Payment Terms <Req /></>} tourId="quot-payment-terms">
-                <ComboBox
-                  value={form.payment_terms}
-                  onChange={(v) => setForm((f) => ({ ...f, payment_terms: v }))}
-                  onPick={(o) => { const t = paymentTerms.find((pt) => String(pt.id) === o.key); setForm((f) => ({ ...f, payment_terms: t ? (t.description || t.label) : o.label })) }}
-                  onCreateNew={(query) => createPaymentTermFromField(query)}
-                  createLabel="New Payment Term"
-                  options={paymentTerms.map((t) => ({ key: String(t.id), label: t.label, sublabel: t.description || undefined }))}
-                  placeholder="Select from Payment Terms list or type your own" multiline
+              {/* One rich-text editor for all terms (2026-11-18): written or pasted in the user's own format,
+                  reused from an earlier quotation or a saved payment term, saved whole with the quotation. */}
+              <SF label={<>Terms &amp; Conditions <Req /></>} tourId="quot-terms">
+                {termsSources.length > 0 && (
+                  <div style={{ marginBottom: 6 }} data-tour="quot-terms-reuse">
+                    <SearchableSelect
+                      value=""
+                      onChange={reuseTerms}
+                      ariaLabel="Reuse terms"
+                      placeholder="Reuse terms from an earlier quotation or a saved payment term…"
+                      options={termsSources.map((s) => ({ value: s.key, label: s.label, description: s.description, group: s.group }))}
+                    />
+                  </div>
+                )}
+                <div style={{ borderRadius: 10, ...(fieldErrors.terms_html ? { boxShadow: '0 0 0 1px #DC2626' } : {}) }}>
+                  <RichTextEditor
+                    value={form.terms_html}
+                    onChange={(v) => setForm((f) => ({ ...f, terms_html: v }))}
+                    placeholder={'Write or paste the terms in your own format, e.g.\n1. Price basis: Ex-works Faridabad\n2. Payment: 30% advance, 70% before dispatch\n3. Warranty: 12 months from commissioning'}
+                    minHeight={220}
+                    tourId="quot-terms-editor"
+                  />
+                </div>
+                <p style={{ fontSize: 12, color: '#78716c', margin: '6px 0 0' }}>
+                  Numbered clauses, bullet points, bold text and paragraphs print on the {isLumpSum ? 'Commercial Offer' : 'quotation'} exactly as written here.
+                </p>
+                {fieldErrors.terms_html && <p style={fieldErrorTextStyle}>{fieldErrors.terms_html}</p>}
+                <ConfirmDialog
+                  open={!!reusePending}
+                  title="Replace the Terms & Conditions?"
+                  message={`The terms written in the editor will be replaced with the terms of ${reusePending?.label || 'the selected source'}. You can edit them after.`}
+                  confirmLabel="Replace"
+                  danger={false}
+                  onConfirm={() => { const h = reusePending?.html || ''; setReusePending(null); setForm((f) => ({ ...f, terms_html: h })) }}
+                  onCancel={() => setReusePending(null)}
                 />
-                {fieldErrors.payment_terms && <p style={fieldErrorTextStyle}>{fieldErrors.payment_terms}</p>}
               </SF>
-              <SF label="Notes" tourId="quot-notes"><textarea value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} rows={2} placeholder="Any additional remarks for this quotation (optional)" style={{ ...sheetInput, resize: 'vertical' }} /></SF>
               </div>
               </SheetSection>
             </form>
@@ -1259,9 +1310,9 @@ export function QuotationsTab({ parent, record, org, contact }: { parent: { kind
                     {rev.changes.map((c, i) => (
                       <p key={i} style={{ fontSize: 12, margin: i === 0 ? 0 : '2px 0 0', whiteSpace: 'pre-line' }}>
                         <strong>{quotationRevisionFieldLabel(c.field)}:</strong>{' '}
-                        <span style={{ color: '#b91c1c', textDecoration: 'line-through' }}>{c.old == null || String(c.old).trim() === '' ? '(empty)' : String(c.old)}</span>
+                        <span style={{ color: '#b91c1c', textDecoration: 'line-through' }}>{revValue(c.field, c.old)}</span>
                         {' → '}
-                        <span style={{ color: '#166534', fontWeight: 600 }}>{c.new == null || String(c.new).trim() === '' ? '(empty)' : String(c.new)}</span>
+                        <span style={{ color: '#166534', fontWeight: 600 }}>{revValue(c.field, c.new)}</span>
                       </p>
                     ))}
                   </div>
@@ -1342,8 +1393,15 @@ export function QuotationsTab({ parent, record, org, contact }: { parent: { kind
                   </table>
                 </div>
               )}
-              {q.payment_terms && <p style={{ fontSize: 12, color: '#57534e', margin: '4px 0 0' }}>Payment: {q.payment_terms}</p>}
-              {q.notes && <p style={{ fontSize: 12, color: '#57534e', margin: '2px 0 0' }}>{q.notes}</p>}
+              {q.terms_html ? (
+                <details style={{ marginTop: 6 }}>
+                  <summary style={{ fontSize: 12, fontWeight: 600, color: '#57534e', cursor: 'pointer' }}>Terms &amp; Conditions</summary>
+                  <RichText html={q.terms_html} style={{ fontSize: 12, color: '#44403c', marginTop: 4 }} />
+                </details>
+              ) : <>
+                {q.payment_terms && <p style={{ fontSize: 12, color: '#57534e', margin: '4px 0 0' }}>Payment: {q.payment_terms}</p>}
+                {q.notes && <p style={{ fontSize: 12, color: '#57534e', margin: '2px 0 0' }}>{q.notes}</p>}
+              </>}
               {seeQuotePrices && <ManagedDocumentPanel entityType="crm_quotation" entityId={q.id} revision={q.revision_number} canModify={canModifyQuot(q) && ['draft', 'submitted'].includes(q.status || 'draft')}recordLabel="quotation" downloadName={q.quot_number || `Quotation-${q.id}`} />}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
@@ -1377,7 +1435,13 @@ const QUOTATION_REVISION_FIELD_LABELS: Record<string, string> = {
   client_name: 'Customer/Client', client_contact_name: 'Contact Person', client_contact_email: 'Contact Email', client_contact_phone: 'Contact Phone',
   valid_until: 'Quote Validity', pricing_mode: 'Pricing', price: 'Total Price', lump_sum_gst_percent: 'GST % (lump sum)',
   delivery_time: 'Delivery Time', payment_terms: 'Payment Terms', discount: 'Discount', discount_type: 'Discount Type',
-  quote_conditions: 'Quote Conditions', notes: 'Notes', items: 'Line Items',
+  quote_conditions: 'Quote Conditions', notes: 'Notes', terms_html: 'Terms & Conditions', items: 'Line Items',
+}
+
+// Rich-text terms show as their plain text in the change history, not as HTML.
+function revValue(field: string, v: unknown): string {
+  const s = v == null ? '' : field === 'terms_html' ? stripHtml(String(v)) : String(v)
+  return s.trim() === '' ? '(empty)' : s
 }
 
 function quotationRevisionFieldLabel(field: string): string {

@@ -38,7 +38,6 @@ export default function OrganizationDepartmentPage() {
   const [newName, setNewName] = useState('')
   const [newBranchId, setNewBranchId] = useState('')
   const [headIds, setHeadIds] = useState<number[]>([])
-  const [headSearch, setHeadSearch] = useState('')
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
   const [branchDropdownOpen, setBranchDropdownOpen] = useState(false)
@@ -98,27 +97,49 @@ export default function OrganizationDepartmentPage() {
     setNewName('')
     setNewBranchId('')
     setHeadIds([])
-    setHeadSearch('')
     setFormError('')
     setShowAddModal(true)
   }
 
-  const addHead = (id: number) => {
-    if (headIds.includes(id)) return
-    setHeadIds((prev) => [...prev, id])
-    setHeadSearch('')
-  }
-  const removeHead = (id: number) => setHeadIds((prev) => prev.filter((h) => h !== id))
+  // Heads of an existing department, edited from its row (2026-11-19: anyone may be made head,
+  // from any unit). Order = primary, secondary, then the rest.
+  const headIdsOf = (d: Department) => [d.head_user_id, d.secondary_head_user_id, ...(d.additional_head_user_ids || [])].filter((i): i is number => !!i)
+  const [headsFor, setHeadsFor] = useState<Department | null>(null)
+  const [editHeadIds, setEditHeadIds] = useState<number[]>([])
+  const [headsSaving, setHeadsSaving] = useState(false)
+  const [headsError, setHeadsError] = useState('')
+  const openHeads = (d: Department) => { setHeadsFor(d); setEditHeadIds(headIdsOf(d)); setHeadsError('') }
 
-  // A department is only headed from its own unit — the backend rejects
-  // anyone else, so only offer people posted in the selected branch.
-  const headMatches = headSearch.trim()
-    ? directory
-        .filter((u) => !newBranchId || String(u.branch_id) === newBranchId)
-        .filter((u) => !headIds.includes(u.id))
-        .filter((u) => u.name.toLowerCase().includes(headSearch.toLowerCase()) || u.email.toLowerCase().includes(headSearch.toLowerCase()))
-        .slice(0, 8)
-    : []
+  const saveHeads = async (d: Department, ids: number[]): Promise<string | null> => {
+    try {
+      await organizationApi.updateDepartment(d.id, {
+        head_user_id: ids[0] ?? null, secondary_head_user_id: ids[1] ?? null, additional_head_user_ids: ids.slice(2),
+      })
+      await Promise.all([load(), refreshMembers(d.id)])
+      return null
+    } catch (err) {
+      return extractErrorMessages(err, `Could not change the heads of ${d.name}. Reload the page and try again; if it keeps failing, check the people picked are still active users.`).join(' ')
+    }
+  }
+  const handleSaveHeads = async () => {
+    if (!headsFor) return
+    setHeadsSaving(true)
+    setHeadsError('')
+    const err = await saveHeads(headsFor, editHeadIds)
+    setHeadsSaving(false)
+    if (err) setHeadsError(err)
+    else setHeadsFor(null)
+  }
+  // Quick "Make head" / "Remove as head" on a member's line.
+  const [rowHeadBusy, setRowHeadBusy] = useState<number | null>(null)
+  const toggleMemberHead = async (d: Department, m: DepartmentMember) => {
+    const current = headIdsOf(d)
+    const next = m.is_head ? current.filter((id) => id !== m.id) : [...current, m.id]
+    setRowHeadBusy(m.id)
+    const err = await saveHeads(d, next)
+    setRowHeadBusy(null)
+    if (err) setError(err)
+  }
 
   const handleCreate = async () => {
     if (!newName.trim()) {
@@ -296,10 +317,7 @@ export default function OrganizationDepartmentPage() {
               <div>
                 <label style={sheetLabel}>Branch <Optional /></label>
                 <Select data-tour="org-dept-branch" style={sheetInput} value={newBranchId} onChange={(e) => {
-                  const next = e.target.value
-                  setNewBranchId(next)
-                  // Heads picked for the old unit don't belong to the new one.
-                  if (next) setHeadIds((prev) => prev.filter((id) => String(directory.find((u) => u.id === id)?.branch_id) === next))
+                  setNewBranchId(e.target.value)
                 }}>
                   <option value="">— Select —</option>
                   {branches.map((b) => (
@@ -313,45 +331,8 @@ export default function OrganizationDepartmentPage() {
             <SheetSection icon="users" title="Head of Department">
               <div data-tour="org-dept-heads">
                 <label style={sheetLabel}>Heads (one or more) <Optional /></label>
-                {headIds.length > 0 && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
-                    {headIds.map((id) => {
-                      const u = directory.find((d) => d.id === id)
-                      return (
-                        <span
-                          key={id}
-                          style={{
-                            display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 999,
-                            background: 'rgba(255,122,69,0.12)', color: BRAND.primaryActive, fontSize: 12.5, fontWeight: 600,
-                          }}
-                        >
-                          {u?.name || `User #${id}`}
-                          <span onClick={() => removeHead(id)} style={{ cursor: 'pointer', fontWeight: 700 }}>×</span>
-                        </span>
-                      )
-                    })}
-                  </div>
-                )}
-                <input
-                  style={sheetInput}
-                  value={headSearch}
-                  onChange={(e) => setHeadSearch(e.target.value)}
-                  placeholder="Search name or email…"
-                />
-                {headMatches.length > 0 && (
-                  <div style={{ marginTop: 6, border: `1px solid ${SHEET.LINE}`, borderRadius: 10, overflow: 'hidden' }}>
-                    {headMatches.map((u) => (
-                      <div
-                        key={u.id}
-                        onClick={() => addHead(u.id)}
-                        style={{ padding: '8px 12px', fontSize: 12.5, cursor: 'pointer', color: TEXT.secondary, borderTop: '1px solid rgba(0,0,0,0.04)' }}
-                      >
-                        <span style={{ fontWeight: 600 }}>{u.name}</span> · {u.email}
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <p style={sheetHint}>The first person picked is the primary head, the second the secondary head. Only people posted in the selected branch are offered.</p>
+                <HeadPicker ids={headIds} onChange={setHeadIds} directory={directory} branches={branches} disabled={saving} />
+                <p style={sheetHint}>The first person picked is the primary head, the second the secondary head. Anyone can be picked, from any branch.</p>
               </div>
             </SheetSection>
           </div>
@@ -406,6 +387,30 @@ export default function OrganizationDepartmentPage() {
           </FormSheet>
         )
       })()}
+
+      {headsFor && (
+        <FormSheet width={580} icon="users" title="Heads of Department" subtitle={`${headsFor.name}${headsFor.branch_name ? ` · ${headsFor.branch_name}` : ''}`}
+          onClose={() => setHeadsFor(null)} busy={headsSaving}
+          footer={<>
+            <button type="button" onClick={() => setHeadsFor(null)} disabled={headsSaving} style={sheetBtn('secondary', SHEET.INK, headsSaving)}>Cancel</button>
+            <button type="button" onClick={handleSaveHeads} disabled={headsSaving} style={sheetBtn('primary', SHEET.BLUE, headsSaving)}>
+              <SheetIcon name="check" size={16} />{headsSaving ? 'Saving…' : 'Save'}
+            </button>
+          </>}>
+          <div style={{ padding: '20px 24px' }}>
+            {headsError && (
+              <div role="alert" style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
+                {headsError}
+              </div>
+            )}
+            <SheetSection icon="users" title="Heads">
+              <label style={sheetLabel}>Heads (one or more) <Optional /></label>
+              <HeadPicker ids={editHeadIds} onChange={setEditHeadIds} directory={directory} branches={branches} disabled={headsSaving} autoFocus />
+              <p style={sheetHint}>Anyone can be a head, from any branch. The first is the primary head, the second the secondary head. Approval steps set to &quot;Department head&quot; go to these people; remove everyone to leave the department without a head.</p>
+            </SheetSection>
+          </div>
+        </FormSheet>
+      )}
 
       {managerFor && (() => {
         const { dept, member } = managerFor
@@ -585,6 +590,13 @@ export default function OrganizationDepartmentPage() {
                                     Reports to
                                   </button>
                                 )}
+                                {canEdit && (
+                                  <button type="button" onClick={() => toggleMemberHead(d, m)} disabled={rowHeadBusy === m.id}
+                                    title={m.is_head ? `${m.name} stops being a head of ${d.name}` : `${m.name} becomes a head of ${d.name} and gets its approvals`}
+                                    style={{ border: 'none', background: 'none', padding: 0, color: m.is_head ? TEXT.muted : '#15803d', cursor: rowHeadBusy === m.id ? 'default' : 'pointer', fontSize: 11, fontWeight: 600 }}>
+                                    {rowHeadBusy === m.id ? 'Saving…' : m.is_head ? 'Remove as head' : 'Make head'}
+                                  </button>
+                                )}
                                 {!m.is_head && canEdit && (
                                   <span
                                     onClick={() => handleRemoveMember(d.id, m.id)}
@@ -599,9 +611,14 @@ export default function OrganizationDepartmentPage() {
                         )}
 
                         {canEdit && (
-                          <button type="button" data-tour="org-dept-add-member" onClick={() => openAddMember(d)} style={sheetBtn('secondary', SHEET.INK)}>
-                            <SheetIcon name="plus" size={14} />Add member
-                          </button>
+                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                            <button type="button" data-tour="org-dept-add-member" onClick={() => openAddMember(d)} style={sheetBtn('secondary', SHEET.INK)}>
+                              <SheetIcon name="plus" size={14} />Add member
+                            </button>
+                            <button type="button" data-tour="org-dept-edit-heads" onClick={() => openHeads(d)} style={sheetBtn('secondary', SHEET.INK)}>
+                              <SheetIcon name="users" size={14} />Heads
+                            </button>
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -614,6 +631,48 @@ export default function OrganizationDepartmentPage() {
        </div>
       </div>
     </div>
+  )
+}
+
+// Heads as removable chips (first = primary) plus a search over every active user of every branch.
+function HeadPicker({ ids, onChange, directory, branches, disabled, autoFocus }: {
+  ids: number[]; onChange: (ids: number[]) => void; directory: DirectoryUser[]; branches: Branch[]; disabled?: boolean; autoFocus?: boolean
+}) {
+  const [search, setSearch] = useState('')
+  const q = search.trim().toLowerCase()
+  const branchName = (id?: number | null) => branches.find((b) => b.id === id)?.name
+  const matches = q
+    ? directory.filter((u) => !ids.includes(u.id) && (u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))).slice(0, 8)
+    : []
+  return (
+    <>
+      {ids.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+          {ids.map((id, i) => (
+            <span key={id} style={{ ...pillStyle(BRAND.primary), gap: 6, padding: '4px 10px', fontSize: 12.5, fontWeight: 600 }}>
+              {directory.find((u) => u.id === id)?.name || `User #${id}`}
+              <span style={{ fontWeight: 500, opacity: 0.75 }}>{i === 0 ? '· primary' : i === 1 ? '· secondary' : ''}</span>
+              <button type="button" aria-label="Remove head" onClick={() => onChange(ids.filter((h) => h !== id))} disabled={disabled}
+                style={{ border: 'none', background: 'none', padding: 0, cursor: 'pointer', fontWeight: 700, color: 'inherit', fontSize: 13 }}>×</button>
+            </span>
+          ))}
+        </div>
+      )}
+      <input style={sheetInput} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name or email…" disabled={disabled} autoFocus={autoFocus} />
+      {matches.length > 0 && (
+        <div style={{ marginTop: 6, border: `1px solid ${SHEET.LINE}`, borderRadius: 10, overflow: 'hidden' }}>
+          {matches.map((u) => (
+            <div key={u.id} role="button" tabIndex={0}
+              onClick={() => { onChange([...ids, u.id]); setSearch('') }}
+              onKeyDown={(e) => { if (e.key === 'Enter') { onChange([...ids, u.id]); setSearch('') } }}
+              style={{ padding: '8px 12px', fontSize: 12.5, cursor: 'pointer', color: TEXT.secondary, borderTop: '1px solid rgba(0,0,0,0.04)' }}>
+              <span style={{ fontWeight: 600 }}>{u.name}</span> · {u.email}
+              {(u.designation || branchName(u.branch_id)) && <span style={{ color: TEXT.muted }}> · {[u.designation, branchName(u.branch_id)].filter(Boolean).join(' · ')}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </>
   )
 }
 

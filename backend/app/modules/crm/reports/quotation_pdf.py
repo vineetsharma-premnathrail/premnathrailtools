@@ -44,6 +44,9 @@ try:
     if os.path.exists(APTOS_REGULAR_PATH) and os.path.exists(APTOS_BOLD_PATH):
         pdfmetrics.registerFont(TTFont("Aptos", APTOS_REGULAR_PATH))
         pdfmetrics.registerFont(TTFont("Aptos-Bold", APTOS_BOLD_PATH))
+        # So <b>/<i> inside a Paragraph (rich-text terms) find Aptos' bold face; no italic file → upright.
+        from reportlab.pdfbase.pdfmetrics import registerFontFamily
+        registerFontFamily("Aptos", normal="Aptos", bold="Aptos-Bold", italic="Aptos", boldItalic="Aptos-Bold")
         FONT_NAME = "Aptos"
         FONT_NAME_BOLD = "Aptos-Bold"
 except Exception:
@@ -537,6 +540,35 @@ def _itemwise_body(ctx: Mapping[str, Any], currency: str, is_export: bool) -> li
     return story
 
 
+def rich_terms_blocks(ctx: Mapping[str, Any]) -> list:
+    """The rich-text Terms & Conditions as printable blocks (empty when the quotation has none).
+    Shared with quotation_docx.py."""
+    from app.modules.crm.services.rich_terms import terms_blocks
+
+    return terms_blocks(ctx.get("terms_html"))
+
+
+def _rich_terms_paragraph(block) -> Paragraph:
+    """One rich-text block as a reportlab Paragraph: bold / italic / underline runs, line
+    breaks, and a hanging number or bullet for a list item (indented per nesting level)."""
+    parts = []
+    for text, bold, italic, underline in block.runs:
+        piece = "<br/>".join(_xml_escape(t) for t in text.split("\n"))
+        if underline:
+            piece = f"<u>{piece}</u>"
+        if italic:
+            piece = f"<i>{piece}</i>"
+        if bold:
+            piece = f"<b>{piece}</b>"
+        parts.append(piece)
+    indent = 16 * (block.level + 1) if block.kind == "li" else 0
+    style = ParagraphStyle(
+        "terms", fontName=FONT_NAME, fontSize=BODY_SIZE, leading=BODY_SIZE + 3, textColor=black,
+        leftIndent=indent, bulletIndent=max(0, indent - 14), bulletFontName=FONT_NAME, bulletFontSize=BODY_SIZE,
+    )
+    return Paragraph("".join(parts), style, bulletText=block.marker if block.kind == "li" else None)
+
+
 def _append_terms_and_signatory(story: list[Any], ctx: Mapping[str, Any], lump_sum: bool) -> None:
     # The terms flow point by point (no single KeepTogether for the whole block, which
     # threw every term onto page 2 whenever the block was even slightly too tall).
@@ -544,7 +576,15 @@ def _append_terms_and_signatory(story: list[Any], ctx: Mapping[str, Any], lump_s
     # last point to the signatory, so neither is ever stranded alone on a page.
     chunks: list[list[Any]] = []  # each chunk = flowables that must stay on one page
     terms_sections = _terms_sections(ctx, lump_sum)
-    if terms_sections:
+    rich = rich_terms_blocks(ctx)
+    if rich:
+        # Terms written in the form's rich-text editor: printed as written (paragraphs,
+        # numbered clauses, bullets, bold / italic) under the one heading.
+        pending = [_p(LUMP_SUM_TERMS_HEADING if lump_sum else "TERMS AND CONDITIONS", size=BODY_SIZE + 1, bold=True, color=ACCENT), Spacer(1, 8)]
+        for block in rich:
+            chunks.append(pending + [_rich_terms_paragraph(block), Spacer(1, 3)])
+            pending = []
+    elif terms_sections:
         pending: list[Any] = [_p(LUMP_SUM_TERMS_HEADING if lump_sum else "TERMS AND CONDITIONS", size=BODY_SIZE + 1, bold=True, color=ACCENT), Spacer(1, 8)]
         # Lump sum prints one plain numbered list, so its sections run on with no gap
         # between them (the gap before "4." when Notes continued Payment Terms).

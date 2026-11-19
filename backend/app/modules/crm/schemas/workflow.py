@@ -1,6 +1,11 @@
 from datetime import date, datetime
-from typing import Literal
-from pydantic import BaseModel, Field, model_validator
+from typing import Annotated, Literal
+from pydantic import AfterValidator, BaseModel, Field, model_validator
+
+from app.modules.crm.services.rich_terms import sanitize_terms_html
+
+# Terms & Conditions from the rich-text editor: only the editor's formatting is kept (2026-11-18).
+TermsHtml = Annotated[str | None, AfterValidator(sanitize_terms_html)]
 
 # Fixed vocabularies (no metadata customization) — must match the frontend selects in
 # components/crm/InquiryDetailPanel.tsx and CUSTOMER_RESPONSES in components/crm/constants.ts.
@@ -74,6 +79,7 @@ class QuotationCreate(BaseModel):
     discount_type: DiscountType | None = None
     quote_conditions: str | None = None
     notes: str | None = None
+    terms_html: TermsHtml = None
     items: list[QuotationLineItemPayload] = []
 
     @model_validator(mode="after")
@@ -119,6 +125,7 @@ class QuotationUpdate(BaseModel):
     discount_type: DiscountType | None = None
     quote_conditions: str | None = None
     notes: str | None = None
+    terms_html: TermsHtml = None
     customer_response: CustomerResponse | None = None
     submitted_date: date | None = None
     items: list[QuotationLineItemPayload] | None = None
@@ -163,6 +170,7 @@ class QuotationResponse(BaseModel):
     discount_type: str | None = None
     quote_conditions: str | None = None
     notes: str | None = None
+    terms_html: str | None = None
     created_by_id: int | None = None
     created_at: datetime | None = None
     items: list[QuotationLineItemResponse] = []

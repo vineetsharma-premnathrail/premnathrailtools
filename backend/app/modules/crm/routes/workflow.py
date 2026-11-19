@@ -789,6 +789,8 @@ def quotation_document_context(db: Session, quot: Quotation) -> dict:
         "discount": getattr(quot, "discount", None),
         "discount_type": getattr(quot, "discount_type", None),
         "quote_conditions": getattr(quot, "quote_conditions", None),
+        # Rich-text Terms & Conditions (2026-11-18): printed instead of the three fields above when set.
+        "terms_html": getattr(quot, "terms_html", None),
         "currency_symbol": "$" if quot.quotation_type == "Export" else "Rs.",
         "items": [
             {

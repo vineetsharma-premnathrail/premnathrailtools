@@ -19,11 +19,12 @@ from docx.enum.table import WD_TABLE_ALIGNMENT, WD_CELL_VERTICAL_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
+from docx.shared import Inches
 
 from app.modules.crm.reports.quotation_pdf import (
     _sentence_case, _split_numbered_points, _fmt_amount, _fmt_quantity, _amount_in_words,
     LUMP_SUM_TITLE, LUMP_SUM_TERMS_HEADING, LUMP_SUM_SIGNATORY, _is_lump_sum, _particular_lines, _lump_sum_price_line,
-    _detail_lines, _terms_sections,
+    _detail_lines, _terms_sections, rich_terms_blocks,
 )
 from app.utils.docx_letterhead import (
     BODY, HEADER, ACCENT, ACCENT_HEX, ACCENT_LIGHT_HEX, MUTED, WHITE, USABLE_IN,
@@ -213,7 +214,29 @@ def _itemwise_body(doc, ctx: Mapping[str, Any], currency: str, is_export: bool) 
 def _terms_and_signatory(doc, ctx: Mapping[str, Any], lump_sum: bool) -> None:
     # ── Terms ──
     terms_sections = _terms_sections(ctx, lump_sum)
-    if terms_sections:
+    rich = rich_terms_blocks(ctx)
+    if rich:
+        # Rich-text Terms & Conditions (2026-11-18): printed as written, same blocks as the PDF.
+        heading = write(doc, LUMP_SUM_TERMS_HEADING if lump_sum else "TERMS AND CONDITIONS", size=BODY + 1, bold=True, color=ACCENT, after=8)
+        tight(heading, before=20, after=8)
+        heading.paragraph_format.keep_with_next = True
+        for block in rich:
+            p = doc.add_paragraph()
+            tight(p, after=4)
+            if block.kind == "li":
+                indent = 0.22 * (block.level + 1)
+                p.paragraph_format.left_indent = Inches(indent)
+                p.paragraph_format.first_line_indent = Inches(-0.2)
+                fmt_run(p.add_run(f"{block.marker}\t" if block.marker else ""))
+                p.paragraph_format.tab_stops.add_tab_stop(Inches(indent))
+            for text, bold, italic, underline in block.runs:
+                for n, piece in enumerate(text.split("\n")):
+                    if n:
+                        p.add_run().add_break()
+                    r = fmt_run(p.add_run(piece), bold=bold)
+                    r.italic, r.underline = italic or None, underline or None
+        write(doc, "", after=0)
+    elif terms_sections:
         heading = write(doc, LUMP_SUM_TERMS_HEADING if lump_sum else "TERMS AND CONDITIONS", size=BODY + 1, bold=True, color=ACCENT, after=8)
         tight(heading, before=20, after=8)
         heading.paragraph_format.keep_with_next = True

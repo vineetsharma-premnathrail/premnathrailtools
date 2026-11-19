@@ -178,6 +178,10 @@ class Quotation(Base):
     discount_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     quote_conditions: Mapped[str | None] = mapped_column(Text, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Terms & Conditions written in the form's rich-text editor (sanitized HTML, 2026-11-18,
+    # services/rich_terms.py). When set it is what the quotation prints; payment_terms /
+    # quote_conditions / notes stay for older quotations and the mobile app.
+    terms_html: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 

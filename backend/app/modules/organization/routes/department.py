@@ -16,7 +16,7 @@ from app.modules.organization.schemas.department import (
     DepartmentCreate, DepartmentUpdate, DepartmentResponse, DepartmentMemberResponse, DepartmentAddMemberPayload,
     DepartmentMemberManagerPayload,
 )
-from app.modules.organization.services.department_heads import cross_unit_head_error
+from app.modules.organization.services.department_heads import head_users_error
 from app.modules.organization.services.provisioning import unique_code
 
 router = APIRouter(prefix="/organization/departments", tags=["Organization"])
@@ -106,7 +106,7 @@ async def create_department(
     # deduplicated with a numeric suffix since `code` is globally unique but
     # the same department name can legitimately repeat across branches.
     head_ids = [i for i in [payload.head_user_id, payload.secondary_head_user_id, *(payload.additional_head_user_ids or [])] if i]
-    error = cross_unit_head_error(db, payload.branch_id, head_ids)
+    error = head_users_error(db, head_ids)
     if error:
         raise HTTPException(status_code=400, detail=error)
     code = unique_code(db, Department, payload.name.strip())
@@ -125,20 +125,18 @@ async def list_department_members(
 ):
     """Users belonging to this department for the tree view — linked by
     User.department_id, or (not linked yet) by the department's name at its
-    plant (services/department_membership.py). Heads of the same unit are
-    included even if their own `department` string differs (e.g. a plant
-    manager heading Stores); heads from another unit are never shown — a
-    department is only headed from its own unit (services/department_heads.py)."""
+    plant (services/department_membership.py). Every head is included even if
+    their own `department` string differs or they are posted in another unit
+    (any user may head a department since 2026-11-19, services/department_heads.py)."""
     department = db.query(Department).filter(Department.id == department_id).first()
     if not department:
         raise HTTPException(status_code=404, detail="Department not found")
     head_ids = set(_all_head_ids(department))
     members = db.query(User).filter(members_condition(department)).order_by(User.name.asc()).all()
     member_ids = {u.id for u in members}
-    for head_id in head_ids - member_ids:
-        head_user = db.query(User).filter(User.id == head_id).first()
-        if head_user and (not department.branch_id or head_user.branch_id == department.branch_id):
-            members.append(head_user)
+    missing_heads = head_ids - member_ids
+    if missing_heads:
+        members += db.query(User).filter(User.id.in_(missing_heads)).order_by(User.name.asc()).all()
     return _member_responses(db, members, head_ids)
 
 
@@ -279,7 +277,7 @@ async def update_department(
     if "name" in changes:
         rename_members(db, department)
     if changes.keys() & {"branch_id", "head_user_id", "secondary_head_user_id", "additional_head_user_ids"}:
-        error = cross_unit_head_error(db, department.branch_id, _all_head_ids(department))
+        error = head_users_error(db, _all_head_ids(department))
         if error:
             db.rollback()
             raise HTTPException(status_code=400, detail=error)

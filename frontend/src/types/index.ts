@@ -1361,6 +1361,8 @@ export interface QuotationItem {
   discount?: number
   discount_type?: string
   quote_conditions?: string
+  /** Rich-text Terms & Conditions (sanitized HTML, 2026-11-18); printed instead of the three older fields when set. */
+  terms_html?: string | null
   notes?: string
   created_by_id?: number
   created_at?: string

@@ -1,13 +1,17 @@
-"""A department's head(s) must belong to the same unit (branch) as the
-department — a Unit 1 department is headed by a Unit 1 person, never by
-someone posted in Unit 2. Enforced on every write path that sets a head:
-the Organization > Department API, Azure-sync auto-provisioning and the HR
-lifecycle handover. A department with no branch has no unit to match, so
-any head is accepted there."""
+"""Who may head a department.
+
+Organization > Department (the admin, by hand): ANY active user may be made a
+head, from any unit (owner, 2026-11-19: "yaha se kisi ko bhi head banana") -
+e.g. a group BD head posted in Unit 2 heading Business Development of Unit 1.
+The approval engine finds heads from the department record, not from the
+head's own unit, so such a head still gets the department's approvals.
+
+The automatic paths (Azure-sync auto-provisioning, the HR lifecycle handover)
+still only pick a head posted in the department's own unit (is_same_unit):
+they guess, the admin decides."""
 from sqlalchemy.orm import Session
 
 from app.modules.main.models.user import User
-from app.modules.organization.models.branch import Branch
 from app.modules.organization.models.department import Department
 
 
@@ -20,32 +24,22 @@ def is_same_unit(db: Session, department: Department, user_id: int | None) -> bo
     return bool(user and user.branch_id == department.branch_id)
 
 
-def cross_unit_head_error(db: Session, branch_id: int | None, head_ids: list[int]) -> str | None:
-    """Human-readable reason the given heads can't head a department in
-    `branch_id`, or None when they all belong to that unit. Head ids that
-    match no user are always rejected, with or without a unit."""
+def head_users_error(db: Session, head_ids: list[int]) -> str | None:
+    """Why the given people can't be made heads, or None. Every head must be an
+    existing, active user; their unit does not matter."""
     if not head_ids:
         return None
-    users = db.query(User).filter(User.id.in_(head_ids)).all()
-    missing = sorted(set(head_ids) - {u.id for u in users})
+    if len(set(head_ids)) != len(head_ids):
+        return "The same person is picked as head twice. Remove the repeat and save again."
+    users = {u.id: u for u in db.query(User).filter(User.id.in_(head_ids)).all()}
+    missing = sorted(set(head_ids) - set(users))
     if missing:
         return (
             f"Department head user id(s) {', '.join(str(i) for i in missing)} do not exist. "
             "Pick the head from the user list again — the user may have been removed or never synced from Azure."
         )
-    if not branch_id:
-        return None
-    branch = db.get(Branch, branch_id)
-    unit = branch.name if branch else f"branch #{branch_id}"
-    wrong = []
-    for u in users:
-        if u.branch_id == branch_id:
-            continue
-        other = db.get(Branch, u.branch_id) if u.branch_id else None
-        wrong.append(f"{u.name or u.email} ({other.name if other else 'no unit set'})")
-    if not wrong:
-        return None
-    return (
-        f"Department head must belong to {unit}. Not in {unit}: {', '.join(wrong)}. "
-        f"Pick a head posted in {unit}, or change that person's unit first (HR / Users)."
-    )
+    inactive = [u.name or u.email for u in users.values() if not u.is_active]
+    if inactive:
+        return (f"{', '.join(inactive)} {'is' if len(inactive) == 1 else 'are'} not an active user any more, so can't head "
+                "a department. Pick someone else, or re-activate them in Organization › Users first.")
+    return None

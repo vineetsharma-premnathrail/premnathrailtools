@@ -26,7 +26,7 @@ const config: TourConfig = {
     {
       target: 'org-dept-heads',
       title: 'Head of Department',
-      purpose: 'One or more people who head this department. The first one picked becomes the primary head, the second the secondary head, and any further ones are recorded as additional heads.',
+      purpose: 'One or more people who head this department — anyone, from any branch. The first one picked becomes the primary head, the second the secondary head, and any further ones are recorded as additional heads.',
       whatToEnter: 'Search by name or email, then click a match to add it as a chip. Click the × on a chip to remove it.',
     },
     {
@@ -62,7 +62,13 @@ const config: TourConfig = {
       target: 'org-dept-add-member',
       title: '+ Add member',
       purpose: 'Opens the Add member popup: search by name or email and click a match to link that user to this department.',
-      after: 'Each person you click is saved at once and appears in the member list; click Done to close the popup. Non-head members can be removed with the "Remove" link next to their name.',
+      after: 'Each person you click is saved at once and appears in the member list; click Done to close the popup. Non-head members can be removed with the "Remove" link next to their name. "Make head" / "Remove as head" next to a name changes the heads at once, and "Reports to" sets who that person reports to.',
+    },
+    {
+      target: 'org-dept-edit-heads',
+      title: 'Heads',
+      purpose: 'Change who heads this department. Anyone can be a head, from any branch — not only its members. The first is the primary head, the second the secondary head; approval steps set to "Department head" go to them.',
+      whatToEnter: 'Search by name or email and click to add; × removes a head. Save to apply.',
     },
   ],
 }

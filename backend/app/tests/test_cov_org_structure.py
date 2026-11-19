@@ -148,28 +148,32 @@ def test_department_with_multiple_heads(client, db, admin):
     assert r.status_code == 409 and "head" in r.json()["detail"]
 
 
-def test_department_head_from_another_unit_is_rejected(client, db, admin):
+def test_any_active_user_may_head_a_department_from_any_unit(client, db, admin):
+    # Owner, 2026-11-19: Organization › Department makes anyone a head ("kisi ko bhi head banana").
     h = auth(admin)
     u1, u2 = new_branch(client, admin), new_branch(client, admin, code="U2", name="Unit 2")
     local = make_user(db, "local_head@premnathrail.com", branch_id=u1["id"])
     outsider = make_user(db, "outsider_head@premnathrail.com", branch_id=u2["id"], name="Outsider")
     r = client.post(f"{ORG}/departments", json={"name": "Stores", "branch_id": u1["id"],
                                                  "head_user_id": local.id, "additional_head_user_ids": [outsider.id]}, headers=h)
-    assert r.status_code == 400 and "Outsider (Unit 2)" in r.json()["detail"]
-    assert db.query(Department).count() == 0
+    assert r.status_code == 200, r.text
+    d = r.json()
+    # The head from the other unit shows in the member tree, marked head.
+    rows = client.get(f"{ORG}/departments/{d['id']}/members", headers=h).json()
+    assert {m["id"]: m["is_head"] for m in rows}.get(outsider.id) is True
 
-    d = client.post(f"{ORG}/departments", json={"name": "Stores", "branch_id": u1["id"], "head_user_id": local.id}, headers=h).json()
-    r = client.patch(f"{ORG}/departments/{d['id']}", json={"secondary_head_user_id": outsider.id}, headers=h)
-    assert r.status_code == 400
+    r = client.patch(f"{ORG}/departments/{d['id']}", json={"head_user_id": outsider.id, "additional_head_user_ids": []}, headers=h)
+    assert r.status_code == 200 and r.json()["head_user_id"] == outsider.id
+    # Still refused: an inactive person, or the same person twice.
+    gone = make_user(db, "gone_head@premnathrail.com", branch_id=u2["id"], name="Gone")
+    gone.is_active = False
+    db.commit()
+    r = client.patch(f"{ORG}/departments/{d['id']}", json={"secondary_head_user_id": gone.id}, headers=h)
+    assert r.status_code == 400 and "not an active user" in r.json()["detail"]
     db.expire_all()
     assert db.get(Department, d["id"]).secondary_head_user_id is None  # rolled back
-    # Moving the department to the outsider's unit while keeping the local head is rejected too.
-    assert client.patch(f"{ORG}/departments/{d['id']}", json={"branch_id": u2["id"]}, headers=h).status_code == 400
-
-    # A department with no unit can be headed by anyone.
-    r = client.post(f"{ORG}/departments", json={"name": "Corporate", "head_user_id": outsider.id,
-                                                 "secondary_head_user_id": local.id}, headers=h)
-    assert r.status_code == 200
+    r = client.patch(f"{ORG}/departments/{d['id']}", json={"head_user_id": local.id, "secondary_head_user_id": local.id}, headers=h)
+    assert r.status_code == 400 and "twice" in r.json()["detail"]
 
 
 def test_department_rejects_unknown_head_user(client, db, admin):
