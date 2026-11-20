@@ -23,15 +23,12 @@ approves / rejects it and the task stays open. Whoever gave the task can
 reopen a completed task with a reason. Progress (0-100) follows the checklist
 when there is one, otherwise the assignee enters it.
 """
-import mimetypes
 from datetime import date, datetime, timezone
-from io import BytesIO
 from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Response, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from starlette.datastructures import Headers
 
 from app.core import assignee_rules
 from app.core.config import settings
@@ -50,6 +47,7 @@ from app.modules.rnd.models.project import RndProject
 from app.modules.rnd.models.requirement_work import (
     RndRequirementDocVisibility, RndRequirementProjectLink, RndRequirementTask, RndTaskEvent,
 )
+from app.modules.rnd.models.task_approval import RndTaskApproval
 from app.modules.rnd.services import events as rnd_events
 from app.modules.rnd.services import requirement_access as ra
 from app.modules.rnd.services import requirements as intake
@@ -159,19 +157,16 @@ def _parse_doc_ids(raw: str | None) -> list[int]:
     return list(dict.fromkeys(ids))
 
 
-async def _copy_documents(db: Session, user: User, *, source: str, record_id: int, raw: str | None,
-                          allowed_task_ids: set[int]) -> list[UploadFile]:
-    """Files picked from the main task or from the requirement's documents, copied onto the new / edited
-    task (a real copy in SharePoint, so deleting one never breaks the other). Each file must be one the
-    user may open, of this same requirement, and — for a task file — of the main task."""
+def _picked_documents(db: Session, user: User, *, source: str, record_id: int, raw: str | None,
+                      allowed_task_ids: set[int]) -> list[CrmDocument]:
+    """Files picked from the main task or from the requirement's documents. Each must be one the user
+    may open, of this same requirement, and — for a task file — of the main task."""
     ids = _parse_doc_ids(raw)
     if not ids:
         return []
     if len(ids) > MAX_FILES:
         raise HTTPException(status_code=422, detail=f"You picked {len(ids)} files — pick at most {MAX_FILES} at a time.")
-    if not settings.SHAREPOINT_SITE_ID:
-        raise HTTPException(status_code=503, detail="File storage (SharePoint) isn't configured on the server, so files can't be copied. Ask IT to set SHAREPOINT_SITE_ID.")
-    out: list[UploadFile] = []
+    out: list[CrmDocument] = []
     for did in ids:
         doc = db.query(CrmDocument).filter(CrmDocument.id == did, CrmDocument.is_deleted == False).first()  # noqa: E712
         if not doc:
@@ -181,11 +176,29 @@ async def _copy_documents(db: Session, user: User, *, source: str, record_id: in
         _ensure_can_open(db, user, doc)
         if doc.related_sub_module == TASK_DOC and doc.related_sub_id not in allowed_task_ids:
             raise HTTPException(status_code=403, detail=f"'{doc.file_name}' is a file of another task — pick files of the main task or the requirement's documents.")
-        content, _claimed = await download_file_content(settings.SHAREPOINT_SITE_ID, doc.sharepoint_path or "")
-        name = doc.file_name or "document"
-        mime = doc.mime_type or mimetypes.guess_type(name)[0] or "application/octet-stream"
-        out.append(UploadFile(file=BytesIO(content), filename=name, headers=Headers({"content-type": mime})))
+        out.append(doc)
     return out
+
+
+def _link_documents(db: Session, picked: list[CrmDocument], *, task_id: int, category: str, user: User) -> None:
+    """Give the picked files to a task WITHOUT a second copy: the new row points at the same file in
+    SharePoint (no upload), so the Documents tab lists the file once. Task files are never deleted
+    from SharePoint, so the shared file stays valid for every task that has it."""
+    have = {d.sharepoint_path for d in db.query(CrmDocument).filter(
+        CrmDocument.related_sub_module == TASK_DOC, CrmDocument.related_sub_id == task_id, CrmDocument.is_deleted == False,  # noqa: E712
+    ).all()}
+    for src in picked:
+        if src.sharepoint_path in have:
+            continue  # already on this task
+        have.add(src.sharepoint_path)
+        db.add(CrmDocument(
+            related_module=src.related_module, related_id=src.related_id, related_sub_module=TASK_DOC, related_sub_id=task_id,
+            universal_id=src.universal_id, folder_type="rnd", doc_category=category,
+            file_name=src.file_name, file_path=src.file_path, sharepoint_path=src.sharepoint_path,
+            sharepoint_url=src.sharepoint_url, file_size=src.file_size, mime_type=src.mime_type,
+            uploaded_by_name=src.uploaded_by_name, org_id=src.org_id, created_by_id=user.id,
+        ))
+    db.flush()
 
 
 def _doc_dict(d: CrmDocument) -> dict:
@@ -528,8 +541,31 @@ async def all_documents(source: Source, record_id: int, category: str | None = N
             continue  # CRM-internal file never shared with R&D
         if category and row["category"] != category:
             continue
-        out.append({**row, "group": group, "context": context})
-    return out
+        out.append({**row, "group": group, "context": context, "_key": d.sharepoint_path or f"id:{d.id}",
+                    "_alt": ((d.file_name or "").lower(), d.file_size), "_task": tasks[d.related_sub_id].title if sub == TASK_DOC else None})
+    # One file = one row. A file shared from the main task onto sub-tasks is the same file (same
+    # SharePoint item; older shares were copies with the same name and size): keep the first upload
+    # and name the other tasks that also have it.
+    first: dict = {}
+    kept: list[dict] = []
+    for row in reversed(out):  # oldest first
+        orig = first.get(row["_key"]) or first.get(row["_alt"])
+        if orig is not None:
+            if row["_task"] and row["_task"] not in orig["_also"] and row["_task"] != orig["_task"]:
+                orig["_also"].append(row["_task"])
+            continue
+        row["_also"] = []
+        first[row["_key"]] = first[row["_alt"]] = row
+        kept.append(row)
+    result = []
+    for row in reversed(kept):  # newest first, as before
+        also = row.pop("_also")
+        if also:
+            row["context"] = f"{row['context']} · also on: {', '.join(also)}"
+        for k in ("_key", "_alt", "_task"):
+            row.pop(k)
+        result.append(row)
+    return result
 
 
 def _ensure_can_open(db: Session, user: User, doc: CrmDocument) -> None:
@@ -970,7 +1006,7 @@ async def create_subtask(
     assignee = ra.check_assignee(db, assigned_to_id)
     assignee_rules.ensure_allowed(db, user, RULE_KEY, assignee)
     record = _record(db, parent.source, parent.record_id)
-    copies = await _copy_documents(db, user, source=parent.source, record_id=parent.record_id, raw=document_ids, allowed_task_ids={parent.id})
+    picked = _picked_documents(db, user, source=parent.source, record_id=parent.record_id, raw=document_ids, allowed_task_ids={parent.id})
 
     task = RndRequirementTask(
         source=parent.source, record_id=parent.record_id, parent_task_id=parent.id, title=title,
@@ -980,8 +1016,9 @@ async def create_subtask(
     task_fields.apply_create(task, priority=priority, start_date=start_date, work_status=work_status, checklist=checklist, user=user)
     db.add(task)
     db.flush()
-    await _store_files(db, source=task.source, record=record, files=[*(files or []), *copies], sub_module=TASK_DOC, sub_id=task.id,
+    await _store_files(db, source=task.source, record=record, files=files or [], sub_module=TASK_DOC, sub_id=task.id,
                        category=TASK_BRIEF, user=user, folder=f"rnd-tasks/{task.id}")
+    _link_documents(db, picked, task_id=task.id, category=TASK_BRIEF, user=user)
     _event(db, task, "created", user, remarks=task.remarks, new_due=due)
     _after_assign(db, task, assignee, user, record, f"assigned you \"{title}\" (part of \"{parent.title}\") — due {due.strftime('%d %b %Y')}.",
                   background_tasks=background_tasks)
@@ -1121,15 +1158,16 @@ async def add_task_update(task_id: int, remarks: str = Form(""), files: list[Upl
     if task.status != "open":
         raise HTTPException(status_code=409, detail=f"This task is {task.status} — updates and files can be added only while it is open. Ask the person who gave it to reopen it first.")
     remarks = (remarks or "").strip()
-    copies = await _copy_documents(db, user, source=task.source, record_id=task.record_id, raw=document_ids,
-                                   allowed_task_ids={task.parent_task_id} if task.parent_task_id else set())
-    files = [*(f for f in (files or []) if f and f.filename), *copies]
-    if not remarks and not files:
+    picked = _picked_documents(db, user, source=task.source, record_id=task.record_id, raw=document_ids,
+                               allowed_task_ids={task.parent_task_id} if task.parent_task_id else set())
+    files = [f for f in (files or []) if f and f.filename]
+    if not remarks and not files and not picked:
         raise HTTPException(status_code=422, detail="Write the update or attach at least one file to share.")
     is_assignee = user.id == task.assigned_to_id
     record = _record(db, task.source, task.record_id)
     await _store_files(db, source=task.source, record=record, files=files, sub_module=TASK_DOC, sub_id=task.id,
                        category=TASK_WORK if is_assignee else TASK_BRIEF, user=user, folder=f"rnd-tasks/{task.id}")
+    _link_documents(db, picked, task_id=task.id, category=TASK_WORK if is_assignee else TASK_BRIEF, user=user)
     _event(db, task, "update", user, remarks=remarks or "Shared files.")
     for uid in {task.created_by_id, task.assigned_to_id} - {user.id}:
         _notify(db, [uid], task.source, task.record_id, title=f"Update on task ({_ref(task.source, record)})",
@@ -1178,6 +1216,38 @@ async def reopen_task(task_id: int, payload: ReviewPayload, db: Session = Depend
                     notification_type="rnd_task_reopened")
     db.commit()
     return _serialize_tasks(db, [task])[0]
+
+
+@router.delete("/tasks/{task_id}")
+async def delete_task(task_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Remove a cancelled task for good (with its sub-tasks, history, approval requests and files on the
+    task). Only a cancelled task; whoever gave it or the R&D head. A file shared onto it from the main
+    task or the documents stays where it came from."""
+    task = _task(db, task_id)
+    _ensure_reviewer(db, task, user, "delete it")
+    if ra.is_rnd_side(user):
+        ensure_feature_action(user, "rnd", "requirements", "tasks", "cancel")
+    if task.status != "cancelled":
+        raise HTTPException(status_code=409, detail=f"This task is {task.status} — only a cancelled task can be deleted. Cancel it first (with a reason), then delete it.")
+    subs = db.query(RndRequirementTask).filter(RndRequirementTask.parent_task_id == task.id).all()
+    live = [x.title for x in subs if x.status != "cancelled"]
+    if live:
+        raise HTTPException(status_code=409, detail=f"Its sub-task(s) {', '.join(live)} are not cancelled (their work is on record), so this task "
+                                                    "can't be deleted. Keep it as cancelled, or cancel those sub-tasks first.")
+    ids = [task.id, *(x.id for x in subs)]
+    now = datetime.now(timezone.utc)
+    for d in db.query(CrmDocument).filter(CrmDocument.related_sub_module == TASK_DOC, CrmDocument.related_sub_id.in_(ids),
+                                          CrmDocument.is_deleted == False).all():  # noqa: E712
+        d.is_deleted, d.deleted_at = True, now
+    db.query(RndTaskApproval).filter(RndTaskApproval.task_kind == KIND, RndTaskApproval.task_id.in_(ids)).delete(synchronize_session=False)
+    db.query(RndTaskEvent).filter(RndTaskEvent.task_id.in_(ids)).delete(synchronize_session=False)
+    db.query(RndRequirementTask).filter(RndRequirementTask.parent_task_id == task.id).delete(synchronize_session=False)
+    db.add(AuditLog(entity_type=f"rnd_req_{task.source}", entity_id=task.record_id, action="task_deleted", module_key="rnd",
+                    summary=f"{_name(user)} deleted the cancelled task \"{task.title}\"" + (f" and its {len(subs)} sub-task(s)." if subs else "."),
+                    performed_by_id=user.id))
+    db.delete(task)
+    db.commit()
+    return {"message": f"Task \"{task.title}\" deleted."}
 
 
 @router.post("/tasks/{task_id}/cancel")

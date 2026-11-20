@@ -60,6 +60,8 @@ export default function RndDocumentsPanel({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | string[]>('')
   const [projects, setProjects] = useState<RndProject[]>([])
+  // All Projects (PEW) projects and past machines the user works R&D tasks on — R&D files can sit there too.
+  const [pmOptions, setPmOptions] = useState<{ value: string; label: string }[]>([])
 
   const [showUpload, setShowUpload] = useState(false)
   const [uploadProjectId, setUploadProjectId] = useState('')
@@ -97,18 +99,27 @@ export default function RndDocumentsPanel({
     rndApi.listProjects()
       .then((data) => setProjects(Array.isArray(data) ? data : []))
       .catch((err) => setUploadError(extractErrorMessages(err, 'Failed to load the project list for uploads.')))
+    rndApi.pmProjectOptions()
+      .then((rows) => setPmOptions((Array.isArray(rows) ? rows : []).map((p) => ({
+        value: `${p.kind === 'machine' ? 'machine' : 'pm_project'}:${p.id}`, label: `All Projects · ${p.label || `${p.project_code} — ${p.name}`}`,
+      }))))
+      .catch(() => setPmOptions([]))
   }, [projectId])
 
-  const targetProjectId = projectId || (uploadProjectId ? Number(uploadProjectId) : 0)
+  // Picker value: "rnd:<id>" (Prototype / Research), "pm_project:<id>" or "machine:<id>".
+  const [pickKind, pickId] = uploadProjectId.split(':')
+  const targetProjectId = projectId || (pickKind === 'rnd' && pickId ? Number(pickId) : 0)
+  const hasTarget = !!projectId || (!!pickKind && !!pickId)
 
   const handleUpload = async () => {
     setUploadError('')
-    if (!targetProjectId) { setUploadError('Pick the R&D project this document belongs to.'); return }
+    if (!hasTarget) { setUploadError('Pick the project this document belongs to — a Prototype / Research project or one from All Projects.'); return }
     if (!docTitle.trim()) { setUploadError('Document title is required.'); return }
     if (files.length === 0) { setUploadError('Choose at least one file to upload.'); return }
 
     const fd = new FormData()
-    fd.append('project_id', String(targetProjectId))
+    if (targetProjectId) fd.append('project_id', String(targetProjectId))
+    else fd.append(pickKind === 'machine' ? 'machine_id' : 'pm_project_id', pickId)
     fd.append('doc_type', docType)
     fd.append('title', docTitle.trim())
     if (version.trim()) fd.append('version', version.trim())
@@ -188,8 +199,11 @@ export default function RndDocumentsPanel({
                     <SearchableSelect
                       value={uploadProjectId}
                       onChange={setUploadProjectId}
-                      options={projects.map((p) => ({ value: String(p.id), label: `${p.project_number} — ${p.title}` }))}
-                      placeholder="Search project…"
+                      options={[
+                        ...projects.map((p) => ({ value: `rnd:${p.id}`, label: `Prototype / Research · ${p.project_number} — ${p.title}` })),
+                        ...pmOptions,
+                      ]}
+                      placeholder="Search project — RND / PEW number or name…"
                     />
                   </div>
                 )}

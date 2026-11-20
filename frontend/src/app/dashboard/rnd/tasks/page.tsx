@@ -15,7 +15,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi, usersApi } from '@/lib/api'
 import { DirectoryUser } from '@/types'
 import { TEXT } from '@/lib/theme'
-import { primaryBtnStyle, secondaryBtnStyle, inputStyle as sharedInputStyle } from '@/components/shared/ui'
+import { chipBtnStyle, primaryBtnStyle, secondaryBtnStyle, inputStyle as sharedInputStyle } from '@/components/shared/ui'
 import DateField from '@/components/erp/DateField'
 import RndNav from '@/components/rnd/RndNav'
 import TaskCreateSheet from '@/components/rnd/TaskCreateSheet'
@@ -43,12 +43,22 @@ const BAND_OPTIONS = [
 // Shared 34px control scale; list filters keep their own width.
 const inputStyle: React.CSSProperties = { ...sharedInputStyle, width: 'auto', background: 'rgba(255,255,255,.7)' }
 
+// Which list: open work (default), tasks I gave to others, completed work (moves here once done), or everything.
+type ListTab = 'open' | 'given' | 'completed' | 'all'
+const LIST_TABS: { k: ListTab; label: string; hint: string }[] = [
+  { k: 'open', label: 'Open', hint: 'Pending and overdue tasks — completed ones move to Completed' },
+  { k: 'given', label: 'Given by me', hint: 'Open tasks you gave to someone else' },
+  { k: 'completed', label: 'Completed', hint: 'Tasks marked complete' },
+  { k: 'all', label: 'All', hint: 'Open and completed (cancelled only via the Status filter)' },
+]
+
 type Draft = { parent: string; user: string; department: string; type: string; status: string; priority: string; from: string; to: string; band: string }
 const EMPTY: Draft = { parent: '', user: '', department: '', type: '', status: '', priority: '', from: '', to: '', band: '' }
 
 /** Draft → the API filters. parent = "requirement:<id>", "project:<id>", "pm_project:<id>" or "machine:<id>" (a past machine). */
-function toFilters(d: Draft, q: string): RndTaskFilters {
+function toFilters(d: Draft, q: string, tab: ListTab = 'all'): RndTaskFilters {
   const f: RndTaskFilters = {}
+  if (tab === 'given') f.given_by_me = true
   const [kind, id] = d.parent.split(':')
   if (kind === 'requirement' && id) f.requirement_id = Number(id)
   if (kind === 'project' && id) f.rnd_project_id = Number(id)
@@ -58,6 +68,9 @@ function toFilters(d: Draft, q: string): RndTaskFilters {
   if (d.department) f.department = d.department
   if (d.type === 'requirement' || d.type === 'prototype' || d.type === 'project') f.type = d.type
   if (d.status) f.status = d.status
+  // The list tab decides the status unless the Status filter picked one (Completed always = completed).
+  if (tab === 'completed') f.status = 'closed'
+  else if ((tab === 'open' || tab === 'given') && !d.status) f.status = 'active'
   if (d.priority === 'standard' || d.priority === 'urgent') f.priority = d.priority as Priority
   if (d.from) f.due_from = d.from
   if (d.to) f.due_to = d.to
@@ -74,6 +87,7 @@ export default function RndTasksPage() {
   const [applied, setApplied] = useState<Draft>(EMPTY)
   const [search, setSearch] = useState('')
   const [view, setView] = useState<TaskView>('task')
+  const [tab, setTab] = useState<ListTab>('open')
   const [page, setPage] = useState(1)
   const [rows, setRows] = useState<RndTaskRow[] | null>(null)
   const [total, setTotal] = useState(0)
@@ -99,8 +113,11 @@ export default function RndTasksPage() {
       .map((p) => ({ value: `${p.kind === 'machine' ? 'machine' : 'pm_project'}:${p.id}`, label: p.label || `${p.project_code} — ${p.name}` })))).catch(() => setPmProjs([]))
   }, [isAuthorized])
 
-  const filters = useMemo(() => toFilters(applied, search), [applied, search])
+  const filters = useMemo(() => toFilters(applied, search, tab), [applied, search, tab])
   const filtersKey = JSON.stringify(filters)
+  // Tiles and the tab counts: the same filters without the tab's status (the whole picture).
+  const tilesKey = JSON.stringify(toFilters(applied, search, tab === 'given' ? 'given' : 'all'))
+  const [counts, setCounts] = useState<{ open: number; completed: number; given: number } | null>(null)
 
   // Any change of filters / search goes back to page 1.
   useEffect(() => { Promise.resolve().then(() => setPage(1)) }, [filtersKey])
@@ -109,10 +126,17 @@ export default function RndTasksPage() {
     setError('')
     const f = { ...JSON.parse(filtersKey) as RndTaskFilters, page, page_size: PAGE_SIZE }
     // Tiles, table and grouped views all use the same filtered set.
-    return Promise.all([rndApi.listRndTasks(f), rndApi.rndTaskAnalytics(JSON.parse(filtersKey) as RndTaskFilters)])
-      .then(([list, an]) => { setRows(list.items); setTotal(list.total); setAnalytics(an) })
+    const base = JSON.parse(tilesKey) as RndTaskFilters
+    return Promise.all([
+      rndApi.listRndTasks(f), rndApi.rndTaskAnalytics(base),
+      rndApi.rndTaskAnalytics({ ...(JSON.parse(JSON.stringify(toFilters(applied, search, 'given'))) as RndTaskFilters), status: 'active' }),
+    ])
+      .then(([list, an, given]) => {
+        setRows(list.items); setTotal(list.total); setAnalytics(an)
+        setCounts({ open: an.totals.pending + an.totals.overdue, completed: an.totals.completed, given: given.totals.total })
+      })
       .catch((err) => { setRows([]); setTotal(0); setAnalytics(null); setError(extractErrorMessages(err, 'Could not load the R&D tasks. Refresh the page; if it keeps failing, check you have R&D › R&D Tasks › View.')) })
-  }, [filtersKey, page])
+  }, [filtersKey, tilesKey, page]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!isAuthorized) return
@@ -197,6 +221,18 @@ export default function RndTasksPage() {
           <div style={{ width: 150 }}><DateField value={applied.to} onChange={(v) => set({ to: v })} placeholder="Due to" /></div>
         </div>
         {(activeCount > 0 || search) && <button type="button" onClick={clear} style={secondaryBtnStyle}>Clear</button>}
+      </div>
+
+      <div data-tour="rnd-tasks-list-tabs" role="tablist" aria-label="Which tasks" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+        {LIST_TABS.map((t) => {
+          const n = t.k === 'open' ? counts?.open : t.k === 'completed' ? (tab === 'given' ? undefined : counts?.completed) : t.k === 'given' ? counts?.given : undefined
+          return (
+            <button key={t.k} type="button" role="tab" aria-selected={tab === t.k} title={t.hint}
+              onClick={() => { setTab(t.k); setPage(1) }} style={chipBtnStyle(tab === t.k)}>
+              {t.label}{n != null ? ` (${n})` : ''}
+            </button>
+          )
+        })}
       </div>
 
       <RndTaskAnalyticsView rows={rows} total={total} analytics={analytics} view={view} onView={setView}

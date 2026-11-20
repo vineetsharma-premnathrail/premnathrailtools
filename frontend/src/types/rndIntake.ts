@@ -241,6 +241,8 @@ export interface RndTaskFilters {
   due_to?: string
   progress_band?: '0' | '1-49' | '50-99' | '100'
   q?: string
+  /** Only tasks I gave to someone else. */
+  given_by_me?: boolean
   page?: number
   page_size?: number
 }

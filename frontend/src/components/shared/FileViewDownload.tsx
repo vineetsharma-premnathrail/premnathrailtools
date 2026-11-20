@@ -20,7 +20,7 @@ const btn: React.CSSProperties = {
 
 const noPreviewLink = () => Promise.reject(new Error('no viewer link for this file'))
 
-export default function FileViewDownload({ file, getBlob, getPreviewUrl, compact = false, label }: {
+export default function FileViewDownload({ file, getBlob, getPreviewUrl, compact = false, label, hideName = false }: {
   file: PreviewFile
   getBlob: () => Promise<Blob>
   getPreviewUrl?: () => Promise<{ getUrl: string }>
@@ -28,6 +28,8 @@ export default function FileViewDownload({ file, getBlob, getPreviewUrl, compact
   compact?: boolean
   /** Text shown instead of the file name. */
   label?: string
+  /** Only the View / Download buttons (the row already shows the name). */
+  hideName?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -56,9 +58,11 @@ export default function FileViewDownload({ file, getBlob, getPreviewUrl, compact
   return (
     <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 2, maxWidth: '100%' }}>
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: '100%' }}>
-        <span title={file.filename} style={{ fontSize: 12.5, color: '#1c1917', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
-          📎 {label ?? file.filename}
-        </span>
+        {!hideName && (
+          <span title={file.filename} style={{ fontSize: 12.5, color: '#1c1917', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+            📎 {label ?? file.filename}
+          </span>
+        )}
         <button type="button" onClick={() => setOpen(true)} style={btn} aria-label={`View ${file.filename}`} title="View">
           <Eye size={13} />{!compact && 'View'}
         </button>

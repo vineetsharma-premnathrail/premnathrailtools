@@ -51,12 +51,12 @@ def _filters(
     machine_id: int | None = None,
     assigned_to_id: int | None = None, department: str | None = None, status: str | None = None,
     priority: str | None = None, due_from: date | None = None, due_to: date | None = None,
-    progress_band: str | None = None, q: str | None = None,
+    progress_band: str | None = None, q: str | None = None, given_by_me: bool = False,
 ) -> dict:
     return {
         "type": type, "requirement_id": requirement_id, "rnd_project_id": rnd_project_id, "pm_project_id": pm_project_id, "machine_id": machine_id, "assigned_to_id": assigned_to_id,
         "department": department, "status": status, "priority": priority, "due_from": due_from, "due_to": due_to,
-        "progress_band": progress_band, "q": q,
+        "progress_band": progress_band, "q": q, "given_by_me": given_by_me,
     }
 
 

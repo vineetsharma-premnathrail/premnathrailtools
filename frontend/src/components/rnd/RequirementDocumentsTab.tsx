@@ -22,6 +22,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { useFormDraft } from '@/lib/formDraft'
 import DraftBanner from '@/components/shared/DraftBanner'
+import FileViewDownload from '@/components/shared/FileViewDownload'
 import { FormSheet, SheetSection, SheetIcon, FileDropZone, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import { RND_DOC_CATEGORIES, RND_DOC_CATEGORY_LABELS } from '@/types/rndIntake'
 
@@ -91,10 +92,6 @@ export default function RequirementDocumentsTab({ source, recordId, access }: { 
     } finally {
       setChanging(null)
     }
-  }
-
-  const open = async (d: Doc) => {
-    try { await rndApi.openWorkDocument(d) } catch (err) { setError(extractErrorMessages(err, `Could not open "${d.name}".`)) }
   }
 
   const all = docs || []
@@ -169,16 +166,17 @@ export default function RequirementDocumentsTab({ source, recordId, access }: { 
                   </Select>
                 ) : catLabel ? <span style={pillStyle('#475569')}>{catLabel}</span> : null}
                 <div style={{ flex: '1 1 260px', minWidth: 0 }}>
-                  {access.download ? (
-                    <a href="#" onClick={(e) => { e.preventDefault(); open(d) }} style={{ fontSize: 13, fontWeight: 600, color: '#2563eb', textDecoration: 'none', wordBreak: 'break-word' }}>{d.name}</a>
-                  ) : (
-                    <span style={{ fontSize: 13, fontWeight: 600, color: TEXT.body, wordBreak: 'break-word' }} title="You don't have the Download right on this requirement">{d.name}</span>
-                  )}
+                  <span style={{ fontSize: 13, fontWeight: 600, color: TEXT.body, wordBreak: 'break-word' }}
+                    title={access.download ? undefined : "You don't have the Download right on this requirement"}>{d.name}</span>
                   <p style={{ fontSize: 11.5, color: TEXT.muted, margin: '2px 0 0' }}>
                     {[d.context, d.file_size ? fmtSize(d.file_size) : null].filter(Boolean).join(' · ')}
                   </p>
                 </div>
                 <span style={{ fontSize: 11.5, color: TEXT.muted, whiteSpace: 'nowrap' }}>{d.uploaded_by || '—'} · {formatDateTime(d.uploaded_at)}</span>
+                {access.download && (
+                  <FileViewDownload hideName file={{ id: d.id, filename: d.name, size: d.file_size }}
+                    getBlob={() => rndApi.getWorkDocumentBlob(d.id)} getPreviewUrl={() => rndApi.previewWorkDocument(d.id)} />
+                )}
               </div>
             )
           })}

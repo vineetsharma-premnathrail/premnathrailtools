@@ -3546,6 +3546,8 @@ export const rndApi = {
   withdrawApproval: async (approvalId: number): Promise<import('@/types').RndTask> => { const { data } = await apiClient.post(`/rnd/requirement-work/approvals/${approvalId}/withdraw`); return data },
   reopenTask: async (taskId: number, remarks: string, newDueDate?: string): Promise<import('@/types').RndTask> => { const { data } = await apiClient.post(`/rnd/requirement-work/tasks/${taskId}/reopen`, { remarks, new_due_date: newDueDate || null }); return data },
   cancelTask: async (taskId: number, remarks: string): Promise<import('@/types').RndTask> => { const { data } = await apiClient.post(`/rnd/requirement-work/tasks/${taskId}/cancel`, { remarks }); return data },
+  /** Delete a cancelled requirement task (with its cancelled sub-tasks). */
+  deleteTask: async (taskId: number) => { const { data } = await apiClient.delete(`/rnd/requirement-work/tasks/${taskId}`); return data },
   createSubtask: async (parentTaskId: number, p: import('@/types').RndTaskCreateInput): Promise<import('@/types').RndTask> => {
     const form = new FormData()
     form.append('title', p.title)
@@ -3623,6 +3625,8 @@ export const rndApi = {
   withdrawProjectApproval: async (approvalId: number): Promise<import('@/types').RndTask> => { const { data } = await apiClient.post(`/rnd/project-task-approvals/${approvalId}/withdraw`); return data },
   reopenProjectTask: async (taskId: number, remarks: string, newDueDate?: string): Promise<import('@/types').RndTask> => { const { data } = await apiClient.post(`/rnd/project-tasks/${taskId}/reopen`, { remarks, new_due_date: newDueDate || null }); return data },
   cancelProjectTask: async (taskId: number, remarks: string): Promise<import('@/types').RndTask> => { const { data } = await apiClient.post(`/rnd/project-tasks/${taskId}/cancel`, { remarks }); return data },
+  /** Delete a cancelled project task (with its cancelled sub-tasks). */
+  deleteProjectTask: async (taskId: number) => { const { data } = await apiClient.delete(`/rnd/project-tasks/${taskId}`); return data },
   addProjectTaskUpdate: async (taskId: number, p: { remarks: string; files: File[]; document_ids?: number[] }): Promise<import('@/types').RndTask> => {
     const form = new FormData()
     form.append('remarks', p.remarks)

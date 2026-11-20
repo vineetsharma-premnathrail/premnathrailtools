@@ -36,6 +36,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { useAuthStore } from '@/store/authStore'
 import { useFormDraft } from '@/lib/formDraft'
 import DraftBanner from '@/components/shared/DraftBanner'
+import ConfirmDialog from '@/components/erp/ConfirmDialog'
 
 export type TaskInput = RndTaskCreateInput
 
@@ -63,6 +64,8 @@ export interface TaskApi {
   withdrawApproval: (approvalId: number) => Promise<RndTask>
   reopen: (taskId: number, remarks: string, newDueDate?: string) => Promise<RndTask>
   cancel: (taskId: number, remarks: string) => Promise<RndTask>
+  /** Delete a cancelled task for good (with its cancelled sub-tasks). */
+  remove?: (taskId: number) => Promise<unknown>
   /** A task file's bytes — in-portal viewer and Download (saved with its real name and format). */
   docBlob: (d: RndWorkDocument) => Promise<Blob>
   /** Microsoft-viewer link for Word / Excel / PowerPoint in the in-portal viewer. */
@@ -592,7 +595,7 @@ const ALL_RIGHTS: Required<TaskRights> = { create: true, edit: true, approve: tr
 
 /** One task opened: header with its actions, then Overview · Sub-tasks · Files · Approvals · Activity tabs. */
 export function TaskView({
-  task, all, userId, canManage, rights = ALL_RIGHTS, api, labels, people, team, startPanel, onChanged, onCreated, onOpen, onClose, prevId, nextId,
+  task, all, userId, canManage, rights = ALL_RIGHTS, api, labels, people, team, startPanel, onChanged, onCreated, onDeleted, onOpen, onClose, prevId, nextId,
 }: {
   task: RndTask
   all: RndTask[]
@@ -606,6 +609,8 @@ export function TaskView({
   startPanel?: Panel
   onChanged: (t: RndTask) => void
   onCreated: () => void
+  /** After the (cancelled) task was deleted. */
+  onDeleted?: () => void
   onOpen: (id: number) => void
   /** Omit on the task's own page: hides prev / next / close. */
   onClose?: () => void
@@ -650,6 +655,16 @@ export function TaskView({
   const [error, setError] = useState<string | string[]>('')
   const [viewError, setViewError] = useState<string | string[]>('')
   const [busy, setBusy] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  // Deleting: only a cancelled task, by whoever gave it (or the head / lead) with the Cancel right.
+  const canDelete = !!api.remove && task.status === 'cancelled' && canReview && rights.cancel
+  const doDelete = async () => {
+    setConfirmDelete(false)
+    if (!api.remove) return
+    setBusy(true)
+    setViewError('')
+    try { await api.remove(task.id); if (onDeleted) onDeleted(); else onCreated() } catch (err) { setViewError(extractErrorMessages(err, 'Could not delete the task.')) } finally { setBusy(false) }
+  }
   // Typed progress (tasks without a checklist); a checklist task shows its ticked share, read-only.
   const [pct, setPct] = useState(String(typeof task.progress_percent === 'number' ? task.progress_percent : 0))
   const pctValid = /^\d{1,3}$/.test(pct.trim()) && Number(pct) >= 0 && Number(pct) <= 100
@@ -790,6 +805,16 @@ export function TaskView({
           {canReview && rights.cancel && isOpen && <ActionBtn icon="x" label="Cancel task" variant="danger" onClick={() => choose('cancel')} />}
         </div>
       )}
+
+      {canDelete && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '8px 18px 12px' }}>
+          <span style={{ fontSize: 12.5, color: MUTED, flex: '1 1 240px' }}>This task is cancelled. Delete it if it was created by mistake — it is removed with its history and files{subtasks.length ? ` and its ${subtasks.length} sub-task(s)` : ''}.</span>
+          <ActionBtn icon="x" label={busy ? 'Deleting…' : 'Delete task'} variant="danger" disabled={busy} onClick={() => setConfirmDelete(true)} />
+        </div>
+      )}
+      <ConfirmDialog open={confirmDelete} danger title="Delete cancelled task"
+        message={`Delete “${task.title}” for good${subtasks.length ? ` together with its ${subtasks.length} sub-task(s)` : ''}? Its history, approval requests and files on the task are removed. Files shared from the main task or the documents stay where they are. This can't be undone.`}
+        confirmLabel="Delete task" cancelLabel="Keep it" onConfirm={doDelete} onCancel={() => setConfirmDelete(false)} />
 
       {mine && isOpen && task.is_overdue && (
         <div style={{ margin: '0 18px 12px', padding: '10px 12px', borderRadius: 10, background: 'rgba(220,38,38,0.07)', border: '1px solid rgba(220,38,38,0.25)', color: '#b91c1c', fontSize: 12.5 }}>
@@ -1211,6 +1236,7 @@ export default function TasksBoard({ api, userId, canManage, canCreate = canMana
           <TaskView key={openTask.id} task={openTask} all={list} userId={userId} canManage={canManage} rights={rights} api={api} labels={labels} people={people} team={team}
             startPanel={open?.panel}
             onChanged={(nt) => { replace(nt); if (nt.status === 'cancelled') load() }} onCreated={load}
+            onDeleted={() => { setOpen(null); load() }}
             onOpen={(id) => setOpen({ id })} onClose={() => setOpen(null)}
             prevId={at > 0 ? walk[at - 1] : undefined} nextId={at >= 0 && at < walk.length - 1 ? walk[at + 1] : undefined} />
         </div>

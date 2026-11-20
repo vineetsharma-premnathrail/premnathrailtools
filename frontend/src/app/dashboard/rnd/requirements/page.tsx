@@ -1,7 +1,7 @@
 'use client'
 
 import FilterMenu from '@/components/shared/FilterMenu'
-import { RowCount, inputStyle as sharedInputStyle } from '@/components/shared/ui'
+import { RowCount, chipBtnStyle, inputStyle as sharedInputStyle } from '@/components/shared/ui'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -60,6 +60,18 @@ function shortResponse(q: RndRequest, waitingBd = false): { text: string; color:
 }
 const shortDate = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`
 
+// List tabs: open work stays on Pending; a responded requirement moves to Completed,
+// one closed without a response (or replaced by a newer send) to Closed / Cancelled.
+type ListTab = 'pending' | 'completed' | 'closed' | 'all'
+const tabOf = (r: RndRequirementRow): Exclude<ListTab, 'all'> =>
+  r.status === 'responded' ? 'completed' : r.status === 'closed' || r.status === 'superseded' ? 'closed' : 'pending'
+const LIST_TABS: { k: ListTab; label: string; hint: string }[] = [
+  { k: 'pending', label: 'Pending', hint: 'Waiting for review, accepted and being worked on, or with BD' },
+  { k: 'completed', label: 'Completed', hint: 'R&D responded to CRM' },
+  { k: 'closed', label: 'Closed / Cancelled', hint: 'Closed without a response, or replaced by a newer send' },
+  { k: 'all', label: 'All', hint: 'Every requirement' },
+]
+
 const COLUMNS = ['R&D ID', 'Rev', 'Status', 'Source', 'Customer', 'Product / Tender', 'R&D Response', 'BD Owner', 'Last Received']
 // Columns a role may hide (Role editor > R&D > Requirements > Visibility). R&D ID and Status always show.
 const HIDEABLE: Record<string, string> = {
@@ -86,6 +98,7 @@ export default function RndRequirementsPage() {
   const [source, setSource] = useState('')
   // '' = everyone's · 'review' = waiting for my accept / return · 'respond' = accepted, waiting for my response
   const [mine, setMine] = useState<'' | 'review' | 'respond'>('')
+  const [tab, setTab] = useState<ListTab>('pending')
 
   useEffect(() => {
     if (!isAuthorized) return
@@ -104,6 +117,8 @@ export default function RndRequirementsPage() {
   // The preview draws every column (hidden ones dimmed, with a toggle); normal use drops the hidden ones.
   const columns = COLUMNS.filter((h) => !HIDEABLE[h] || vis.preview || vis.showColumn('requirements', HIDEABLE[h]))
 
+  const tabCount = (k: ListTab) => (k === 'all' ? rows.length : rows.filter((r) => tabOf(r) === k).length)
+  const shownRows = tab === 'all' ? rows : rows.filter((r) => tabOf(r) === tab)
   const pendingResend = rows.filter((r) => r.edited_after_send).length
   const toReview = rows.filter((r) => r.needs_my_review).length
   const awaitingMe = rows.filter((r) => r.status === 'accepted' && r.rnd_request?.status === 'open' && (r.rnd_request.assigned_to_id == null ? r.can_respond : r.rnd_request.assigned_to_id === user?.id))
@@ -163,6 +178,14 @@ export default function RndRequirementsPage() {
         />
       </div>
 
+      <div data-tour="rnd-req-list-tabs" role="tablist" aria-label="Which requirements" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+        {LIST_TABS.map((t) => (
+          <button key={t.k} type="button" role="tab" aria-selected={tab === t.k} title={t.hint} onClick={() => setTab(t.k)} style={chipBtnStyle(tab === t.k)}>
+            {t.label} ({tabCount(t.k)})
+          </button>
+        ))}
+      </div>
+
       {!vis.preview && <ScopeNote module="rnd" empty={!loading && rows.length === 0} />}
       <div style={{
         borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
@@ -174,18 +197,18 @@ export default function RndRequirementsPage() {
               {columns.map((h, hi) => HIDEABLE[h]
                 ? <VisTh key={h} vis={vis} table="requirements" k={HIDEABLE[h]} style={thStyle}
                     {...(WRAP_MIN_PX[h] ? { 'data-fit-min': WRAP_MIN_PX[h], 'data-fit-cut': '' } : {})}>{h}</VisTh>
-                : <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}
+                : <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={shownRows.length} />}</th>)}
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr><td colSpan={columns.length} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
-            ) : rows.length === 0 ? (
+            ) : shownRows.length === 0 ? (
               <tr><td colSpan={columns.length} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
-                {search || source || mine ? 'No requirements match your filters.' : 'No requirements to show. Requirements arrive here when the business team sends a Technical Offer Request from CRM; you see the ones your data access covers (see the note above).'}
+                {rows.length > 0 ? `Nothing under ${LIST_TABS.find((t) => t.k === tab)?.label} — pick another tab above.` : search || source || mine ? 'No requirements match your filters.' : 'No requirements to show. Requirements arrive here when the business team sends a Technical Offer Request from CRM; you see the ones your data access covers (see the note above).'}
               </td></tr>
             ) : (
-              rows.map((r) => {
+              shownRows.map((r) => {
                 const href = recordPath(`/dashboard/rnd/requirements/${r.source}`, r, 'record_id')
                 // Left colour strip = where the requirement stands (R&D response state,
                 // else the review status): red overdue, green responded, blue on track, grey closed.

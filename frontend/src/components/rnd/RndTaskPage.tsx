@@ -56,6 +56,7 @@ function projectTaskApi(parent: Parent | null, reload: () => Promise<RndTask[]>)
     withdrawApproval: rndApi.withdrawProjectApproval,
     reopen: rndApi.reopenProjectTask,
     cancel: rndApi.cancelProjectTask,
+    remove: rndApi.deleteProjectTask,
     docBlob: (d) => rndApi.getDocumentContent(d.id),
     docPreview: (d) => rndApi.previewDocument(d.id),
     ...(parent?.kind === 'project' ? { docSources: () => projectDocSource(id) } : {}),

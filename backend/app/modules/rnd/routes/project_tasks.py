@@ -26,17 +26,14 @@ row not linked to a project — PEW-1..77 style serials; owner: "saare project s
 chaiye"). Same flow; the R&D heads and management give and review tasks on it
 (`machine_manages`), a portal admin manages without deciding, like on a PM project.
 """
-import mimetypes
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from io import BytesIO
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
-from starlette.datastructures import Headers
 
 from app.core.config import settings
 from app.core.data_scope import in_scope as pm_in_scope
@@ -50,6 +47,7 @@ from app.modules.main.routes.auth import get_current_user
 from app.modules.rnd.models.document import RndDocument
 from app.modules.rnd.models.project import RndProject
 from app.modules.rnd.models.project_task import RndProjectTask, RndProjectTaskEvent
+from app.modules.rnd.models.task_approval import RndTaskApproval
 from app.modules.projects import workflow as pm_wf
 from app.modules.projects.models.project import PmProject
 from app.modules.rnd.scope import ensure_in_scope
@@ -59,7 +57,7 @@ from app.modules.rnd.services import task_approvals
 from app.modules.rnd.services import task_fields
 from app.modules.rnd.services import events as rnd_events
 from app.utils.notifications import notify_user
-from app.utils.sharepoint import build_sharepoint_folder_path, download_file_content, upload_file_to_sharepoint
+from app.utils.sharepoint import build_sharepoint_folder_path, upload_file_to_sharepoint
 
 from app.core import assignee_rules
 
@@ -397,31 +395,42 @@ def _parse_doc_ids(raw: str | None) -> list[int]:
     return list(dict.fromkeys(ids))
 
 
-async def _copy_documents(db: Session, project: TaskParent, raw: str | None, allowed_task_ids: set[int], user: User) -> list[UploadFile]:
-    """Files picked from the main task or from the project's documents, copied onto the new / edited task
-    (a real copy in SharePoint, so deleting one never breaks the other). Each file must be one the user
-    may open, of this same project, and — for a task file — of the main task."""
+def _picked_documents(db: Session, project: TaskParent, raw: str | None, allowed_task_ids: set[int], user: User) -> list[RndDocument]:
+    """Files picked from the main task or from the project's documents. Each must be one the user may
+    open, of this same project, and — for a task file — of the main task."""
     ids = _parse_doc_ids(raw)
     if not ids:
         return []
     if len(ids) > MAX_FILES:
         raise HTTPException(status_code=422, detail=f"You picked {len(ids)} files — pick at most {MAX_FILES} at a time.")
-    if not settings.SHAREPOINT_SITE_ID:
-        raise HTTPException(status_code=503, detail="File storage (SharePoint) isn't configured on the server, so files can't be copied. Ask IT to set SHAREPOINT_SITE_ID.")
     from app.modules.rnd.routes.documents import _ensure_can_open, _get_or_404
     parent_col = next(iter(project.fk()))
-    out: list[UploadFile] = []
+    out: list[RndDocument] = []
     for did in ids:
         doc = _get_or_404(db, did, user=user)   # 404 / 403 with the reason
         _ensure_can_open(user, doc)
         if getattr(doc, parent_col) != project.id or (doc.task_id and doc.task_id not in allowed_task_ids):
             raise HTTPException(status_code=403, detail=f"'{doc.file_name}' isn't a file of the main task or of {project.project_number}'s documents, "
                                                         "so it can't be attached here. Pick files from the main task or the project's documents.")
-        content, _claimed = await download_file_content(settings.SHAREPOINT_SITE_ID, doc.sharepoint_path or "")
-        name = doc.file_name or doc.title or "document"
-        mime = doc.mime_type or mimetypes.guess_type(name)[0] or "application/octet-stream"
-        out.append(UploadFile(file=BytesIO(content), filename=name, headers=Headers({"content-type": mime})))
+        out.append(doc)
     return out
+
+
+def _link_documents(db: Session, project: TaskParent, task: RndProjectTask, picked: list[RndDocument], role: str) -> None:
+    """Give the picked files to a task WITHOUT a second copy: the new row points at the same SharePoint
+    item (no upload). Deleting a project document keeps the SharePoint file while a task still has it."""
+    have = {d.sharepoint_path for d in db.query(RndDocument).filter(RndDocument.task_id == task.id, RndDocument.is_deleted == False).all()}  # noqa: E712
+    for src in picked:
+        if src.sharepoint_path in have:
+            continue
+        have.add(src.sharepoint_path)
+        db.add(RndDocument(
+            **project.fk(), task_id=task.id, task_doc_role=role, doc_type="other",
+            title=src.title or src.file_name, file_name=src.file_name, sharepoint_path=src.sharepoint_path,
+            sharepoint_url=src.sharepoint_url, file_size=src.file_size, mime_type=src.mime_type,
+            uploaded_by_id=src.uploaded_by_id, uploaded_by_name=src.uploaded_by_name,
+        ))
+    db.flush()
 
 
 def _serialize(db: Session, tasks: list[RndProjectTask]) -> list[dict]:
@@ -762,7 +771,7 @@ async def create_subtask(
     if due > parent.due_date:
         raise HTTPException(status_code=422, detail=f"A sub-task can't be due after its main task ({parent.due_date.strftime('%d %b %Y')}). Pick an earlier date, or ask for more time on the main task first.")
     assignee = _check_assignee(db, project, assigned_to_id, _team_ids(project), "on the project team", user)
-    copies = await _copy_documents(db, project, document_ids, {parent.id}, user)
+    picked = _picked_documents(db, project, document_ids, {parent.id}, user)
 
     task = RndProjectTask(
         **project.fk(), parent_task_id=parent.id, title=title, remarks=(remarks or "").strip() or None,
@@ -771,7 +780,8 @@ async def create_subtask(
     task_fields.apply_create(task, priority=priority, start_date=start_date, work_status=work_status, checklist=checklist, user=user)
     db.add(task)
     db.flush()
-    await _store_files(db, project, task, [*(files or []), *copies], BRIEF, user)
+    await _store_files(db, project, task, files, BRIEF, user)
+    _link_documents(db, project, task, picked, BRIEF)
     _event(db, task, "created", user, remarks=task.remarks, new_due=due)
     if assignee.id != user.id:
         notify_user(db, assignee.id, title=f"New sub-task on {project.project_number} — {project.title}",
@@ -1041,12 +1051,13 @@ async def add_task_update(task_id: int, remarks: str = Form(""), files: list[Upl
     if task.status != "open":
         raise HTTPException(status_code=409, detail=f"This task is {task.status} — updates and files can be added only while it is open. Ask the person who gave it to reopen it first.")
     remarks = (remarks or "").strip()
-    copies = await _copy_documents(db, project, document_ids, {task.parent_task_id} if task.parent_task_id else set(), user)
-    files = [*(f for f in (files or []) if f and f.filename), *copies]
-    if not remarks and not files:
+    picked = _picked_documents(db, project, document_ids, {task.parent_task_id} if task.parent_task_id else set(), user)
+    files = [f for f in (files or []) if f and f.filename]
+    if not remarks and not files and not picked:
         raise HTTPException(status_code=422, detail="Write the update or attach at least one file to share.")
     is_assignee = user.id == task.assigned_to_id
     await _store_files(db, project, task, files, WORK if is_assignee else BRIEF, user)
+    _link_documents(db, project, task, picked, WORK if is_assignee else BRIEF)
     _event(db, task, "update", user, remarks=remarks or "Shared files.")
     for uid in {task.created_by_id, task.assigned_to_id} - {user.id}:
         notify_user(db, uid, title=f"Task update ({project.project_number})",
@@ -1089,6 +1100,33 @@ async def reopen_task(task_id: int, payload: ReviewPayload, db: Session = Depend
                     notification_type="rnd_project_task_reopened", entity_type=project.entity_type, entity_id=project.id)
     db.commit()
     return _serialize(db, [task])[0]
+
+
+@router.delete("/project-tasks/{task_id}")
+async def delete_task(task_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Remove a cancelled task for good (with its sub-tasks, history, approval requests and files on the
+    task). Only a cancelled task; whoever gave it or a project lead."""
+    task = _task(db, task_id)
+    project = _parent_of(db, task, user)
+    _ensure_reviewer(user, project, task, "delete it")
+    ensure_feature_action(user, "rnd", "projects", "tasks", "cancel")
+    if task.status != "cancelled":
+        raise HTTPException(status_code=409, detail=f"This task is {task.status} — only a cancelled task can be deleted. Cancel it first (with a reason), then delete it.")
+    subs = db.query(RndProjectTask).filter(RndProjectTask.parent_task_id == task.id).all()
+    live = [x.title for x in subs if x.status != "cancelled"]
+    if live:
+        raise HTTPException(status_code=409, detail=f"Its sub-task(s) {', '.join(live)} are not cancelled (their work is on record), so this task "
+                                                    "can't be deleted. Keep it as cancelled, or cancel those sub-tasks first.")
+    ids = [task.id, *(x.id for x in subs)]
+    now = datetime.now(timezone.utc)
+    for d in db.query(RndDocument).filter(RndDocument.task_id.in_(ids), RndDocument.is_deleted == False).all():  # noqa: E712
+        d.is_deleted, d.deleted_at = True, now
+    db.query(RndTaskApproval).filter(RndTaskApproval.task_kind == KIND, RndTaskApproval.task_id.in_(ids)).delete(synchronize_session=False)
+    db.query(RndProjectTaskEvent).filter(RndProjectTaskEvent.task_id.in_(ids)).delete(synchronize_session=False)
+    db.query(RndProjectTask).filter(RndProjectTask.parent_task_id == task.id).delete(synchronize_session=False)
+    db.delete(task)
+    db.commit()
+    return {"message": f"Task \"{task.title}\" deleted."}
 
 
 @router.post("/project-tasks/{task_id}/cancel")

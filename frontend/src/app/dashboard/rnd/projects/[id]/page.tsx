@@ -187,6 +187,7 @@ export default function RndProjectDetailPage() {
     withdrawApproval: rndApi.withdrawProjectApproval,
     reopen: rndApi.reopenProjectTask,
     cancel: rndApi.cancelProjectTask,
+    remove: rndApi.deleteProjectTask,
     docBlob: (d) => rndApi.getDocumentContent(d.id),
     docPreview: (d) => rndApi.previewDocument(d.id),
     docSources: () => projectDocSource(projectId),

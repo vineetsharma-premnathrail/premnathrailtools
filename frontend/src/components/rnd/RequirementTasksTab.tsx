@@ -42,6 +42,7 @@ export function requirementTaskApi(source: 'inquiry' | 'tender', recordId: numbe
     withdrawApproval: rndApi.withdrawApproval,
     reopen: rndApi.reopenTask,
     cancel: rndApi.cancelTask,
+    remove: rndApi.deleteTask,
     docBlob: (d) => rndApi.getWorkDocumentBlob(d.id),
     docPreview: (d) => rndApi.previewWorkDocument(d.id),
     // Requirement files (business team, R&D documents, offers); task files come from the main task itself.

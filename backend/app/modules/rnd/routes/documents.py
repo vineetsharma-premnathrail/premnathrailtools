@@ -38,22 +38,40 @@ _STORAGE_NOT_CONFIGURED = (
 )
 
 
-def _to_response(db: Session, doc: RndDocument, numbers: dict[int, str] | None = None) -> RndDocumentResponse:
-    """`numbers` = project id -> RND number, built once for a whole list (no per-row query)."""
+def _key(doc: RndDocument) -> tuple[str, int] | None:
+    if doc.project_id:
+        return ("rnd", doc.project_id)
+    if doc.pm_project_id:
+        return ("pm", doc.pm_project_id)
+    if doc.machine_id:
+        return ("machine", doc.machine_id)
+    return None
+
+
+def _to_response(db: Session, doc: RndDocument, numbers: dict[tuple[str, int], str] | None = None) -> RndDocumentResponse:
+    """`numbers` = (kind, id) -> RND number / PEW code / machine serial, built once for a whole list."""
     resp = RndDocumentResponse.model_validate(doc)
-    if numbers is not None:
-        resp.project_number = numbers.get(doc.project_id) if doc.project_id else None
-        return resp
-    project = db.query(RndProject.project_number).filter(RndProject.id == doc.project_id).first()
-    resp.project_number = project[0] if project else None
+    if numbers is None:
+        numbers = _project_numbers(db, [doc])
+    k = _key(doc)
+    resp.project_number = numbers.get(k) if k else None
     return resp
 
 
-def _project_numbers(db: Session, docs: list[RndDocument]) -> dict[int, str]:
-    ids = {d.project_id for d in docs if d.project_id}
-    if not ids:
-        return {}
-    return {pid: num for pid, num in db.query(RndProject.id, RndProject.project_number).filter(RndProject.id.in_(ids)).all()}
+def _project_numbers(db: Session, docs: list[RndDocument]) -> dict[tuple[str, int], str]:
+    from app.modules.erp.models.project import Project as ErpMachine
+    from app.modules.projects.models.project import PmProject
+    out: dict[tuple[str, int], str] = {}
+    rnd_ids = {d.project_id for d in docs if d.project_id}
+    pm_ids = {d.pm_project_id for d in docs if d.pm_project_id}
+    m_ids = {d.machine_id for d in docs if d.machine_id}
+    if rnd_ids:
+        out.update({("rnd", i): n for i, n in db.query(RndProject.id, RndProject.project_number).filter(RndProject.id.in_(rnd_ids)).all()})
+    if pm_ids:
+        out.update({("pm", i): n for i, n in db.query(PmProject.id, PmProject.project_code).filter(PmProject.id.in_(pm_ids)).all()})
+    if m_ids:
+        out.update({("machine", i): n for i, n in db.query(ErpMachine.id, ErpMachine.serial_number).filter(ErpMachine.id.in_(m_ids)).all()})
+    return out
 
 
 def _ensure_task_file_visible(db: Session, doc: RndDocument, user: User) -> None:
@@ -166,7 +184,9 @@ async def list_documents(
 
 @router.post("", response_model=list[RndDocumentResponse])
 async def upload_documents(
-    project_id: int = Form(...),
+    project_id: int | None = Form(None),
+    pm_project_id: int | None = Form(None),
+    machine_id: int | None = Form(None),
     doc_type: str = Form("other"),
     title: str = Form(...),
     version: str | None = Form(None),
@@ -190,20 +210,31 @@ async def upload_documents(
                    "R&D › Prototype / Research. Ask an admin to add one to your role in "
                    "Organization › Role & Permissions.",
         )
-    project = _resolve_project(db, project_id)
-    # The project (and so everything filed under it) must be in the user's R&D data scope.
-    ensure_in_scope(db, user, project)
+    picked = [x for x in (project_id, pm_project_id, machine_id) if x]
+    if len(picked) != 1:
+        raise HTTPException(status_code=422, detail="Pick the one project this document belongs to — a Prototype / Research project or a project from All Projects.")
+    if project_id:
+        project = _resolve_project(db, project_id)
+        # The project (and so everything filed under it) must be in the user's R&D data scope.
+        ensure_in_scope(db, user, project)
+        number, fk = project.project_number, {"project_id": project_id}
+    else:
+        # All Projects (PEW) project or past machine: the same people who work R&D tasks on it
+        # (R&D heads, its project manager, management, anyone with a task on it); 404 otherwise.
+        from app.modules.rnd.routes.project_tasks import _machine_parent, _pm_parent
+        parent = _pm_parent(db, pm_project_id, user) if pm_project_id else _machine_parent(db, machine_id, user)
+        number, fk = parent.project_number, parent.fk()
     if not settings.SHAREPOINT_SITE_ID:
         raise HTTPException(status_code=503, detail=_STORAGE_NOT_CONFIGURED)
 
     folder_path = build_sharepoint_folder_path(
-        user.name or user.email or "", "RnD", project.project_number, root_folder="RnD-media",
+        user.name or user.email or "", "RnD", number, root_folder="RnD-media",
     )
     documents = []
     for f in files:
         result = await upload_file_to_sharepoint(settings.SHAREPOINT_SITE_ID, folder_path, f)
         doc = RndDocument(
-            project_id=project_id,
+            **fk,
             doc_type=doc_type,
             title=title.strip(),
             version=(version or "").strip() or None,
@@ -293,7 +324,11 @@ async def delete_document(
         )
     if not own and not project and not doc.pm_project_id and not doc.machine_id and not is_admin_user(user):
         raise HTTPException(status_code=403, detail=f"You can delete only the files you uploaded — ask {doc.uploaded_by_name or 'its uploader'} or an admin to remove '{doc.title}'.")
-    if settings.SHAREPOINT_SITE_ID and doc.sharepoint_path:
+    # A file shared from here onto a task is the same SharePoint item (no copy) — keep it while a task still has it.
+    shared = doc.sharepoint_path and db.query(RndDocument.id).filter(
+        RndDocument.sharepoint_path == doc.sharepoint_path, RndDocument.id != doc.id, RndDocument.is_deleted == False,  # noqa: E712
+    ).first()
+    if settings.SHAREPOINT_SITE_ID and doc.sharepoint_path and not shared:
         try:
             await delete_file_from_sharepoint(settings.SHAREPOINT_SITE_ID, doc.sharepoint_path)
         except Exception:

@@ -47,7 +47,7 @@ from app.core.priority import map_legacy_priority
 from app.core.record_ref import encode_ref
 
 TYPES = ("requirement", "prototype", "project")
-STATUS_FILTERS = ("open", "submitted", "closed", "cancelled", "overdue", "pending")
+STATUS_FILTERS = ("open", "submitted", "closed", "cancelled", "overdue", "pending", "active")  # active = pending + overdue
 # The page's "Completed" filter sends "completed"; the stored status is "closed".
 STATUS_ALIASES = {"completed": "closed"}
 PROGRESS_BANDS = ("0", "1-49", "50-99", "100")
@@ -174,6 +174,9 @@ def collect(db: Session, user: User, filters: dict[str, Any]) -> list[dict]:
             q = q.filter(or_(model.assigned_to_id == user.id, model.created_by_id == user.id))
         if filters.get("assigned_to_id"):
             q = q.filter(model.assigned_to_id == filters["assigned_to_id"])
+        if filters.get("given_by_me"):
+            # Tasks I gave to someone else (my own self-tasks are under my tasks).
+            q = q.filter(model.created_by_id == user.id, model.assigned_to_id != user.id)
         if filters.get("due_from"):
             q = q.filter(model.due_date >= filters["due_from"])
         if filters.get("due_to"):
@@ -261,6 +264,8 @@ def collect(db: Session, user: User, filters: dict[str, Any]) -> list[dict]:
     # Filters that depend on derived values.
     if status in ("overdue", "pending"):
         rows = [r for r in rows if r["bucket"] == status]
+    elif status == "active":
+        rows = [r for r in rows if r["bucket"] in ("overdue", "pending")]
     if filters.get("department"):
         dept = filters["department"].strip().lower()
         rows = [r for r in rows if (r["assignee"]["department"] or "").strip().lower() == dept]
