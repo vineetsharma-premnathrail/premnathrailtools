@@ -1203,6 +1203,8 @@ export interface RndTaskCreateInput {
   /** New steps are plain text; existing ones keep their id (and who ticked them). */
   checklist?: { id?: string; text: string; done?: boolean }[]
   files: File[]
+  /** Sub-tasks: files picked from the main task or the requirement / project documents (copied by the server). */
+  document_ids?: number[]
   /** Requirement tasks: the assignee's department. */
   department?: RndWorkDepartment
   /** Project and requirement tasks: the milestone it goes into. */

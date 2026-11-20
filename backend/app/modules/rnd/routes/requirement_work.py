@@ -23,12 +23,15 @@ approves / rejects it and the task stays open. Whoever gave the task can
 reopen a completed task with a reason. Progress (0-100) follows the checklist
 when there is one, otherwise the assignee enters it.
 """
+import mimetypes
 from datetime import date, datetime, timezone
+from io import BytesIO
 from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Response, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from starlette.datastructures import Headers
 
 from app.core import assignee_rules
 from app.core.config import settings
@@ -142,6 +145,46 @@ async def _store_files(db: Session, *, source: str, record, files: list[UploadFi
         db.add(doc)
         out.append(doc)
     db.flush()
+    return out
+
+
+def _parse_doc_ids(raw: str | None) -> list[int]:
+    """`document_ids` form field: comma-separated ids of files picked from the main task / documents."""
+    if not raw or not str(raw).strip():
+        return []
+    try:
+        ids = [int(x) for x in str(raw).replace(" ", "").split(",") if x]
+    except ValueError:
+        raise HTTPException(status_code=422, detail="The list of picked files is invalid — close the form, open it again and pick the files again.")
+    return list(dict.fromkeys(ids))
+
+
+async def _copy_documents(db: Session, user: User, *, source: str, record_id: int, raw: str | None,
+                          allowed_task_ids: set[int]) -> list[UploadFile]:
+    """Files picked from the main task or from the requirement's documents, copied onto the new / edited
+    task (a real copy in SharePoint, so deleting one never breaks the other). Each file must be one the
+    user may open, of this same requirement, and — for a task file — of the main task."""
+    ids = _parse_doc_ids(raw)
+    if not ids:
+        return []
+    if len(ids) > MAX_FILES:
+        raise HTTPException(status_code=422, detail=f"You picked {len(ids)} files — pick at most {MAX_FILES} at a time.")
+    if not settings.SHAREPOINT_SITE_ID:
+        raise HTTPException(status_code=503, detail="File storage (SharePoint) isn't configured on the server, so files can't be copied. Ask IT to set SHAREPOINT_SITE_ID.")
+    out: list[UploadFile] = []
+    for did in ids:
+        doc = db.query(CrmDocument).filter(CrmDocument.id == did, CrmDocument.is_deleted == False).first()  # noqa: E712
+        if not doc:
+            raise HTTPException(status_code=404, detail="One of the picked files was deleted meanwhile — refresh the page and pick the files again.")
+        if doc.related_module != source or doc.related_id != record_id:
+            raise HTTPException(status_code=403, detail=f"'{doc.file_name}' belongs to another requirement, so it can't be attached here. Pick files of this requirement.")
+        _ensure_can_open(db, user, doc)
+        if doc.related_sub_module == TASK_DOC and doc.related_sub_id not in allowed_task_ids:
+            raise HTTPException(status_code=403, detail=f"'{doc.file_name}' is a file of another task — pick files of the main task or the requirement's documents.")
+        content, _claimed = await download_file_content(settings.SHAREPOINT_SITE_ID, doc.sharepoint_path or "")
+        name = doc.file_name or "document"
+        mime = doc.mime_type or mimetypes.guess_type(name)[0] or "application/octet-stream"
+        out.append(UploadFile(file=BytesIO(content), filename=name, headers=Headers({"content-type": mime})))
     return out
 
 
@@ -899,11 +942,13 @@ async def create_subtask(
     remarks: str | None = Form(None), files: list[UploadFile] | None = File(None),
     priority: str | None = Form(None), start_date: str | None = Form(None),
     work_status: str | None = Form(None), checklist: str | None = Form(None),
+    document_ids: str | None = Form(None),
     background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db), user: User = Depends(get_current_user),
 ):
     """The assignee of an open task hands part of it to someone in R&D or an
-    engineering department."""
+    engineering department. `document_ids`: files of the main task or of the
+    requirement's documents to give with it (copied, no re-upload)."""
     parent = _task(db, task_id)
     _ensure_assignee(parent, user, "split it into sub-tasks")
     if ra.is_rnd_side(user):
@@ -925,6 +970,7 @@ async def create_subtask(
     assignee = ra.check_assignee(db, assigned_to_id)
     assignee_rules.ensure_allowed(db, user, RULE_KEY, assignee)
     record = _record(db, parent.source, parent.record_id)
+    copies = await _copy_documents(db, user, source=parent.source, record_id=parent.record_id, raw=document_ids, allowed_task_ids={parent.id})
 
     task = RndRequirementTask(
         source=parent.source, record_id=parent.record_id, parent_task_id=parent.id, title=title,
@@ -934,7 +980,7 @@ async def create_subtask(
     task_fields.apply_create(task, priority=priority, start_date=start_date, work_status=work_status, checklist=checklist, user=user)
     db.add(task)
     db.flush()
-    await _store_files(db, source=task.source, record=record, files=files or [], sub_module=TASK_DOC, sub_id=task.id,
+    await _store_files(db, source=task.source, record=record, files=[*(files or []), *copies], sub_module=TASK_DOC, sub_id=task.id,
                        category=TASK_BRIEF, user=user, folder=f"rnd-tasks/{task.id}")
     _event(db, task, "created", user, remarks=task.remarks, new_due=due)
     _after_assign(db, task, assignee, user, record, f"assigned you \"{title}\" (part of \"{parent.title}\") — due {due.strftime('%d %b %Y')}.",
@@ -1062,6 +1108,7 @@ async def task_progress(task_id: int, payload: TaskProgressPayload, db: Session 
 
 @router.post("/tasks/{task_id}/update")
 async def add_task_update(task_id: int, remarks: str = Form(""), files: list[UploadFile] | None = File(None),
+                          document_ids: str | None = Form(None),
                           db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Post a note and / or share files on an open task; the task stays open. The assignee's files
     are filed as work; the person who gave the task (e.g. the main task's assignee on a sub-task)
@@ -1074,12 +1121,14 @@ async def add_task_update(task_id: int, remarks: str = Form(""), files: list[Upl
     if task.status != "open":
         raise HTTPException(status_code=409, detail=f"This task is {task.status} — updates and files can be added only while it is open. Ask the person who gave it to reopen it first.")
     remarks = (remarks or "").strip()
-    has_files = any(f and f.filename for f in (files or []))
-    if not remarks and not has_files:
+    copies = await _copy_documents(db, user, source=task.source, record_id=task.record_id, raw=document_ids,
+                                   allowed_task_ids={task.parent_task_id} if task.parent_task_id else set())
+    files = [*(f for f in (files or []) if f and f.filename), *copies]
+    if not remarks and not files:
         raise HTTPException(status_code=422, detail="Write the update or attach at least one file to share.")
     is_assignee = user.id == task.assigned_to_id
     record = _record(db, task.source, task.record_id)
-    await _store_files(db, source=task.source, record=record, files=files or [], sub_module=TASK_DOC, sub_id=task.id,
+    await _store_files(db, source=task.source, record=record, files=files, sub_module=TASK_DOC, sub_id=task.id,
                        category=TASK_WORK if is_assignee else TASK_BRIEF, user=user, folder=f"rnd-tasks/{task.id}")
     _event(db, task, "update", user, remarks=remarks or "Shared files.")
     for uid in {task.created_by_id, task.assigned_to_id} - {user.id}:

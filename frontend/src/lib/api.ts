@@ -3366,6 +3366,7 @@ function appendTaskPlanning(form: FormData, p: import('@/types').RndTaskCreateIn
   if (p.start_date) form.append('start_date', p.start_date)
   if (p.work_status) form.append('work_status', p.work_status)
   if (p.checklist?.length) form.append('checklist', JSON.stringify(p.checklist))
+  if (p.document_ids?.length) form.append('document_ids', p.document_ids.join(','))
 }
 
 
@@ -3560,10 +3561,11 @@ export const rndApi = {
   editTask: async (taskId: number, p: import('@/types').RndTaskEditInput): Promise<import('@/types').RndTask> => { const { data } = await apiClient.patch(`/rnd/requirement-work/tasks/${taskId}`, p); return data },
   /** Tick a checklist step or change the work status (assignee / reviewer). */
   taskProgress: async (taskId: number, p: { work_status?: string; item_id?: string; done?: boolean; progress_percent?: number }): Promise<import('@/types').RndTask> => { const { data } = await apiClient.post(`/rnd/requirement-work/tasks/${taskId}/progress`, p); return data },
-  addTaskUpdate: async (taskId: number, p: { remarks: string; files: File[] }): Promise<import('@/types').RndTask> => {
+  addTaskUpdate: async (taskId: number, p: { remarks: string; files: File[]; document_ids?: number[] }): Promise<import('@/types').RndTask> => {
     const form = new FormData()
     form.append('remarks', p.remarks)
     for (const f of p.files) form.append('files', f)
+    if (p.document_ids?.length) form.append('document_ids', p.document_ids.join(','))
     const { data } = await apiClient.post(`/rnd/requirement-work/tasks/${taskId}/update`, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 600000, activityLabel: 'Uploading' })
     return data
   },
@@ -3621,10 +3623,11 @@ export const rndApi = {
   withdrawProjectApproval: async (approvalId: number): Promise<import('@/types').RndTask> => { const { data } = await apiClient.post(`/rnd/project-task-approvals/${approvalId}/withdraw`); return data },
   reopenProjectTask: async (taskId: number, remarks: string, newDueDate?: string): Promise<import('@/types').RndTask> => { const { data } = await apiClient.post(`/rnd/project-tasks/${taskId}/reopen`, { remarks, new_due_date: newDueDate || null }); return data },
   cancelProjectTask: async (taskId: number, remarks: string): Promise<import('@/types').RndTask> => { const { data } = await apiClient.post(`/rnd/project-tasks/${taskId}/cancel`, { remarks }); return data },
-  addProjectTaskUpdate: async (taskId: number, p: { remarks: string; files: File[] }): Promise<import('@/types').RndTask> => {
+  addProjectTaskUpdate: async (taskId: number, p: { remarks: string; files: File[]; document_ids?: number[] }): Promise<import('@/types').RndTask> => {
     const form = new FormData()
     form.append('remarks', p.remarks)
     for (const f of p.files) form.append('files', f)
+    if (p.document_ids?.length) form.append('document_ids', p.document_ids.join(','))
     const { data } = await apiClient.post(`/rnd/project-tasks/${taskId}/update`, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 600000, activityLabel: 'Uploading' })
     return data
   },

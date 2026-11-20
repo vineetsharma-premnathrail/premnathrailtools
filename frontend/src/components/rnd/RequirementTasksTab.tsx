@@ -44,6 +44,8 @@ export function requirementTaskApi(source: 'inquiry' | 'tender', recordId: numbe
     cancel: rndApi.cancelTask,
     docBlob: (d) => rndApi.getWorkDocumentBlob(d.id),
     docPreview: (d) => rndApi.previewWorkDocument(d.id),
+    // Requirement files (business team, R&D documents, offers); task files come from the main task itself.
+    docSources: async () => (await rndApi.listAllRequirementDocuments(source, recordId)).filter((d) => d.group !== 'task'),
   }
 }
 

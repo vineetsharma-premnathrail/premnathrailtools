@@ -15,7 +15,7 @@ import { secondaryBtnStyle } from '@/components/shared/ui'
 import RndNav from '@/components/rnd/RndNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { recordPath, useRecordId } from '@/lib/recordRef'
-import { TaskApi, TaskLabels, TaskView } from '@/components/rnd/TasksBoard'
+import { TaskApi, TaskLabels, TaskView, projectDocSource } from '@/components/rnd/TasksBoard'
 import { REQUIREMENT_TASK_LABELS, requirementTaskApi } from '@/components/rnd/RequirementTasksTab'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
@@ -58,6 +58,7 @@ function projectTaskApi(parent: Parent | null, reload: () => Promise<RndTask[]>)
     cancel: rndApi.cancelProjectTask,
     docBlob: (d) => rndApi.getDocumentContent(d.id),
     docPreview: (d) => rndApi.previewDocument(d.id),
+    ...(parent?.kind === 'project' ? { docSources: () => projectDocSource(id) } : {}),
   }
 }
 

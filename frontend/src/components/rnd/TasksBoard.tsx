@@ -30,6 +30,7 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import { dangerBtnStyle, smallSecondaryBtnStyle, btnBase, smallBtnSize, chipBtnStyle, RowCount, inputStyle as sharedInputStyle, pillStyle } from '@/components/shared/ui'
 import FileViewDownload from '@/components/shared/FileViewDownload'
+import { rndApi } from '@/lib/api'
 import { FormSheet, SheetColumns, SheetSection, SheetIcon, SheetIconName, FileDropZone, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
 import { extractErrorMessages } from '@/lib/validation'
 import { useAuthStore } from '@/store/authStore'
@@ -53,7 +54,9 @@ export interface TaskApi {
   /** Assignee completes the task themselves. */
   complete: (taskId: number, p: { remarks: string; delay_reason?: string; files: File[] }) => Promise<RndTask>
   /** Assignee's progress note (remarks + files) — the task stays open. */
-  update: (taskId: number, p: { remarks: string; files: File[] }) => Promise<RndTask>
+  update: (taskId: number, p: { remarks: string; files: File[]; document_ids?: number[] }) => Promise<RndTask>
+  /** The requirement's / project's documents a file can be picked from for a sub-task (none on PM / machine tasks). */
+  docSources?: () => Promise<RndWorkDocument[]>
   /** Assignee asks the task's reviewer to approve something — the task stays open. */
   requestApproval: (taskId: number, p: { request: string; files: File[] }) => Promise<RndTask>
   decideApproval: (approvalId: number, decision: 'approve' | 'reject', remarks?: string) => Promise<RndTask>
@@ -331,10 +334,51 @@ export function ChecklistEditor({ steps, onChange }: { steps: DraftStep[]; onCha
 
 const personKey = (p: { id: number }) => String(p.id)
 
+export type PickGroup = { title: string; docs: RndWorkDocument[] }
+
+/** A Prototype / Research project's documents (not task files), shaped for the sub-task file picker. */
+export async function projectDocSource(projectId: number): Promise<RndWorkDocument[]> {
+  const docs: { id: number; file_name: string; title?: string; file_size?: number | null; uploaded_by_name?: string | null; created_at?: string | null; doc_type?: string }[] =
+    await rndApi.listDocuments({ project_id: projectId })
+  return docs.map((d) => ({ id: d.id, name: d.file_name || d.title || 'document', file_size: d.file_size ?? null, uploaded_by: d.uploaded_by_name ?? null, uploaded_at: d.created_at ?? null, category: d.doc_type ?? null }))
+}
+
+/** Pick files that are already in the portal (main task's files, requirement / project documents) — the
+ * server copies them onto the task, nothing is uploaded again. */
+function ExistingFilePicker({ groups, picked, onChange }: { groups: PickGroup[]; picked: number[]; onChange: (ids: number[]) => void }) {
+  const shown = groups.filter((g) => g.docs.length)
+  if (!shown.length) return null
+  const toggle = (id: number) => onChange(picked.includes(id) ? picked.filter((x) => x !== id) : [...picked, id])
+  return (
+    <div style={{ marginTop: 12 }}>
+      <p style={{ ...sheetLabel, marginBottom: 6 }}>Or pick files already given {picked.length > 0 && <span style={{ fontWeight: 400, color: SHEET.MUTED }}>({picked.length} picked)</span>}</p>
+      <div style={{ maxHeight: 220, overflowY: 'auto', border: `1px solid ${SHEET.LINE}`, borderRadius: 10, padding: '6px 10px' }}>
+        {shown.map((g) => (
+          <div key={g.title} style={{ padding: '4px 0' }}>
+            <p style={{ fontSize: 11.5, fontWeight: 700, color: SHEET.MUTED, margin: '2px 0 4px', textTransform: 'uppercase', letterSpacing: 0.3 }}>{g.title}</p>
+            {g.docs.map((d) => (
+              <label key={`${g.title}-${d.id}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 13, color: SHEET.INK, cursor: 'pointer' }}>
+                <input type="checkbox" checked={picked.includes(d.id)} onChange={() => toggle(d.id)} style={{ width: 16, height: 16, flexShrink: 0 }} />
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }} title={d.name}>📄 {d.name}</span>
+                {d.uploaded_by && <span style={{ fontSize: 11.5, color: SHEET.MUTED, whiteSpace: 'nowrap' }}>· {d.uploaded_by}</span>}
+              </label>
+            ))}
+          </div>
+        ))}
+      </div>
+      <p style={{ fontSize: 11.5, color: SHEET.MUTED, margin: '6px 0 0' }}>A copy goes on the task with the same file name and format; the original stays where it is.</p>
+    </div>
+  )
+}
+
 /** One popup form for a new task, a new sub-task and editing a task (no files when editing) — same layout as PM's Create Task. */
 function TaskForm({
-  mode, people, labels, onSubmit, onCancel, initial, maxDue, parentTitle, draftId,
+  mode, people, labels, onSubmit, onCancel, initial, maxDue, parentTitle, draftId, filesOnEdit = false, pickGroups = [],
 }: {
+  /** Sub-task / edit: files already in the portal the user can pick instead of uploading. */
+  pickGroups?: PickGroup[]
+  /** Edit mode: also offer Attachments — new files are shared on the task when saving. */
+  filesOnEdit?: boolean
   /** Create mode only: keeps the typed task across a refresh (lib/formDraft.ts). */
   draftId?: string
   mode: 'create' | 'subtask' | 'edit'
@@ -356,6 +400,7 @@ function TaskForm({
   const [workStatus, setWorkStatus] = useState<RndTaskWorkStatus>(initial?.work_status || 'not_started')
   const [steps, setSteps] = useState<DraftStep[]>(() => (initial?.checklist || []).map((c) => ({ id: c.id, text: c.text, done: c.done })))
   const [files, setFiles] = useState<File[]>([])
+  const [picked, setPicked] = useState<number[]>([])
   const [error, setError] = useState<string | string[]>('')
   const [saving, setSaving] = useState(false)
   const draft = useFormDraft(mode === 'create' && !initial && draftId ? draftId : null,
@@ -378,7 +423,7 @@ function TaskForm({
     try {
       await onSubmit({
         title: title.trim(), assigned_to_id: Number(assignee), due_date: due, remarks: remarks.trim() || undefined,
-        priority, start_date: start || undefined, work_status: workStatus, checklist, files,
+        priority, start_date: start || undefined, work_status: workStatus, checklist, files, document_ids: picked,
       })
       draft.clear()
     } catch (err) {
@@ -451,9 +496,11 @@ function TaskForm({
             <ChecklistEditor steps={steps} onChange={setSteps} />
             <p style={{ fontSize: 11.5, color: SHEET.MUTED, margin: '6px 0 0' }}>Steps the assignee ticks off — all must be ticked to complete the task.</p>
           </SheetSection>
-          {mode !== 'edit' && (
+          {(mode !== 'edit' || filesOnEdit) && (
             <SheetSection icon="clip" title="Attachments" extra={<Optional />}>
               <FileDropZone files={files} onChange={setFiles} />
+              <ExistingFilePicker groups={pickGroups} picked={picked} onChange={setPicked} />
+              {mode === 'edit' && <p style={{ fontSize: 11.5, color: SHEET.MUTED, margin: '6px 0 0' }}>New files are added to the task&apos;s Files when you save; files already on it stay.</p>}
             </SheetSection>
           )}
         </>}
@@ -582,6 +629,9 @@ export function TaskView({
   // Sharing files on an open task: the assignee (filed as work) and the person who gave it — e.g. the
   // main task's assignee on a sub-task, or yourself on a task you gave yourself (filed with the brief).
   const canShare = isOpen && (mine || task.created_by_id === userId)
+  // Files a sub-task can be given without uploading again: the main task's files + the requirement / project documents.
+  const [sourceDocs, setSourceDocs] = useState<RndWorkDocument[]>([])
+  const taskFiles = (t: RndTask | undefined): RndWorkDocument[] => (t ? [...t.brief_documents, ...t.work_documents, ...(t.approvals || []).flatMap((a) => a.documents)] : [])
   const approvals = task.approvals || []
   const checklist = task.checklist || []
   const unticked = checklist.filter((c) => !c.done)
@@ -606,6 +656,13 @@ export function TaskView({
   const pctChanged = pctValid && Number(pct) !== (typeof task.progress_percent === 'number' ? task.progress_percent : 0)
 
   const choose = (p: Panel) => { setPanel(p); setText(''); setDelayReason(''); setDate(''); setFiles([]); setError('') }
+  useEffect(() => {
+    if ((panel !== 'subtask' && panel !== 'edit') || !api.docSources) return
+    let alive = true
+    api.docSources().then((d) => { if (alive) setSourceDocs(d) }).catch(() => { if (alive) setSourceDocs([]) })
+    return () => { alive = false }
+  }, [panel, api])
+  const documentsGroup: PickGroup = { title: labels.manager === 'head' ? 'Requirement documents' : 'Project documents', docs: sourceDocs }
 
   const run = async (fn: () => Promise<RndTask>, fallback: string) => {
     setBusy(true)
@@ -897,7 +954,8 @@ export function TaskView({
       {/* Popups */}
       {panel === 'edit' && api.edit && (
         <TaskForm
-          mode="edit" labels={labels}
+          mode="edit" labels={labels} filesOnEdit={canShare}
+          pickGroups={isSub ? [{ title: `Main task “${parent?.title || ''}”`, docs: taskFiles(parent) }, documentsGroup] : [documentsGroup]}
           people={isSub ? team : people}
           initial={task}
           parentTitle={parent?.title}
@@ -907,14 +965,18 @@ export function TaskView({
               title: p.title, remarks: p.remarks || null, due_date: p.due_date, assigned_to_id: p.assigned_to_id,
               priority: p.priority, start_date: p.start_date || null, work_status: p.work_status, checklist: p.checklist,
             })
+            // New attachments go on the task as shared files (giver's files with the brief, assignee's as work).
+            const withFiles = canShare && (p.files.length || p.document_ids?.length)
+              ? await api.update(task.id, { remarks: '', files: p.files, document_ids: p.document_ids }) : t
             setPanel('')
-            onChanged(t)
+            onChanged(withFiles)
           }}
         />
       )}
       {panel === 'subtask' && (
         <TaskForm
           mode="subtask" parentTitle={task.title} labels={labels} people={team} maxDue={task.due_date}
+          pickGroups={[{ title: `Main task “${task.title}”`, docs: taskFiles(task) }, documentsGroup]}
           onCancel={() => setPanel('')}
           onSubmit={async (p) => { await api.create(p, task.id); setPanel(''); setTab('subtasks'); onCreated() }}
         />

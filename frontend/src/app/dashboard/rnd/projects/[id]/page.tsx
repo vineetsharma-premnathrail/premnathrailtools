@@ -16,7 +16,7 @@ import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import TeamMemberPicker from '@/components/rnd/TeamMemberPicker'
 import RndDocumentsPanel from '@/components/rnd/RndDocumentsPanel'
-import TasksBoard, { TaskApi, TaskLabels } from '@/components/rnd/TasksBoard'
+import TasksBoard, { TaskApi, TaskLabels, projectDocSource } from '@/components/rnd/TasksBoard'
 import RndProjectHistory from '@/components/rnd/RndProjectHistory'
 import RndProjectMembers from '@/components/rnd/RndProjectMembers'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
@@ -189,6 +189,7 @@ export default function RndProjectDetailPage() {
     cancel: rndApi.cancelProjectTask,
     docBlob: (d) => rndApi.getDocumentContent(d.id),
     docPreview: (d) => rndApi.previewDocument(d.id),
+    docSources: () => projectDocSource(projectId),
   }), [projectId])
 
   const applyProject = (p: RndProjectDetail) => {
