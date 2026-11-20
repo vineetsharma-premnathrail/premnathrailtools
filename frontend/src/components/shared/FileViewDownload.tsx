@@ -11,11 +11,14 @@ import { DownloadSimple, Eye } from '@phosphor-icons/react'
 import AttachmentPreviewDialog, { type PreviewFile } from '@/components/shared/AttachmentPreview'
 import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 import { extractErrorMessages } from '@/lib/validation'
+import { btnBase } from '@/components/shared/ui'
 
+// Shared button base, kept at this list's compact 24px size and colours.
 const btn: React.CSSProperties = {
+  ...btnBase,
   display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4, height: 24, padding: '0 8px',
   borderRadius: 6, border: '1px solid rgba(0,0,0,0.12)', background: '#fff', color: '#44403c',
-  fontSize: 11.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
+  fontSize: 11.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', minHeight: 24, lineHeight: 1,
 }
 
 const noPreviewLink = () => Promise.reject(new Error('no viewer link for this file'))
