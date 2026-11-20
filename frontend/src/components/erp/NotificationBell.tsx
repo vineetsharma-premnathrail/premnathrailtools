@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { notificationsApi } from '@/lib/api'
-import { Notification } from '@/types'
+import type { Notification } from '@/types'
 import { useAuth } from '@/hooks/useAuth'
 import { hrNotificationHref } from '@/components/hr/hrNotificationLink'
 import { refOf } from '@/lib/recordRef'
@@ -11,6 +11,10 @@ import { extractErrorMessages } from '@/lib/validation'
 import { Bell } from '@phosphor-icons/react'
 import { formatDateTime } from '@/lib/format'
 import DesktopRefreshButton from '@/components/shared/DesktopRefreshButton'
+import { useRouter } from 'next/navigation'
+import {
+  DesktopState, desktopState, setDesktopPref, requestDesktopPermission, lastShownId, setLastShownId, portalInBackground, showDesktopNotification,
+} from '@/components/erp/desktopNotifications'
 
 // Some notification types need a more specific link than their entity type
 // alone gives (P2P approvals key their action buttons off ?from=).
@@ -164,8 +168,20 @@ const DELETED_TYPE_LINK: Record<string, string> = {
   tender_deleted: '/dashboard/crm/inquiries?type=tender',
 }
 
+/** Page a bell opens: type-specific link, else the record's own page, else none. */
+export function notificationHref(n: Notification): string | undefined {
+  return DELETED_TYPE_LINK[n.notification_type] ?? rndRequirementHref(n) ?? (n.entity_id ? NOTIFICATION_TYPE_LINK[n.notification_type]?.(refOf(n, 'entity_id')) : undefined) ?? (n.entity_type && n.entity_id ? ENTITY_LINK[n.entity_type]?.(refOf(n, 'entity_id')) : undefined) ?? hrNotificationHref(n)
+    ?? (n.notification_type === 'approval' ? '/dashboard/approvals' : undefined)
+}
+
+// At most this many separate Windows popups per poll; more become one summary popup.
+const MAX_POPUPS = 3
+
 export default function NotificationBell() {
   const { user, fetchUser } = useAuth()
+  const router = useRouter()
+  const [desktop, setDesktop] = useState<DesktopState>('unsupported')
+  const lastCountRef = useRef<number | null>(null)
   const [open, setOpen] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
   const [notifications, setNotifications] = useState<Notification[]>([])
@@ -185,8 +201,58 @@ export default function NotificationBell() {
     }
   }
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time client-only check (Notification API)
+  useEffect(() => { setDesktop(desktopState()) }, [])
+
+  const openFromPopup = (n: Notification) => {
+    notificationsApi.markAsRead(n.id).then(refreshCount).catch(() => {})
+    let href: string | undefined
+    try { href = notificationHref(n) } catch { href = undefined }
+    router.push(href ?? '/dashboard')
+  }
+
+  // New unread bells → Windows popups, only while the person is not looking at the portal.
+  const popNewBells = async (count: number) => {
+    const firstPoll = lastCountRef.current === null
+    const grew = !firstPoll && count > (lastCountRef.current ?? 0)
+    lastCountRef.current = count
+    if (desktopState() !== 'on') return
+    const last = lastShownId()
+    if (!grew && !(firstPoll && (last === null || count > 0))) return
+    let list: Notification[]
+    try { list = await notificationsApi.list() } catch { return }
+    const maxId = list.reduce((m, n) => Math.max(m, n.id), 0)
+    const seen = lastShownId()
+    // First run on this device: remember where we are, pop nothing old.
+    if (seen === null) { setLastShownId(maxId); return }
+    const fresh = list.filter((n) => !n.is_read && n.id > seen).sort((a, b) => a.id - b.id)
+    setLastShownId(maxId)
+    if (fresh.length === 0 || !portalInBackground()) return
+    if (fresh.length > MAX_POPUPS) {
+      showDesktopNotification(`${fresh.length} new notifications`, fresh.slice(-MAX_POPUPS).map((n) => n.title).join(' · '),
+        `pn-batch-${maxId}`, () => router.push('/dashboard'))
+      return
+    }
+    for (const n of fresh) showDesktopNotification(n.title, n.message, `pn-${n.id}`, () => openFromPopup(n))
+  }
+
   const refreshCount = () => {
-    notificationsApi.getUnreadCount().then((r) => setUnreadCount(r.count)).catch(() => {})
+    notificationsApi.getUnreadCount().then((r) => {
+      setUnreadCount(r.count)
+      void popNewBells(r.count)
+    }).catch(() => {})
+  }
+
+  const toggleDesktop = async () => {
+    if (desktop === 'on') { setDesktopPref(false); setDesktop('off'); return }
+    if (desktop === 'ask') {
+      const result = await requestDesktopPermission()
+      if (result !== 'granted') { setDesktop(desktopState()); return }
+    }
+    setDesktopPref(true)
+    setDesktop('on')
+    showDesktopNotification('Windows popups are on',
+      'New portal notifications will pop up here while the portal is open, also when it is minimised.', 'pn-test')
   }
 
   // Only poll while actually signed in — otherwise this fires every 30s
@@ -335,6 +401,29 @@ export default function NotificationBell() {
             </div>
           )}
 
+          {notificationsEnabled && desktop !== 'unsupported' && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '8px 16px', fontSize: 11.5, color: '#78716c', background: '#fafaf9', borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
+              <span>
+                {desktop === 'blocked'
+                  ? 'Windows popups are blocked for this site. Allow them from the lock icon next to the address bar › Notifications, then reload.'
+                  : 'Windows popups for new notifications on this computer'}
+              </span>
+              {desktop !== 'blocked' && (
+                <button
+                  onClick={toggleDesktop}
+                  title={desktop === 'on' ? 'Turn Windows popups off on this computer' : 'Turn Windows popups on for this computer'}
+                  aria-label={desktop === 'on' ? 'Turn Windows popups off' : 'Turn Windows popups on'}
+                  style={{
+                    flex: 'none', fontSize: 11, fontWeight: 600, borderRadius: 8, padding: '3px 8px', cursor: 'pointer',
+                    color: desktop === 'on' ? '#78716c' : '#FF7A45', background: 'none', border: '1px solid rgba(0,0,0,0.1)',
+                  }}
+                >
+                  {desktop === 'on' ? 'On' : desktop === 'ask' ? 'Turn on' : 'Off'}
+                </button>
+              )}
+            </div>
+          )}
+
           {loading ? (
             <p style={{ fontSize: 12.5, color: '#a8a29e', padding: 16, margin: 0 }}>Loading…</p>
           ) : loadError ? (
@@ -343,8 +432,7 @@ export default function NotificationBell() {
             <p style={{ fontSize: 12.5, color: '#a8a29e', padding: 16, margin: 0 }}>No notifications yet.</p>
           ) : (
             notifications.map((n) => {
-              const href = DELETED_TYPE_LINK[n.notification_type] ?? rndRequirementHref(n) ?? (n.entity_id ? NOTIFICATION_TYPE_LINK[n.notification_type]?.(refOf(n, 'entity_id')) : undefined) ?? (n.entity_type && n.entity_id ? ENTITY_LINK[n.entity_type]?.(refOf(n, 'entity_id')) : undefined) ?? hrNotificationHref(n)
-                ?? (n.notification_type === 'approval' ? '/dashboard/approvals' : undefined)
+              const href = notificationHref(n)
               const content = (
                 <div
                   onClick={() => handleClickNotification(n)}
