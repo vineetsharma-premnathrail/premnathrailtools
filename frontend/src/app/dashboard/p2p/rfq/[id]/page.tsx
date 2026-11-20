@@ -57,6 +57,11 @@ const invTh: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fon
 const invTd: React.CSSProperties = { padding: '8px 10px', fontSize: 12.5, color: TEXT.body, borderBottom: `1px solid ${BORDER.normal}`, verticalAlign: 'top' }
 const linkBtn: React.CSSProperties = { background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: '#2563eb', fontSize: 12.5, fontWeight: 600 }
 
+// Requisition statuses while it is still being bought (mirrors backend po_split.PROCUREMENT_OPEN_STATUSES):
+// on a closed / cancelled requisition vendor quotes can't be recorded, so the Record quote links are hidden.
+const PROCUREMENT_OPEN = new Set(['approved', 'vendor_quotations', 'technical_evaluation', 'commercial_evaluation', 'vendor_selected',
+  'po_drafted', 'po_raised', 'po_approved', 'partially_received', 'received'])
+
 export default function RfqDetailPage() {
   const { isAuthorized, isLoading, user } = useRequireApp('p2p')
   const params = useParams()
@@ -358,7 +363,7 @@ export default function RfqDetailPage() {
       {hasInvites && invites && (
         <InvitedVendorsSection
           invites={invites}
-          canEdit={canEditRfq}
+          canEdit={canEditRfq && (!rfq.p2p_status || PROCUREMENT_OPEN.has(rfq.p2p_status))}
           canOpenComparison={seeComparison}
           busy={inviteBusy}
           notice={inviteNotice}

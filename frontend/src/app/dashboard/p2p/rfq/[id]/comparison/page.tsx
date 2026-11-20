@@ -53,6 +53,10 @@ function fmtDay(iso: string | null | undefined): string {
   return m ? `${m[3]}-${m[2]}-${m[1]}` : iso
 }
 
+// Requisition statuses while it is still being bought (mirrors backend po_split.PROCUREMENT_OPEN_STATUSES).
+const PROCUREMENT_OPEN = new Set(['approved', 'vendor_quotations', 'technical_evaluation', 'commercial_evaluation', 'vendor_selected',
+  'po_drafted', 'po_raised', 'po_approved', 'partially_received', 'received'])
+
 export default function QuotationComparisonPage() {
   // Procurement module; the R.F.Q › Quotation comparison tick below decides the page (2026-11-14).
   const { isAuthorized, isLoading } = useRequireApp('p2p')
@@ -129,18 +133,22 @@ export default function QuotationComparisonPage() {
     if (vendorParamHandled.current || !vendorParam || !rfq || !pr || !cmp) return
     vendorParamHandled.current = true
     if (quotes.some((q) => String(q.vendor_id) === vendorParam)) return
+    if (!PROCUREMENT_OPEN.has(pr.status)) return  // closed requisition: quotes are read-only
     Promise.resolve().then(() => { setPresetVendorId(vendorParam); setEditing('new') })
   }, [vendorParam, rfq, pr, cmp, quotes])
 
   if (linkError) return (<div><P2PNav /><InvalidRecordLink message={linkError} listHref="/dashboard/p2p/rfq" listLabel="Back to RFQs" /></div>)
   if (isLoading || !isAuthorized) return null
 
-  const canEdit = can('p2p', 'rfq', 'edit')
+  // Same rule as the server (po_split.is_procurement_open): once the requisition is closed, cancelled or
+  // rejected it is not being bought any more — quotes and awards are read-only (the server refuses them).
+  const prOpen = !pr || PROCUREMENT_OPEN.has(pr.status)
+  const canEdit = can('p2p', 'rfq', 'edit') && prOpen
   const canRecordQuote = canEdit && canFeature('p2p', 'rfq', 'vendor_quotes', 'create')
   const canAward = canEdit && canFeature('p2p', 'rfq', 'award', 'edit')
   const canExport = can('p2p', 'rfq', 'export') && canFeature('p2p', 'rfq', 'comparison', 'export')
     && (canEdit || canFeature('p2p', 'rfq', 'prices', 'view'))
-  const canCreatePo = can('p2p', 'purchase_orders', 'create')
+  const canCreatePo = can('p2p', 'purchase_orders', 'create') && prOpen
   const canAttachQuoteFile = canEdit && (canFeature('p2p', 'rfq', 'vendor_quotes', 'edit') || canFeature('p2p', 'rfq', 'vendor_quotes', 'create'))
   const inviteList = invites?.invites || []
   // Saved awards (from the server) vs the quantities on screen — the PO follows the saved awards.
@@ -208,6 +216,12 @@ export default function QuotationComparisonPage() {
         <button type="button" style={secondaryBtnStyle} onClick={() => rfq && router.push(recordPath('/dashboard/p2p/rfq', rfq))}>← Back</button>
       </div>
       {error && <div style={errBox}>{error}</div>}
+      {pr && !prOpen && (
+        <div role="status" style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(100,116,139,0.08)', border: '1px solid rgba(100,116,139,0.25)', color: '#334155', fontSize: 13 }}>
+          {pr.p2p_number} is {pr.status.replace(/_/g, ' ')} — it is not being bought any more, so the quotes and awards below are read-only.
+          To buy these items again, raise a new purchase requisition.
+        </div>
+      )}
 
       {rfq && pr && cmp && (
         <>

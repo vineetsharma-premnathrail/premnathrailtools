@@ -948,6 +948,14 @@ td { vertical-align: middle; }
 .nav-tabs-scroll::-webkit-scrollbar { display: none; }
 .nav-tabs-scroll > * { flex: none; margin-bottom: 0 !important; }
 .nav-cluster { min-width: 122px; justify-content: flex-end; }
+/* ‹ › over the ends of a tab row while more tabs are hidden that way (navScroll.ts places them). */
+.nav-tabs-arrow {
+  position: absolute; z-index: 2; width: 26px; height: 26px; padding: 0; border-radius: 999px;
+  border: 1px solid rgba(0,0,0,0.12); background: #fff; color: #44403c; box-shadow: 0 2px 6px rgba(15,23,42,0.12);
+  align-items: center; justify-content: center; font-size: 18px; line-height: 1; cursor: pointer;
+}
+.nav-tabs-arrow:hover { color: rgb(255, 106, 42); border-color: rgba(255,106,42,0.45); }
+.nav-tabs-arrow:focus-visible { outline: 2px solid rgb(255, 106, 42); outline-offset: 2px; }
 @media (min-width: 641px) and (max-width: 1399px) {
   .nav-tabs-scroll .nav-tab-link svg { display: none; }
 }
