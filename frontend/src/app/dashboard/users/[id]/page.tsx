@@ -7,7 +7,7 @@ import { useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { useRequireOrgTab } from '@/app/dashboard/organization/_lib/useRequireOrgTab'
 import { approvalsApi, usersApi, organizationApi, rolesApi, securityApi } from '@/lib/api'
-import { User, BranchUserAssignment, Branch, Department, UserSession, UserActivity, UserDocument, PermissionRegistry, Role, EffectivePermissions, UserDataScopeRow, ApprovesInUser } from '@/types'
+import { User, Branch, UserSession, UserActivity, UserDocument, PermissionRegistry, Role, EffectivePermissions, UserDataScopeRow, ApprovesInUser } from '@/types'
 import PermissionMatrixEditor from '@/components/organization/PermissionMatrixEditor'
 import { TEXT, GLASS, SHADOWS, BRAND, BORDER } from '@/lib/theme'
 import { secondaryBtnStyle, primaryBtnStyle, Pill, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
@@ -23,7 +23,6 @@ import { useSodGuard } from '@/components/organization/useSodGuard'
 import AccessGovernancePanel from '@/components/organization/AccessGovernancePanel'
 import AccessTruthNote, { EffectiveAccess } from '@/components/organization/AccessTruthNote'
 import { moduleWords } from '@/lib/permissionWords'
-import ApprovesInPanel from '@/components/organization/ApprovesInPanel'
 import { governedUsersApi } from '@/lib/basisApi'
 import DateField from '@/components/erp/DateField'
 import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
@@ -53,18 +52,17 @@ function SheetField({ label, req, tour, basis = 200, children }: { label: string
 }
 const sheetRow: React.CSSProperties = { display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 14 }
 
-const TABS = ['User Details', 'Assignments', 'Roles & Permissions', 'Data Access', 'Permission History', 'Login History', 'User Activity', 'User Documents'] as const
+const TABS = ['User Details', 'Roles & Permissions', 'Data Access', 'Permission History', 'Login History', 'User Activity', 'User Documents'] as const
 
 export default function UserDetailPage() {
   const { user: currentUser, isAuthorized, isLoading } = useRequireOrgTab('users')
   const { can, canFeature } = useCan()
   // The permission registry / roles tab needs Organization › Role & Permissions 'View'.
   const canViewRoles = can('organization', 'roles', 'view')
-  // User tabs are features (core/features/organization.py): users.assignments / documents /
+  // User tabs are features (core/features/organization.py): users.documents /
   // login_history / activity, and roles.data_access for the Data Access tab.
   const seeTab = (t: typeof TABS[number]) => ({
     'User Details': true,
-    Assignments: canFeature('organization', 'users', 'assignments', 'view'),
     'Roles & Permissions': canViewRoles,
     'Data Access': canFeature('organization', 'roles', 'data_access', 'view'),
     'Permission History': canFeature('organization', 'users', 'activity', 'view'),
@@ -78,9 +76,7 @@ export default function UserDetailPage() {
   const userId = recordId ?? 0
 
   const [user, setUser] = useState<User | null>(null)
-  const [assignments, setAssignments] = useState<BranchUserAssignment[]>([])
   const [branches, setBranches] = useState<Branch[]>([])
-  const [departments, setDepartments] = useState<Department[]>([])
   const [sessions, setSessions] = useState<UserSession[]>([])
   const [activity, setActivity] = useState<UserActivity[]>([])
   const [documents, setDocuments] = useState<UserDocument[]>([])
@@ -93,18 +89,16 @@ export default function UserDetailPage() {
     setError('')
     Promise.all([
       usersApi.getUser(userId),
-      seeTab('Assignments') ? usersApi.listUserAssignments(userId) : Promise.resolve([]),
       organizationApi.listBranches(),
-      organizationApi.listDepartments(),
       seeTab('Login History') ? usersApi.listUserSessions(userId) : Promise.resolve([]),
       seeTab('User Activity') ? usersApi.listUserActivity(userId) : Promise.resolve([]),
       seeTab('User Documents') ? usersApi.listUserDocuments(userId) : Promise.resolve([]),
       canViewRoles ? usersApi.getPermissionRegistry() : Promise.resolve(null),
       seeTab('Permission History') ? usersApi.listPermissionHistory(userId) : Promise.resolve([]),
     ])
-      .then(([u, a, b, d, s, act, docs, reg, permHist]) => {
+      .then(([u, b, s, act, docs, reg, permHist]) => {
         setUser(u)
-        setAssignments(a); setBranches(b); setDepartments(d); setSessions(s); setActivity(act); setDocuments(docs)
+        setBranches(b); setSessions(s); setActivity(act); setDocuments(docs)
         setRegistry(reg); setPermissionHistory(permHist)
       })
       .catch((err: unknown) => setError(extractErrorMessages(err, 'Could not load this user (profile, sessions, activity, documents or permission matrix). Reload the page; if it keeps failing, check the user still exists in Users & Roles.').join(' ')))
@@ -170,10 +164,9 @@ export default function UserDetailPage() {
       </div>
 
       {(tab === 'User Details' || !seeTab(tab)) && <UserDetailsTab user={user} isSelf={isSelf} onRefresh={load} />}
-      {tab === 'Assignments' && seeTab(tab) && <AssignmentsTab user={user} assignments={assignments} branches={branches} departments={departments} onRefresh={load} />}
       {tab === 'Roles & Permissions' && registry && <RolesPermissionsTab user={user} registry={registry} onRefresh={load} />}
       {tab === 'Permission History' && seeTab(tab) && <PermissionHistoryTab history={permissionHistory} />}
-      {tab === 'Data Access' && seeTab(tab) && <DataAccessTab userId={userId} />}
+      {tab === 'Data Access' && seeTab(tab) && <DataAccessTab userId={userId} branches={branches} />}
       {tab === 'Login History' && seeTab(tab) && <LoginHistoryTab userId={userId} sessions={sessions} onRefresh={load} />}
       {tab === 'User Activity' && seeTab(tab) && <UserActivityTab activity={activity} />}
       {tab === 'User Documents' && seeTab(tab) && <UserDocumentsTab userId={userId} documents={documents} onRefresh={load} />}
@@ -189,14 +182,12 @@ function UserDetailsTab({ user, isSelf, onRefresh }: { user: User; isSelf: boole
   const [error, setError] = useState('')
   const [toggling, setToggling] = useState(false)
   const { can } = useCan()
-  // Approval stages this person takes part in (read-only; set up in Approval Workflows).
+  // Approval stages this person takes part in — only for the deactivate warning and the "waiting" pill.
   const [approvesIn, setApprovesIn] = useState<ApprovesInUser | null>(null)
-  const [approvesErr, setApprovesErr] = useState('')
   const [askDeactivate, setAskDeactivate] = useState(false)
 
   useEffect(() => {
-    approvalsApi.approvesInUser(user.id).then(setApprovesIn)
-      .catch((err) => setApprovesErr(extractErrorMessages(err, 'Could not load the approvals this person takes part in.').join(' ')))
+    approvalsApi.approvesInUser(user.id).then(setApprovesIn).catch(() => setApprovesIn(null))
   }, [user.id])
 
   // Deactivating someone who is the only approver of a stage, or who has
@@ -246,7 +237,7 @@ function UserDetailsTab({ user, isSelf, onRefresh }: { user: User; isSelf: boole
         </button> : undefined}
       />
       <div data-tour="org-user-details-grid">
-        <DetailGroup title="Work & contact">
+        <DetailGroup title="Work & contact" last>
           <DetailRow label="Designation">{user.designation}</DetailRow>
           <DetailRow label="Department">{user.department}</DetailRow>
           <DetailRow label="Office location">{user.office_location}</DetailRow>
@@ -256,12 +247,6 @@ function UserDetailsTab({ user, isSelf, onRefresh }: { user: User; isSelf: boole
           <DetailRow label="Phone">{user.phone}</DetailRow>
         </DetailGroup>
       </div>
-      <DetailGroup title="Approves in" last>
-        <p style={{ fontSize: 12, color: TEXT.muted, margin: '2px 0 10px' }}>
-          Read-only — the approval stages this person can decide, from Organization › Approval Workflows (the only place approvals are set up).
-        </p>
-        <ApprovesInPanel rows={approvesIn ? approvesIn.stages : null} error={approvesErr} empty="Not an approver in any workflow." />
-      </DetailGroup>
     </DetailCard>
   )
 }
@@ -269,168 +254,6 @@ function UserDetailsTab({ user, isSelf, onRefresh }: { user: User; isSelf: boole
 // ---------------------------------------------------------------------------
 // Assignments
 // ---------------------------------------------------------------------------
-
-function emptyAssignment() {
-  return { branch_id: '', employee_id: '', department_id: '', designation: '', role: '', access_level: '', is_primary_branch: false, effective_from: '', effective_to: '', status: 'active' }
-}
-
-function AssignmentsTab({ user, assignments, branches, departments, onRefresh }: {
-  user: User; assignments: BranchUserAssignment[]; branches: Branch[]; departments: Department[]; onRefresh: () => void
-}) {
-  const [editing, setEditing] = useState<BranchUserAssignment | null>(null)
-  const [formOpen, setFormOpen] = useState(false)
-  const [form, setForm] = useState(emptyAssignment())
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const [formError, setFormError] = useState('')
-  const [deleteTarget, setDeleteTarget] = useState<BranchUserAssignment | null>(null)
-  const { canFeature } = useCan()
-  // Same rule as the backend: User › Assignments 'Edit' or Plant › Users 'Edit' maintains plant assignments.
-  const canEditAsg = canFeature('organization', 'users', 'assignments', 'edit') || canFeature('organization', 'branches', 'user_assignments', 'edit')
-
-  const startAdd = () => { setEditing(null); setForm(emptyAssignment()); setFormError(''); setFormOpen(true) }
-  const startEdit = (a: BranchUserAssignment) => {
-    setEditing(a)
-    setFormError('')
-    setFormOpen(true)
-    setForm({
-      branch_id: String(a.branch_id), employee_id: a.employee_id || '', department_id: a.department_id ? String(a.department_id) : '',
-      designation: a.designation || '', role: a.role || '', access_level: a.access_level || '',
-      is_primary_branch: a.is_primary_branch, effective_from: a.effective_from || '', effective_to: a.effective_to || '', status: a.status,
-    })
-  }
-  const cancel = () => { setEditing(null); setForm(emptyAssignment()); setFormOpen(false) }
-
-  const submit = async () => {
-    if (!form.branch_id) { setFormError('Branch is required'); return }
-    setSaving(true)
-    setFormError('')
-    try {
-      const payload = {
-        ...form,
-        user_id: user.id,
-        department_id: form.department_id ? Number(form.department_id) : null,
-        effective_from: form.effective_from || null,
-        effective_to: form.effective_to || null,
-      }
-      if (editing) await organizationApi.updateBranchUserAssignment(editing.branch_id, editing.id, payload)
-      else await organizationApi.createBranchUserAssignment(Number(form.branch_id), payload)
-      cancel()
-      onRefresh()
-    } catch (err: unknown) {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setFormError(detail || 'Failed to save assignment.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const doDelete = async () => {
-    if (!deleteTarget) return
-    try {
-      await organizationApi.deleteBranchUserAssignment(deleteTarget.branch_id, deleteTarget.id)
-      setDeleteTarget(null)
-      onRefresh()
-    } catch (err) {
-      setError(extractErrorMessages(err, 'Failed to delete assignment.').join(' '))
-      setDeleteTarget(null)
-    }
-  }
-
-  const departmentsForBranch = form.branch_id ? departments.filter((d) => d.branch_id === Number(form.branch_id)) : departments
-
-  return (
-    <div style={sectionStyle}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 10, flexWrap: 'wrap' }}>
-        <h2 style={{ fontSize: 14, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Assignments</h2>
-        {canEditAsg && <button type="button" data-tour="org-user-asg-add" onClick={startAdd} style={primaryBtnStyle}>+ Add Assignment</button>}
-      </div>
-
-      <MessageDialog open={!!error} variant="error" title="Assignment Error" message={error} onClose={() => setError('')} />
-      <ConfirmDialog open={!!deleteTarget} title="Remove this assignment?" message={`Remove this branch assignment for "${user.name}"? This cannot be undone.`} onConfirm={doDelete} onCancel={() => setDeleteTarget(null)} />
-
-      {canEditAsg && formOpen && (
-        <FormSheet width={640} icon="building" title={editing ? 'Edit Assignment' : 'Add Assignment'}
-          subtitle={editing ? `${user.name} at ${branches.find((b) => b.id === editing.branch_id)?.name || `Branch #${editing.branch_id}`}` : `Post ${user.name} to a branch`}
-          onClose={cancel} busy={saving}
-          footer={<>
-            <button type="button" data-tour="org-user-asg-cancel" onClick={cancel} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
-            <button type="button" data-tour="org-user-asg-save" onClick={submit} disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)}>
-              <SheetIcon name="check" size={16} />{saving ? 'Saving…' : editing ? 'Save Changes' : 'Save Assignment'}
-            </button>
-          </>}>
-          <div style={{ padding: '20px 24px' }}>
-            {formError && <div style={sheetErrBox}>{formError}</div>}
-            <SheetSection icon="building" title="Branch & post">
-              <div style={sheetRow}>
-                <SheetField label="Branch" req>
-                  <Select data-tour="org-user-asg-branch" style={sheetInput} value={form.branch_id} onChange={(e) => setForm((f) => ({ ...f, branch_id: e.target.value }))} disabled={!!editing}>
-                    <option value="">— Select —</option>
-                    {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-                  </Select>
-                </SheetField>
-                <SheetField label="Employee ID"><input data-tour="org-user-asg-empid" style={sheetInput} value={form.employee_id} onChange={(e) => setForm((f) => ({ ...f, employee_id: e.target.value }))} /></SheetField>
-              </div>
-              {editing && <p style={{ ...sheetHint, margin: '-8px 0 14px' }}>Branch is locked while editing — remove and re-add to move someone to a different branch.</p>}
-              <div style={sheetRow}>
-                <SheetField label="Department">
-                  <Select data-tour="org-user-asg-dept" style={sheetInput} value={form.department_id} onChange={(e) => setForm((f) => ({ ...f, department_id: e.target.value }))}>
-                    <option value="">— Select —</option>
-                    {departmentsForBranch.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-                  </Select>
-                </SheetField>
-                <SheetField label="Designation"><input data-tour="org-user-asg-designation" style={sheetInput} value={form.designation} onChange={(e) => setForm((f) => ({ ...f, designation: e.target.value }))} /></SheetField>
-              </div>
-              <div style={{ ...sheetRow, marginBottom: 0 }}>
-                <SheetField label="Role"><input data-tour="org-user-asg-role" style={sheetInput} value={form.role} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))} /></SheetField>
-                <SheetField label="Access Level">
-                  <Select data-tour="org-user-asg-access" style={sheetInput} value={form.access_level} onChange={(e) => setForm((f) => ({ ...f, access_level: e.target.value }))}>
-                    <option value="">— Select —</option>
-                    <option value="view">View</option>
-                    <option value="edit">Edit</option>
-                    <option value="admin">Admin</option>
-                  </Select>
-                </SheetField>
-              </div>
-            </SheetSection>
-            <SheetSection icon="calendar" title="Validity & status">
-              <div style={sheetRow}>
-                <SheetField label="Effective From" tour="org-user-asg-from" basis={160}><DateField value={form.effective_from} onChange={(v) => setForm((f) => ({ ...f, effective_from: v }))} /></SheetField>
-                <SheetField label="Effective To" tour="org-user-asg-to" basis={160}><DateField value={form.effective_to} onChange={(v) => setForm((f) => ({ ...f, effective_to: v }))} /></SheetField>
-                <SheetField label="Status" req basis={140}>
-                  <Select data-tour="org-user-asg-status" style={sheetInput} value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}>
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                  </Select>
-                </SheetField>
-              </div>
-              <div data-tour="org-user-asg-primary">
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: SHEET.BODY }}><input type="checkbox" checked={form.is_primary_branch} onChange={(e) => setForm((f) => ({ ...f, is_primary_branch: e.target.checked }))} /> Primary Branch</label>
-                <p style={sheetHint}>Tick for the person&apos;s main branch (one per person). Leave Effective To blank if open-ended.</p>
-              </div>
-            </SheetSection>
-          </div>
-        </FormSheet>
-      )}
-
-      {assignments.length === 0 ? <p style={orgEmptyStyle}>No branch assignments yet{canEditAsg ? ' — use + Add Assignment to post this person to a branch.' : '.'}</p> : (
-        <div data-tour="org-user-asg-list">
-          {assignments.map((a, i) => (
-            <OrgListItem key={a.id} last={i === assignments.length - 1}
-              title={branches.find((b) => b.id === a.branch_id)?.name || `Branch #${a.branch_id}`}
-              sub={a.role || undefined}
-              tags={<>{a.is_primary_branch && <Pill label="Primary branch" hex="#047857" />}{a.status && a.status !== 'active' && <Pill label="Inactive" hex="#64748b" />}</>}
-              body={[a.designation, a.department_name, a.access_level ? `${a.access_level.charAt(0).toUpperCase()}${a.access_level.slice(1)} access` : '', a.employee_id ? `Emp. ID ${a.employee_id}` : '', a.effective_from ? `From ${formatDate(a.effective_from)}${a.effective_to ? ` to ${formatDate(a.effective_to)}` : ''}` : ''].filter(Boolean).join(' · ') || '—'}
-              action={canEditAsg ? <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
-                <button type="button" style={linkBtnStyle} onClick={() => startEdit(a)}>Edit</button>
-                <button type="button" style={dangerLinkStyle} onClick={() => setDeleteTarget(a)}>Remove</button>
-              </div> : null} />
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
 
 // ---------------------------------------------------------------------------
 // Roles & Permissions
@@ -664,15 +487,21 @@ const SCOPE_OPTIONS: [string, string][] = [
 ]
 
 /** Personal data-scope overrides — beat whatever the user's roles give for a module. */
-function DataAccessTab({ userId }: { userId: number }) {
+function DataAccessTab({ userId, branches }: { userId: number; branches: Branch[] }) {
   const { canFeature } = useCan()
   const canEdit = canFeature('organization', 'roles', 'data_access', 'edit')
   const [rows, setRows] = useState<UserDataScopeRow[]>([])
   const [draft, setDraft] = useState<Record<string, string>>({})
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  // Plants a "Multiple plants" scope covers, besides the person's own branch (always included).
+  const [plants, setPlants] = useState<{ home_branch_id: number | null; plant_ids: number[] } | null>(null)
+  const [plantDraft, setPlantDraft] = useState<number[]>([])
 
   useEffect(() => {
+    securityApi.userDataPlants(userId)
+      .then((p) => { setPlants(p); setPlantDraft(p.plant_ids) })
+      .catch((err) => setError(extractErrorMessages(err, 'Could not load the plants for "Multiple plants".').join(' ')))
     securityApi.userDataScopes(userId)
       .then((r) => { setRows(r); setDraft(Object.fromEntries(r.filter((x) => x.override).map((x) => [x.module_key, x.override as string]))) })
       .catch((err) => setError(extractErrorMessages(err, 'Could not load data access.').join(' ')))
@@ -682,6 +511,8 @@ function DataAccessTab({ userId }: { userId: number }) {
     try {
       const r = await securityApi.saveUserDataScopes(userId, draft)
       setRows(r)
+      const p = await securityApi.saveUserDataPlants(userId, plantDraft)
+      setPlants(p); setPlantDraft(p.plant_ids)
       setNotice('Data access saved. It applies on the user\u2019s next page load.')
     } catch (err) {
       setError(extractErrorMessages(err, 'Could not save data access.').join(' '))
@@ -708,6 +539,31 @@ function DataAccessTab({ userId }: { userId: number }) {
             <span style={{ width: 190, fontSize: 12, color: TEXT.muted }}>now: {r.effective_label}</span>
           </div>
         ))}
+      </div>
+      <div data-tour="org-user-data-plants" style={{ marginTop: 18, paddingTop: 14, borderTop: `1px solid ${BORDER.light}`, maxWidth: 680 }}>
+        <h3 style={{ fontSize: 13, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Plants for “Multiple plants”</h3>
+        <p style={{ fontSize: 12.5, color: TEXT.secondary, margin: '0 0 10px' }}>
+          A module set to “Multiple plants” (here or by a role) shows this person the records of their own branch plus the plants ticked here.
+          “Plant / branch” shows only their own branch.
+        </p>
+        {!plants ? <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>Loading…</p> : branches.length === 0 ? (
+          <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>No branches yet — add them in Organization › Branches.</p>
+        ) : (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 18px' }}>
+            {[...branches].sort((a, b) => a.name.localeCompare(b.name)).map((b) => {
+              const home = b.id === plants.home_branch_id
+              const on = home || plantDraft.includes(b.id)
+              return (
+                <label key={b.id} title={home ? 'Their own branch — always included' : undefined}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: TEXT.body, cursor: canEdit && !home ? 'pointer' : 'default' }}>
+                  <input type="checkbox" checked={on} disabled={!canEdit || home}
+                    onChange={(e) => setPlantDraft((d) => (e.target.checked ? [...d, b.id] : d.filter((x) => x !== b.id)))} />
+                  {b.name}{home && <span style={{ fontSize: 11.5, color: TEXT.muted }}>(own branch)</span>}
+                </label>
+              )
+            })}
+          </div>
+        )}
       </div>
       {canEdit && (
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>

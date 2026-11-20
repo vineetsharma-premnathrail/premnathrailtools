@@ -23,6 +23,18 @@ export function navScrollRef(el: HTMLElement | null): (() => void) | void {
     update()
   }
   const raf = requestAnimationFrame(reveal)
+  // A mouse wheel scrolls up / down only; while the tab row can still move sideways, turn it into
+  // sideways scrolling so every tab is reachable without a trackpad (the scroll bar is hidden).
+  const wheel = (e: WheelEvent) => {
+    if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return
+    const max = el.scrollWidth - el.clientWidth
+    if (max <= 1) return
+    const next = Math.min(max, Math.max(0, el.scrollLeft + e.deltaY))
+    if (next === el.scrollLeft) return
+    e.preventDefault()
+    el.scrollLeft = next
+  }
+  el.addEventListener('wheel', wheel, { passive: false })
   el.addEventListener('scroll', update, { passive: true })
   const ro = new ResizeObserver(update)
   ro.observe(el)
@@ -31,6 +43,7 @@ export function navScrollRef(el: HTMLElement | null): (() => void) | void {
   return () => {
     cancelAnimationFrame(raf)
     el.removeEventListener('scroll', update)
+    el.removeEventListener('wheel', wheel)
     ro.disconnect()
     mo.disconnect()
   }

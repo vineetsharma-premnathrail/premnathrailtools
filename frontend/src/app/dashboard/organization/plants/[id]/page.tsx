@@ -235,7 +235,7 @@ export default function PlantDetailPage() {
                 title={a.user_name || `User #${a.user_id}`}
                 sub={a.role || undefined}
                 tags={a.is_primary_branch ? <Pill label="Primary branch" hex="#047857" /> : null}
-                body={[a.designation, a.department_name, a.access_level, a.employee_id].filter(Boolean).join(' · ') || '—'} />
+                body={[a.is_primary_branch ? 'Primary branch' : '', a.effective_from ? `From ${a.effective_from}` : ''].filter(Boolean).join(' · ') || '—'} />
             ))}
           </div>
         )}

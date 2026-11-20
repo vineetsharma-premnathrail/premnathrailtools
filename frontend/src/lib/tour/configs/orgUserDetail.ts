@@ -40,59 +40,6 @@ const config: TourConfig = {
       why: 'When someone leaves, deactivate rather than delete — their PRs, approvals, and audit history must stay traceable to them.',
       after: 'Takes effect immediately. You cannot deactivate your own account (the button is greyed out).',
     },
-    // ---- Assignments ----
-    {
-      target: 'org-user-tab-assignments',
-      title: 'Assignments tab',
-      purpose: 'Which branches this person works at, and in what capacity. Same data as Branch Users on a branch\'s Edit page, seen from the person\'s side.',
-      autoActivate: true,
-    },
-    {
-      target: 'org-user-asg-add',
-      title: '+ Add Assignment',
-      purpose: 'Posts this person to a branch.',
-      after: 'Opens the Add Assignment popup (the tour opens it for you when you click Next).',
-      autoActivateOnAdvance: true,
-    },
-    {
-      target: 'org-user-asg-branch',
-      title: 'Branch',
-      required: true,
-      whatToEnter: 'Pick the branch. Locked while editing an existing assignment — remove and re-add to move someone to a different branch.',
-      invalidExample: '(blank) — "Branch is required".',
-    },
-    { target: 'org-user-asg-empid', title: 'Employee ID', validExample: 'PRT-0142' },
-    { target: 'org-user-asg-dept', title: 'Department', purpose: 'Only departments of the selected branch are listed.' },
-    { target: 'org-user-asg-designation', title: 'Designation', validExample: 'Purchase Executive' },
-    { target: 'org-user-asg-role', title: 'Role', purpose: 'Their role at this branch (free text).', validExample: 'Store Incharge' },
-    {
-      target: 'org-user-asg-access',
-      title: 'Access Level',
-      options: [
-        { value: 'View', meaning: 'Can see this branch\'s records only.' },
-        { value: 'Edit', meaning: 'Can create and change this branch\'s records.' },
-        { value: 'Admin', meaning: 'Full control of this branch\'s records.' },
-      ],
-    },
-    { target: 'org-user-asg-from', title: 'Effective From', purpose: 'Date the assignment starts.' },
-    { target: 'org-user-asg-to', title: 'Effective To', purpose: 'Leave blank if open-ended; fill on transfer.' },
-    {
-      target: 'org-user-asg-status',
-      title: 'Status',
-      options: [
-        { value: 'Active', meaning: 'Current assignment.' },
-        { value: 'Inactive', meaning: 'Past assignment kept for history.' },
-      ],
-    },
-    { target: 'org-user-asg-primary', title: 'Primary Branch', purpose: 'Tick for the person\'s main branch (one per person).' },
-    { target: 'org-user-asg-save', title: 'Save Assignment', purpose: 'Saves immediately.', after: 'The popup closes and the assignment appears in the list below and on that branch\'s Branch Users tab.' },
-    {
-      target: 'org-user-asg-cancel',
-      title: 'Cancel',
-      purpose: 'Closes the popup without saving. (The tour closes it for you when you click Next.)',
-      autoActivateOnAdvance: true,
-    },
-    { target: 'org-user-asg-list', title: 'Current assignments', purpose: 'Edit opens one in the same popup; Remove deletes it after confirmation.' },
     // ---- Roles & Permissions ----
     {
       target: 'org-user-tab-roles-&-permissions',

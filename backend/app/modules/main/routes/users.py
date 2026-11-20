@@ -387,6 +387,78 @@ async def update_user_data_scopes(
     return _data_scope_rows(target)
 
 
+class UserDataPlantsUpdate(BaseModel):
+    plant_ids: list[int] = []
+
+
+def _current_plant_rows(db: Session, user_id: int) -> list[BranchUserAssignment]:
+    """Active assignments that count today — the plants a "Multiple plants" scope covers (data_scope.user_branch_ids)."""
+    today = date.today()
+    return [r for r in db.query(BranchUserAssignment).filter(BranchUserAssignment.user_id == user_id, BranchUserAssignment.status == "active").all()
+            if not (r.effective_from and r.effective_from > today) and not (r.effective_to and r.effective_to < today)]
+
+
+def _data_plants_out(db: Session, target: User) -> dict:
+    ids = sorted({r.branch_id for r in _current_plant_rows(db, target.id)} - ({target.branch_id} if target.branch_id else set()))
+    return {"home_branch_id": target.branch_id, "plant_ids": ids}
+
+
+@router.get("/{user_id}/data-plants")
+async def get_user_data_plants(
+    user_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_feature_action("organization", "roles", "data_access", "view")),
+):
+    """Plants a "Multiple plants" data scope covers for this user, besides their own branch (always included)."""
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    return _data_plants_out(db, target)
+
+
+@router.put("/{user_id}/data-plants")
+async def update_user_data_plants(
+    user_id: int,
+    payload: UserDataPlantsUpdate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_feature_action("organization", "roles", "data_access", "edit")),
+):
+    """Set the plants of the "Multiple plants" scope from the Data Access tab. Stored as branch assignments
+    (the same rows data_scope, Maintenance and the branch's user list read): a newly ticked plant gets an
+    active row from today, an unticked one is ended today (kept for history), so nobody's history is lost."""
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    _ensure_may_manage(admin, target, own_access=True)
+    wanted = set(payload.plant_ids) - ({target.branch_id} if target.branch_id else set())
+    known = {b.id: b.name for b in db.query(Branch).filter(Branch.id.in_(wanted)).all()} if wanted else {}
+    missing = wanted - set(known)
+    if missing:
+        raise HTTPException(status_code=422, detail="One of the picked plants no longer exists — reload the page and pick again.")
+    today = date.today()
+    current = _current_plant_rows(db, user_id)
+    have = {r.branch_id for r in current}
+    added, removed = sorted(wanted - have), sorted(have - wanted - ({target.branch_id} if target.branch_id else set()))
+    for r in current:
+        if r.branch_id in removed:
+            r.status, r.effective_to = "inactive", today
+    for bid in added:
+        db.add(BranchUserAssignment(branch_id=bid, user_id=user_id, is_primary_branch=False, status="active", effective_from=today))
+    if added or removed:
+        names = {b.id: b.name for b in db.query(Branch).filter(Branch.id.in_(added + removed)).all()}
+        db.add(AuditLog(
+            entity_type="user_permissions", entity_id=user_id, action="update", module_key="organization",
+            summary=f"{admin.name} changed the plants {target.name} sees under \"Multiple plants\": "
+                    + "; ".join(([f"added {', '.join(names.get(i, str(i)) for i in added)}"] if added else [])
+                                + ([f"removed {', '.join(names.get(i, str(i)) for i in removed)}"] if removed else [])),
+            performed_by_id=admin.id,
+        ))
+        from app.modules.main.routes.roles import notify_access_changed
+        notify_access_changed(db, [target], admin, f"{admin.name} changed which plants' records you can see (data access).")
+    db.commit()
+    return _data_plants_out(db, target)
+
+
 class UserNotificationOverridesUpdate(BaseModel):
     # "<module>.<event>" -> channels; [] = off for this user; missing = follow roles.
     overrides: dict[str, list[str]] = {}

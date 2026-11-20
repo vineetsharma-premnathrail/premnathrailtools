@@ -301,7 +301,7 @@ export default function EditPlantPage() {
               </>
             )}
 
-            {tab === 'Branch Users' && editUsers && <UserAssignmentsEditor branchId={plantId} assignments={assignments} directory={directory} departments={departments} onRefresh={loadLists} />}
+            {tab === 'Branch Users' && editUsers && <UserAssignmentsEditor assignments={assignments} />}
 
             {tab === 'Branch Departments' && (
               <div data-tour="org-plant-edit-depts">
@@ -454,136 +454,25 @@ function AddressesEditor({ branchId, addresses, onRefresh }: { branchId: number;
 // Branch Users
 // ---------------------------------------------------------------------------
 
-function emptyAssignment() {
-  return { user_id: '', employee_id: '', department_id: '', designation: '', role: '', access_level: '', is_primary_branch: false, effective_from: '', effective_to: '', status: 'active' }
-}
-
-function UserAssignmentsEditor({ branchId, assignments, directory, departments, onRefresh }: {
-  branchId: number; assignments: BranchUserAssignment[]; directory: DirectoryUser[]; departments: Department[]; onRefresh: () => void
-}) {
-  const [editingId, setEditingId] = useState<number | null>(null)
-  const [form, setForm] = useState(emptyAssignment())
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const [deleteTarget, setDeleteTarget] = useState<BranchUserAssignment | null>(null)
-  const set = (k: keyof ReturnType<typeof emptyAssignment>, v: string | boolean) => setForm((f) => ({ ...f, [k]: v }))
-
-  const startEdit = (a: BranchUserAssignment) => {
-    setEditingId(a.id)
-    setError('')
-    setForm({
-      user_id: String(a.user_id), employee_id: a.employee_id || '', department_id: a.department_id ? String(a.department_id) : '',
-      designation: a.designation || '', role: a.role || '', access_level: a.access_level || '',
-      is_primary_branch: a.is_primary_branch, effective_from: a.effective_from || '', effective_to: a.effective_to || '', status: a.status,
-    })
-  }
-  const cancel = () => { setEditingId(null); setForm(emptyAssignment()) }
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!form.user_id) { setError('User is required — pick the person in the User field.'); return }
-    setSaving(true)
-    setError('')
-    try {
-      const payload = {
-        ...form,
-        user_id: Number(form.user_id),
-        department_id: form.department_id ? Number(form.department_id) : null,
-        effective_from: form.effective_from || null,
-        effective_to: form.effective_to || null,
-      }
-      if (editingId) await organizationApi.updateBranchUserAssignment(branchId, editingId, payload)
-      else await organizationApi.createBranchUserAssignment(branchId, payload)
-      cancel()
-      onRefresh()
-    } catch (err: unknown) {
-      setError(extractErrorMessages(err, 'Could not save the branch user. Check the fields (Effective To must be after Effective From) and try again.').join(' '))
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const doDelete = async () => {
-    if (!deleteTarget) return
-    try {
-      await organizationApi.deleteBranchUserAssignment(branchId, deleteTarget.id)
-      setDeleteTarget(null)
-      onRefresh()
-    } catch (err) {
-      setError(extractErrorMessages(err, 'Failed to delete assignment.').join(' '))
-      setDeleteTarget(null)
-    }
-  }
-
+/** Who sees this branch's records under "Multiple plants" — read-only. Plants are picked per person in
+ *  Organization › Users › (person) › Data Access, the one place a person's data access is set. */
+function UserAssignmentsEditor({ assignments }: { assignments: BranchUserAssignment[] }) {
+  const today = new Date().toISOString().slice(0, 10)
+  const live = assignments.filter((a) => a.status === 'active' && !(a.effective_from && a.effective_from > today) && !(a.effective_to && a.effective_to < today))
   return (
     <SheetSection icon="users" title="Branch Users">
-      <ConfirmDialog open={!!deleteTarget} title="Remove this branch user?" message={`Remove "${deleteTarget?.user_name}" from this branch? This cannot be undone.`} onConfirm={doDelete} onCancel={() => setDeleteTarget(null)} />
-
-      <form onSubmit={submit} style={subFormStyle}>
-        <SubFormHead title={editingId ? 'Edit Branch User' : 'Add Branch User'} editing={!!editingId} onCancel={cancel} />
-        <SheetError error={error} />
-        <div style={rowStyle}>
-          <F label="User" req basis={240} max={340}>
-            <Select data-tour="org-plant-user-user" style={sheetInput} value={form.user_id} onChange={(e) => set('user_id', e.target.value)}>
-              <option value="">— Select —</option>
-              {directory.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-            </Select>
-          </F>
-          <F label="Employee ID" basis={140} max={200}><input data-tour="org-plant-user-empid" style={sheetInput} value={form.employee_id} onChange={(e) => set('employee_id', e.target.value)} /></F>
-          <F label="Department" basis={220} max={300}>
-            <Select data-tour="org-plant-user-dept" style={sheetInput} value={form.department_id} onChange={(e) => set('department_id', e.target.value)}>
-              <option value="">— Select —</option>
-              {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-            </Select>
-          </F>
-        </div>
-        <div style={rowStyle}>
-          <F label="Designation" basis={200} max={280}><input data-tour="org-plant-user-designation" style={sheetInput} value={form.designation} onChange={(e) => set('designation', e.target.value)} /></F>
-          <F label="Role" basis={200} max={280}><input data-tour="org-plant-user-role" style={sheetInput} value={form.role} onChange={(e) => set('role', e.target.value)} /></F>
-          <F label="Access Level" basis={140} max={180}>
-            <Select data-tour="org-plant-user-access" style={sheetInput} value={form.access_level} onChange={(e) => set('access_level', e.target.value)}>
-              <option value="">— Select —</option>
-              <option value="view">View</option>
-              <option value="edit">Edit</option>
-              <option value="admin">Admin</option>
-            </Select>
-          </F>
-        </div>
-        <div style={rowStyle}>
-          <F label="Effective From" basis={170} max={220}><div data-tour="org-plant-user-from"><DateField value={form.effective_from} onChange={(v) => set('effective_from', v)} /></div></F>
-          <F label="Effective To" basis={170} max={220}><div data-tour="org-plant-user-to"><DateField value={form.effective_to} onChange={(v) => set('effective_to', v)} /></div></F>
-          <F label="Status" basis={130} max={170}>
-            <Select data-tour="org-plant-user-status" style={sheetInput} value={form.status} onChange={(e) => set('status', e.target.value)}>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-            </Select>
-          </F>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-          <div data-tour="org-plant-user-primary">
-            <label style={checkStyle}><input type="checkbox" checked={form.is_primary_branch} onChange={(e) => set('is_primary_branch', e.target.checked)} /> Primary Branch for this user</label>
-          </div>
-          <SaveBtn tour="org-plant-user-save" saving={saving} label={editingId ? 'Save Changes' : 'Save Branch User'} />
-        </div>
-      </form>
-
-      {assignments.length === 0 ? <p style={{ fontSize: 13, color: MUTED }}>No users assigned yet.</p> : (
+      <p style={{ fontSize: 12.5, color: MUTED, margin: '0 0 12px' }}>
+        People who also see this branch&apos;s records under the &ldquo;Multiple plants&rdquo; data access. To add or remove someone, open the
+        person in Organization › Users › Data Access and tick or untick this branch there.
+      </p>
+      {live.length === 0 ? <p style={{ fontSize: 13, color: MUTED }}>Nobody besides this branch&apos;s own people.</p> : (
         <div data-tour="org-plant-user-list" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {assignments.map((a) => (
+          {live.map((a) => (
             <div key={a.id} style={listRowStyle}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 13.5, fontWeight: 600, color: INK }}>{a.user_name || `User #${a.user_id}`}</span>
-                    {a.role && <span style={pill('#eff6ff', BLUE)}>{a.role}</span>}
-                    {a.is_primary_branch && <span style={pill('rgba(16,185,129,0.12)', '#047857')}>PRIMARY</span>}
-                  </div>
-                  <p style={{ fontSize: 12.5, color: MUTED, margin: 0 }}>{[a.designation, a.department_name, a.access_level, a.employee_id].filter(Boolean).join(' · ') || '—'}</p>
-                </div>
-                <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
-                  <button type="button" style={linkBtnStyle} onClick={() => startEdit(a)}>Edit</button>
-                  <button type="button" style={dangerLinkStyle} onClick={() => setDeleteTarget(a)}>Remove</button>
-                </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 13.5, fontWeight: 600, color: INK }}>{a.user_name || `User #${a.user_id}`}</span>
+                {a.is_primary_branch && <span style={pill('rgba(16,185,129,0.12)', '#047857')}>PRIMARY</span>}
+                {a.effective_from && <span style={{ fontSize: 12, color: MUTED }}>from {a.effective_from}</span>}
               </div>
             </div>
           ))}

@@ -60,9 +60,13 @@ def save_security_settings(db: Session, values: dict, actor) -> dict:
             continue
         if key not in LIMITS or value is None:
             continue
+        if value == current.get(key):
+            # Unchanged: the form sends every field, and a value that came from the server environment
+            # (e.g. ACCESS_TOKEN_EXPIRE_MINUTES) may sit outside the range — it must not block saving the others.
+            continue
         lo, hi, msg = LIMITS[key]
         if isinstance(value, bool) or not isinstance(value, int) or not lo <= value <= hi:
-            raise HTTPException(status_code=422, detail=msg)
+            raise HTTPException(status_code=422, detail=f"{msg} You entered {value}.")
         current[key] = value
     row = db.query(OrganizationSetting).filter(OrganizationSetting.key == SECURITY_KEY).first()
     old = dict(row.value) if row and isinstance(row.value, dict) else defaults()

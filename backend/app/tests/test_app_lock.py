@@ -169,3 +169,29 @@ def test_heartbeat_keeps_an_active_form_unlocked_but_never_unlocks(client, db):
     client.post(f"{LOCK}/lock", headers=h)
     assert client.post(f"{LOCK}/heartbeat", headers=h).json()["state"] == "locked"
     assert client.get(PROTECTED, headers=h).status_code == 423
+
+
+def test_security_save_keeps_an_unchanged_out_of_range_env_value(db):
+    """The form sends every field; a token lifetime that came from the server environment (e.g. 1440)
+    must not block saving another setting, while a changed out-of-range value is still refused."""
+    import pytest
+    from fastapi import HTTPException
+
+    from app.core.config import settings
+    from app.modules.main.models.user import User
+    from app.modules.organization.services import security as sec
+
+    actor = User(email="sec.saver@premnathrail.com", name="Sec Saver", role="admin", is_active=True)
+    db.add(actor)
+    db.commit()
+    old = settings.ACCESS_TOKEN_EXPIRE_MINUTES
+    settings.ACCESS_TOKEN_EXPIRE_MINUTES = 1440
+    try:
+        cur = sec.get_security_settings(db)
+        out = sec.save_security_settings(db, {**cur, "app_lock_idle_minutes": 60}, actor)
+        assert out["app_lock_idle_minutes"] == 60 and out["access_token_minutes"] == 1440
+        with pytest.raises(HTTPException) as e:
+            sec.save_security_settings(db, {"access_token_minutes": 1000}, actor)
+        assert e.value.status_code == 422 and "1000" in e.value.detail
+    finally:
+        settings.ACCESS_TOKEN_EXPIRE_MINUTES = old

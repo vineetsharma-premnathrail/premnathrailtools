@@ -206,44 +206,14 @@ const config: TourConfig = {
       validExample: 'PC-UNIT3',
     },
     { target: 'org-plant-op-currency', title: 'Currency', validExample: 'INR' },
-    // ---- Branch Users ----
+    // ---- Branch Users (read-only) ----
     {
       target: 'org-plant-edit-tab-branch-users',
       title: 'Branch Users tab',
-      purpose: 'Assign portal users to this branch with their department, role, and access level.',
+      purpose: 'People who also see this branch\'s records under the "Multiple plants" data access. Read-only here: tick or untick the branch in Organization › Users › (person) › Data Access.',
       autoActivate: true,
     },
-    { target: 'org-plant-user-user', title: 'User', required: true, whatToEnter: 'Pick the person from the user directory.' },
-    { target: 'org-plant-user-empid', title: 'Employee ID', purpose: 'Company employee code of this person.', validExample: 'PRT-0142' },
-    { target: 'org-plant-user-dept', title: 'Department', purpose: 'Department the person works in at this branch.' },
-    { target: 'org-plant-user-designation', title: 'Designation', validExample: 'Store Keeper' },
-    { target: 'org-plant-user-role', title: 'Role', purpose: 'Their role at this branch (free text, shown as a tag).', validExample: 'Shift Incharge' },
-    {
-      target: 'org-plant-user-access',
-      title: 'Access Level',
-      options: [
-        { value: 'View', meaning: 'Can see this branch\'s records only.' },
-        { value: 'Edit', meaning: 'Can create and change this branch\'s records.' },
-        { value: 'Admin', meaning: 'Full control of this branch\'s records.' },
-      ],
-    },
-    { target: 'org-plant-user-from', title: 'Effective From', purpose: 'Date the assignment starts.' },
-    { target: 'org-plant-user-to', title: 'Effective To', purpose: 'Date it ends — leave blank if open-ended (e.g. fill it on transfer).' },
-    {
-      target: 'org-plant-user-status',
-      title: 'Status',
-      options: [
-        { value: 'Active', meaning: 'Assignment is current.' },
-        { value: 'Inactive', meaning: 'Assignment is kept for history but no longer current.' },
-      ],
-    },
-    {
-      target: 'org-plant-user-primary',
-      title: 'Primary Branch for this user',
-      purpose: 'Tick if this is the person\'s main branch. A person can be assigned to several branches but has only one primary.',
-    },
-    { target: 'org-plant-user-save', title: 'Save Branch User', purpose: 'Saves the assignment immediately.', after: 'It shows in the list below.' },
-    { target: 'org-plant-user-list', title: 'Assigned users', purpose: 'Everyone assigned here. Edit reloads one into the form; Remove deletes the assignment after confirmation.' },
+    { target: 'org-plant-user-list', title: 'Users who see this branch', purpose: 'Everyone whose "Multiple plants" access includes this branch today.' },
     // ---- Departments (read-only) ----
     {
       target: 'org-plant-edit-tab-branch-departments',

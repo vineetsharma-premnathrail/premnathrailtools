@@ -128,7 +128,7 @@ export default function SystemMonitorPage() {
       </div>
 
       {tab === 'jobs' && (
-        <div style={{ ...cardStyle, overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
+        <div style={{ ...cardStyle, paddingTop: 0, overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
             <thead><tr><th style={th}>Job <RowCount count={jobs.length} /></th><th style={th}>Schedule</th><th style={th}>Next run</th><th style={th}>Last run</th><th style={th}>Result</th><th style={th}>Fails (7d)</th><th style={th}></th></tr></thead>
             <tbody>
@@ -167,7 +167,7 @@ export default function SystemMonitorPage() {
               </div>
             </div>
           )}
-          <div style={{ ...cardStyle, overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
+          <div style={{ ...cardStyle, paddingTop: 0, overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
             <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
               <input style={{ ...inputStyle, maxWidth: 380 }} placeholder="Error reference, message or exception…" value={errQuery} onChange={(e) => setErrQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') loadErrors() }} />
               <button type="button" style={secondaryBtnStyle} onClick={loadErrors}>Search</button>
@@ -207,7 +207,7 @@ export default function SystemMonitorPage() {
               })}
             </div>
           </div>
-          <div style={{ ...cardStyle, overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
+          <div style={{ ...cardStyle, paddingTop: 0, overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
               <thead><tr><th style={th}>When <RowCount count={denials.length} /></th><th style={th}>User</th><th style={th}>Missing permission (why)</th><th style={th}>Request</th><th style={th}>Times</th><th style={th}>Fix: a role that grants it</th></tr></thead>
               <tbody>

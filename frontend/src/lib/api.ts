@@ -5022,4 +5022,7 @@ export const securityApi = {
   signIns: async (params: { user_id?: number; failed_only?: boolean; limit?: number } = {}): Promise<import('@/types').SignInEvent[]> => { const { data } = await apiClient.get('/organization/security/sign-ins', { params }); return data },
   userDataScopes: async (userId: number): Promise<import('@/types').UserDataScopeRow[]> => { const { data } = await apiClient.get(`/users/${userId}/data-scopes`); return data },
   saveUserDataScopes: async (userId: number, overrides: Record<string, string>): Promise<import('@/types').UserDataScopeRow[]> => { const { data } = await apiClient.put(`/users/${userId}/data-scopes`, { overrides }); return data },
+  /** Plants a "Multiple plants" scope covers besides the person's own branch (Data Access tab). */
+  userDataPlants: async (userId: number): Promise<{ home_branch_id: number | null; plant_ids: number[] }> => { const { data } = await apiClient.get(`/users/${userId}/data-plants`); return data },
+  saveUserDataPlants: async (userId: number, plantIds: number[]): Promise<{ home_branch_id: number | null; plant_ids: number[] }> => { const { data } = await apiClient.put(`/users/${userId}/data-plants`, { plant_ids: plantIds }); return data },
 }
