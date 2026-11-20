@@ -983,23 +983,28 @@ async def withdraw_approval(approval_id: int, db: Session = Depends(get_db), use
 
 
 @router.post("/project-tasks/{task_id}/update")
-async def add_task_update(task_id: int, remarks: str = Form(...), files: list[UploadFile] | None = File(None),
+async def add_task_update(task_id: int, remarks: str = Form(""), files: list[UploadFile] | None = File(None),
                           db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Assignee posts progress (remarks + any files); the task stays open."""
+    """Post a note and / or share files on an open task; the task stays open. The assignee's files
+    are filed as work; the person who gave the task (e.g. the main task's assignee on a sub-task)
+    can also share files later — filed with the brief."""
     task = _task(db, task_id)
     project = _parent_of(db, task, user)
-    _ensure_assignee(task, user, "post an update on it")
+    if user.id not in (task.assigned_to_id, task.created_by_id):
+        raise HTTPException(status_code=403, detail="Only the person this task is assigned to, or the person who gave it, can post an update or share files on it.")
     _ensure_task_tick(user, "view")
     if task.status != "open":
-        raise HTTPException(status_code=409, detail=f"This task is {task.status} — updates can be added only while it is open.")
+        raise HTTPException(status_code=409, detail=f"This task is {task.status} — updates and files can be added only while it is open. Ask the person who gave it to reopen it first.")
     remarks = (remarks or "").strip()
-    if not remarks:
-        raise HTTPException(status_code=422, detail="Write the update — what you did or found so far.")
-    await _store_files(db, project, task, files, WORK, user)
-    _event(db, task, "update", user, remarks=remarks)
-    for uid in {task.created_by_id} - {user.id}:
+    has_files = any(f and f.filename for f in (files or []))
+    if not remarks and not has_files:
+        raise HTTPException(status_code=422, detail="Write the update or attach at least one file to share.")
+    is_assignee = user.id == task.assigned_to_id
+    await _store_files(db, project, task, files, WORK if is_assignee else BRIEF, user)
+    _event(db, task, "update", user, remarks=remarks or "Shared files.")
+    for uid in {task.created_by_id, task.assigned_to_id} - {user.id}:
         notify_user(db, uid, title=f"Task update ({project.project_number})",
-                    message=f"{_name(user)} on \"{task.title}\": {remarks[:200]}",
+                    message=f"{_name(user)} on \"{task.title}\": {remarks[:200] or 'shared new files.'}",
                     notification_type="rnd_project_task_update", entity_type=project.entity_type, entity_id=project.id)
     db.commit()
     return _serialize(db, [task])[0]

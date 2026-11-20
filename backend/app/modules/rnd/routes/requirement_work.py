@@ -53,7 +53,7 @@ from app.modules.rnd.services import requirements as intake
 from app.modules.rnd.services import task_approvals
 from app.modules.rnd.services import task_fields
 from app.utils.notifications import notify_user
-from app.utils.sharepoint import build_sharepoint_folder_path, download_file_content, get_download_url, upload_file_to_sharepoint
+from app.utils.sharepoint import build_sharepoint_folder_path, download_file_content, get_download_url, get_preview_url, upload_file_to_sharepoint
 
 
 def _require_requirement_side(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> User:
@@ -528,6 +528,19 @@ async def document_content(document_id: int, db: Session = Depends(get_db), user
     content, content_type = await download_file_content(settings.SHAREPOINT_SITE_ID, doc.sharepoint_path or "")
     return Response(content=content, media_type=doc.mime_type or content_type,
                     headers={"Content-Disposition": f'inline; filename="{doc.file_name}"'})
+
+
+@router.get("/documents/{document_id}/preview")
+async def document_preview(document_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Short-lived Microsoft-viewer link for the in-portal viewer (Word, Excel, PowerPoint, ...),
+    minted after the same checks as /content."""
+    doc = db.query(CrmDocument).filter(CrmDocument.id == document_id, CrmDocument.is_deleted == False).first()  # noqa: E712
+    if not doc:
+        raise HTTPException(status_code=404, detail="This document was deleted — refresh the page.")
+    _ensure_can_open(db, user, doc)
+    if not settings.SHAREPOINT_SITE_ID:
+        raise HTTPException(status_code=503, detail="File storage (SharePoint) isn't configured on the server, so files can't be opened. Ask IT to set SHAREPOINT_SITE_ID.")
+    return {"getUrl": await get_preview_url(settings.SHAREPOINT_SITE_ID, doc.sharepoint_path or "")}
 
 
 @router.get("/documents/{document_id}/download-url")
@@ -1048,25 +1061,30 @@ async def task_progress(task_id: int, payload: TaskProgressPayload, db: Session 
 
 
 @router.post("/tasks/{task_id}/update")
-async def add_task_update(task_id: int, remarks: str = Form(...), files: list[UploadFile] | None = File(None),
+async def add_task_update(task_id: int, remarks: str = Form(""), files: list[UploadFile] | None = File(None),
                           db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Assignee posts progress (remarks + any files); the task stays open."""
+    """Post a note and / or share files on an open task; the task stays open. The assignee's files
+    are filed as work; the person who gave the task (e.g. the main task's assignee on a sub-task)
+    can also share files later — filed with the brief."""
     task = _task(db, task_id)
-    _ensure_assignee(task, user, "post an update on it")
+    if user.id not in (task.assigned_to_id, task.created_by_id):
+        raise HTTPException(status_code=403, detail="Only the person this task is assigned to, or the person who gave it, can post an update or share files on it.")
     if ra.is_rnd_side(user):
         ensure_feature_action(user, "rnd", "requirements", "tasks", "view")
     if task.status != "open":
-        raise HTTPException(status_code=409, detail=f"This task is {task.status} — updates can be added only while it is open.")
+        raise HTTPException(status_code=409, detail=f"This task is {task.status} — updates and files can be added only while it is open. Ask the person who gave it to reopen it first.")
     remarks = (remarks or "").strip()
-    if not remarks:
-        raise HTTPException(status_code=422, detail="Write the update — what you did or found so far.")
+    has_files = any(f and f.filename for f in (files or []))
+    if not remarks and not has_files:
+        raise HTTPException(status_code=422, detail="Write the update or attach at least one file to share.")
+    is_assignee = user.id == task.assigned_to_id
     record = _record(db, task.source, task.record_id)
     await _store_files(db, source=task.source, record=record, files=files or [], sub_module=TASK_DOC, sub_id=task.id,
-                       category=TASK_WORK, user=user, folder=f"rnd-tasks/{task.id}")
-    _event(db, task, "update", user, remarks=remarks)
-    for uid in {task.created_by_id} - {user.id}:
+                       category=TASK_WORK if is_assignee else TASK_BRIEF, user=user, folder=f"rnd-tasks/{task.id}")
+    _event(db, task, "update", user, remarks=remarks or "Shared files.")
+    for uid in {task.created_by_id, task.assigned_to_id} - {user.id}:
         _notify(db, [uid], task.source, task.record_id, title=f"Update on task ({_ref(task.source, record)})",
-                    message=f"{_name(user)} on \"{task.title}\": {remarks[:200]}",
+                    message=f"{_name(user)} on \"{task.title}\": {remarks[:200] or 'shared new files.'}",
                     notification_type="rnd_task_update")
     db.commit()
     return _serialize_tasks(db, [task])[0]

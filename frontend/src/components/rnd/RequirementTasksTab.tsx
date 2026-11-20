@@ -42,7 +42,8 @@ export function requirementTaskApi(source: 'inquiry' | 'tender', recordId: numbe
     withdrawApproval: rndApi.withdrawApproval,
     reopen: rndApi.reopenTask,
     cancel: rndApi.cancelTask,
-    openDoc: rndApi.openWorkDocument,
+    docBlob: (d) => rndApi.getWorkDocumentBlob(d.id),
+    docPreview: (d) => rndApi.previewWorkDocument(d.id),
   }
 }
 

@@ -19,7 +19,7 @@ from app.modules.rnd.schemas.document import RndDocumentResponse
 from app.modules.rnd.service import user_names
 from app.utils.sharepoint import (
     upload_file_to_sharepoint, build_sharepoint_folder_path, delete_file_from_sharepoint,
-    download_file_content,
+    download_file_content, get_preview_url,
 )
 
 # Documents show up inside project pages as well as
@@ -223,6 +223,17 @@ async def upload_documents(
         db.refresh(d)
     numbers = _project_numbers(db, documents)
     return [_to_response(db, d, numbers) for d in documents]
+
+
+@router.get("/{document_id}/preview")
+async def preview_document(document_id: int, db: Session = Depends(get_db), user: User = Depends(require_app_access("rnd"))):
+    """Short-lived Microsoft-viewer link for the in-portal viewer (Word, Excel, PowerPoint, ...),
+    minted after the same checks as /content."""
+    doc = _get_or_404(db, document_id, user=user)
+    _ensure_can_open(user, doc)
+    if not settings.SHAREPOINT_SITE_ID:
+        raise HTTPException(status_code=503, detail=_STORAGE_NOT_CONFIGURED)
+    return {"getUrl": await get_preview_url(settings.SHAREPOINT_SITE_ID, doc.sharepoint_path or "")}
 
 
 @router.get("/{document_id}/content")

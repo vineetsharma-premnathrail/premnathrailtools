@@ -29,6 +29,7 @@ import { formatDate, formatDateTime } from '@/lib/format'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import { dangerBtnStyle, smallSecondaryBtnStyle, btnBase, smallBtnSize, chipBtnStyle, RowCount, inputStyle as sharedInputStyle, pillStyle } from '@/components/shared/ui'
+import FileViewDownload from '@/components/shared/FileViewDownload'
 import { FormSheet, SheetColumns, SheetSection, SheetIcon, SheetIconName, FileDropZone, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
 import { extractErrorMessages } from '@/lib/validation'
 import { useAuthStore } from '@/store/authStore'
@@ -59,7 +60,10 @@ export interface TaskApi {
   withdrawApproval: (approvalId: number) => Promise<RndTask>
   reopen: (taskId: number, remarks: string, newDueDate?: string) => Promise<RndTask>
   cancel: (taskId: number, remarks: string) => Promise<RndTask>
-  openDoc: (d: RndWorkDocument) => Promise<void>
+  /** A task file's bytes — in-portal viewer and Download (saved with its real name and format). */
+  docBlob: (d: RndWorkDocument) => Promise<Blob>
+  /** Microsoft-viewer link for Word / Excel / PowerPoint in the in-portal viewer. */
+  docPreview: (d: RndWorkDocument) => Promise<{ getUrl: string }>
 }
 
 export interface TaskLabels {
@@ -211,27 +215,27 @@ const todayIso = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-function DocChips({ docs, onOpen }: { docs: RndWorkDocument[]; onOpen: (d: RndWorkDocument) => void }) {
+/** Task files: each with View (in-portal viewer) and Download (original name and format, unchanged). */
+function DocChips({ docs, api }: { docs: RndWorkDocument[]; api: TaskApi }) {
   return (
-    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
       {docs.map((d) => (
-        <button key={d.id} type="button" onClick={() => onOpen(d)} title={d.uploaded_by ? `Uploaded by ${d.uploaded_by}` : 'Open document'}
-          style={chipBtnStyle(false)}>
-          📄 {d.name}
-        </button>
+        <span key={d.id} title={d.uploaded_by ? `Uploaded by ${d.uploaded_by}` : undefined} style={{ maxWidth: '100%' }}>
+          <FileViewDownload file={{ id: d.id, filename: d.name, size: d.file_size }}
+            getBlob={() => api.docBlob(d)} getPreviewUrl={() => api.docPreview(d)} />
+        </span>
       ))}
     </div>
   )
 }
 
 /** Approval requests on a task: the reviewer approves / rejects pending ones, the requester can withdraw. */
-function ApprovalList({ approvals, canDecide, userId, api, onChanged, onOpen }: {
+function ApprovalList({ approvals, canDecide, userId, api, onChanged }: {
   approvals: RndTaskApproval[]
   canDecide: boolean
   userId: number
   api: TaskApi
   onChanged: (t: RndTask) => void
-  onOpen: (d: RndWorkDocument) => void
 }) {
   const [remarks, setRemarks] = useState('')
   const [busy, setBusy] = useState(false)
@@ -265,7 +269,7 @@ function ApprovalList({ approvals, canDecide, userId, api, onChanged, onOpen }: 
                 <span style={pillStyle(hex)}>{APPROVAL_LABELS[a.status] || a.status}</span>
               </div>
               <p style={{ fontSize: 13, color: TEXT.body, margin: '6px 0 0', whiteSpace: 'pre-wrap' }}>{a.request}</p>
-              {a.documents.length > 0 && <div style={{ marginTop: 6 }}><DocChips docs={a.documents} onOpen={onOpen} /></div>}
+              {a.documents.length > 0 && <div style={{ marginTop: 6 }}><DocChips docs={a.documents} api={api} /></div>}
               {(a.status === 'approved' || a.status === 'rejected') && (
                 <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '6px 0 0' }}>
                   {a.status === 'approved' ? 'Approved' : 'Rejected'} by {a.decided_by} · {formatDateTime(a.decided_at)}{a.decision_remarks ? ` — ${a.decision_remarks}` : ''}
@@ -338,7 +342,7 @@ function TaskForm({
   labels: TaskLabels
   onSubmit: (p: TaskInput) => Promise<void>
   onCancel: () => void
-  initial?: Pick<RndTask, 'title' | 'assigned_to_id' | 'due_date' | 'remarks' | 'priority' | 'start_date' | 'work_status' | 'checklist' | 'parent_task_id'>
+  initial?: Pick<RndTask, 'title' | 'assigned_to_id' | 'assigned_to' | 'due_date' | 'remarks' | 'priority' | 'start_date' | 'work_status' | 'checklist' | 'parent_task_id'>
   maxDue?: string
   /** Sub-task: the main task it belongs to. */
   parentTitle?: string
@@ -384,6 +388,13 @@ function TaskForm({
     }
   }
 
+  // Editing: the current assignee is always an option, even when the picker list (the project team after the
+  // role's "Assign to" rule, or a list that failed to load) leaves them out — otherwise the field shows empty.
+  const assigneeOptions = people.map((p) => ({ value: personKey(p), label: `${p.name}${p.designation ? ` — ${p.designation}` : ''}` }))
+  if (initial && !assigneeOptions.some((o) => o.value === personKey({ id: initial.assigned_to_id }))) {
+    assigneeOptions.unshift({ value: personKey({ id: initial.assigned_to_id }), label: `${initial.assigned_to || `User #${initial.assigned_to_id}`} (current)` })
+  }
+
   const isSub = mode === 'subtask' || !!initial?.parent_task_id
   const noun = isSub ? 'Sub-task' : 'Task'
   const sheetTitle = mode === 'edit' ? `Edit ${noun}` : mode === 'subtask' ? 'Add Sub-task' : 'Create Task'
@@ -410,7 +421,7 @@ function TaskForm({
           <SheetSection icon="user" title="Assignment">
             <label style={sheetLabel}>Assignee <Req /></label>
             <SearchableSelect value={assignee} onChange={setAssignee} placeholder={labels.assignPlaceholder}
-              options={people.map((p) => ({ value: personKey(p), label: `${p.name}${p.designation ? ` — ${p.designation}` : ''}` }))} />
+              options={assigneeOptions} />
             <p style={sheetHint}>The assignee is notified, posts updates and completes it; you review it and decide their approval requests.</p>
           </SheetSection>
           <SheetSection icon="calendar" title="Schedule & Status">
@@ -568,6 +579,9 @@ export function TaskView({
   const isDone = isDoneTask(task)
   const canEdit = !!api.edit && canReview && rights.edit && isOpen
   const canSplit = !!api.team && mine && !isSub && isOpen && rights.create
+  // Sharing files on an open task: the assignee (filed as work) and the person who gave it — e.g. the
+  // main task's assignee on a sub-task, or yourself on a task you gave yourself (filed with the brief).
+  const canShare = isOpen && (mine || task.created_by_id === userId)
   const approvals = task.approvals || []
   const checklist = task.checklist || []
   const unticked = checklist.filter((c) => !c.done)
@@ -591,9 +605,6 @@ export function TaskView({
   const pctValid = /^\d{1,3}$/.test(pct.trim()) && Number(pct) >= 0 && Number(pct) <= 100
   const pctChanged = pctValid && Number(pct) !== (typeof task.progress_percent === 'number' ? task.progress_percent : 0)
 
-  const openDoc = async (d: RndWorkDocument) => {
-    try { await api.openDoc(d) } catch (err) { setViewError(extractErrorMessages(err, `Could not open "${d.name}".`)) }
-  }
   const choose = (p: Panel) => { setPanel(p); setText(''); setDelayReason(''); setDate(''); setFiles([]); setError('') }
 
   const run = async (fn: () => Promise<RndTask>, fallback: string) => {
@@ -635,7 +646,7 @@ export function TaskView({
     run(() => api.requestApproval(task.id, { request: text.trim(), files }), 'Could not send the approval request.')
   }
   const doUpdate = () => {
-    if (!text.trim()) { setError('Write the update — what you did or found so far.'); return }
+    if (!text.trim() && !files.length) { setError(mine ? 'Write the update or attach at least one file.' : 'Attach at least one file to share, or write a note.'); return }
     run(() => api.update(task.id, { remarks: text.trim(), files }), 'Could not post the update.')
   }
   const doReopen = () => {
@@ -657,11 +668,13 @@ export function TaskView({
     { k: 'activity', t: 'Activity', n: String(task.events.length), icon: 'history' },
   ]
   const fileGroups: [string, RndWorkDocument[]][] = [
-    ['Attached when the task was given', task.brief_documents],
+    ['From the person who gave the task', task.brief_documents],
     ['Work & updates from the assignee', task.work_documents],
     ['With approval requests', approvals.flatMap((a) => a.documents)],
   ]
-  const meta = panel && panel !== 'edit' && panel !== 'subtask' ? PANEL_META[panel] : null
+  const meta = panel && panel !== 'edit' && panel !== 'subtask'
+    ? (panel === 'update' && !mine ? { ...PANEL_META.update, title: 'Share Files', icon: 'clip' as SheetIconName, submit: 'Share', busy: 'Sharing…' } : PANEL_META[panel])
+    : null
 
   return (
     <div style={{ ...card, flex: '3 1 560px', minWidth: 0 }}>
@@ -706,6 +719,7 @@ export function TaskView({
               <ActionBtn icon="clock" label={task.is_overdue ? 'Reason & new date' : 'Need more time'} variant={task.is_overdue ? 'warn' : 'ghost'} onClick={() => choose('extend')} />
             </>
           )}
+          {!mine && canShare && <ActionBtn tour="rnd-task-share-btn" icon="note" label="Share files" onClick={() => choose('update')} />}
           <span style={{ flex: '1 1 0', minWidth: 8 }} />
           {isOpen && canProgress && (
             <Select title="Work status — how the task stands" aria-label="Work status" value={workStatus} disabled={busy}
@@ -849,12 +863,12 @@ export function TaskView({
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 13, color: MUTED }}>Files given with the task, the assignee&apos;s work, and files sent with approval requests.</span>
-              {mine && isOpen && <button type="button" onClick={() => choose('update')} style={{ ...sheetBtn('primary', BLUE), marginLeft: 'auto' }}><SheetIcon name="clip" size={15} /> Upload files</button>}
+              {canShare && <button type="button" onClick={() => choose('update')} style={{ ...sheetBtn('primary', BLUE), marginLeft: 'auto' }}><SheetIcon name="clip" size={15} /> Upload files</button>}
             </div>
-            {docCount(task) === 0 ? <p style={{ fontSize: 13, color: MUTED }}>No files yet.{mine && isOpen ? ' Upload your work with “Upload files” — it is posted as an update.' : ''}</p> : (
+            {docCount(task) === 0 ? <p style={{ fontSize: 13, color: MUTED }}>No files yet.{canShare ? ' Share files with “Upload files” — they are posted on the task’s activity.' : ''}</p> : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 {fileGroups.filter(([, d]) => d.length).map(([title, docs]) => (
-                  <div key={title}><p style={smallLabel}>{title} ({docs.length})</p><DocChips docs={docs} onOpen={openDoc} /></div>
+                  <div key={title}><p style={smallLabel}>{title} ({docs.length})</p><DocChips docs={docs} api={api} /></div>
                 ))}
               </div>
             )}
@@ -868,7 +882,7 @@ export function TaskView({
               {mine && isOpen && !task.pending_approval && <button type="button" onClick={() => choose('approval')} style={{ ...sheetBtn('primary', '#D97706'), marginLeft: 'auto' }}><SheetIcon name="shield" size={15} /> Ask for approval</button>}
             </div>
             {approvals.length === 0 ? <p style={{ fontSize: 13, color: MUTED, marginTop: 12 }}>No approval requests.</p> : (
-              <ApprovalList approvals={approvals} canDecide={canReview && rights.approve && !mine} userId={userId} api={api} onChanged={onChanged} onOpen={openDoc} />
+              <ApprovalList approvals={approvals} canDecide={canReview && rights.approve && !mine} userId={userId} api={api} onChanged={onChanged} />
             )}
           </div>
         )}
@@ -924,7 +938,7 @@ export function TaskView({
             )}
             {(panel === 'update' || panel === 'complete' || panel === 'approval') && (
               <>
-                <label style={sheetLabel}>{panel === 'update' ? 'Update / remarks' : panel === 'complete' ? 'What you did' : 'What do you need approved?'} <Req /></label>
+                <label style={sheetLabel}>{panel === 'update' ? (mine ? 'Update / remarks' : 'Note') : panel === 'complete' ? 'What you did' : 'What do you need approved?'} {panel === 'update' ? <span style={{ fontWeight: 400, color: MUTED }}>(or just attach files)</span> : <Req />}</label>
                 <textarea style={{ ...sheetInput, minHeight: 80 }} value={text} onChange={(e) => setText(e.target.value)} autoFocus
                   placeholder={panel === 'update' ? 'Progress so far, findings, questions for the reviewer' : panel === 'complete' ? 'Result, assumptions, open points' : 'e.g. Approve EN24 instead of EN8 for the axle — EN8 fails the fatigue check (calc attached)'} />
                 {panel === 'complete' && task.is_overdue && (
@@ -941,7 +955,9 @@ export function TaskView({
                 <label style={{ ...sheetLabel, marginTop: 14 }}>{panel === 'complete' ? 'Attach work' : 'Attach documents'} <span style={{ fontWeight: 400, color: MUTED }}>(optional)</span></label>
                 <FileDropZone files={files} onChange={setFiles} />
                 <p style={sheetHint}>
-                  {panel === 'update' && 'The task stays open; the person who assigned it is notified. Use “Complete task” when the work is finished.'}
+                  {panel === 'update' && (mine
+                    ? (task.created_by_id === userId ? 'The task stays open. Use “Complete task” when the work is finished.' : 'The task stays open; the person who assigned it is notified. Use “Complete task” when the work is finished.')
+                    : `${task.assigned_to || 'The assignee'} is notified; the files show under “From the person who gave the task”.`)}
                   {panel === 'complete' && 'The task is closed and the person who assigned it is notified. They can reopen it if something is missing.'}
                   {panel === 'approval' && `Goes to ${task.created_by}${task.created_by_id === userId ? ' (you)' : ''} (and the ${labels.manager}). The task stays open while they decide.`}
                 </p>

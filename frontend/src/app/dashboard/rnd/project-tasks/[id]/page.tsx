@@ -66,7 +66,8 @@ export default function RndPmProjectTasksPage() {
     withdrawApproval: rndApi.withdrawProjectApproval,
     reopen: rndApi.reopenProjectTask,
     cancel: rndApi.cancelProjectTask,
-    openDoc: async (d) => { window.open(URL.createObjectURL(await rndApi.getDocumentContent(d.id)), '_blank') },
+    docBlob: (d) => rndApi.getDocumentContent(d.id),
+    docPreview: (d) => rndApi.previewDocument(d.id),
   }), [pmProjectId])
 
   useEffect(() => {

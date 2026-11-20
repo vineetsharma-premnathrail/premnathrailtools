@@ -3494,6 +3494,10 @@ export const rndApi = {
     const { data } = await apiClient.get(`/rnd/requirement-work/documents/${doc.id}/content`, { responseType: 'blob' })
     window.open(URL.createObjectURL(data), '_blank')
   },
+  /** A requirement / requirement-task file's bytes (in-portal viewer + Download with its real name). */
+  getWorkDocumentBlob: async (id: number): Promise<Blob> => { const { data } = await apiClient.get(`/rnd/requirement-work/documents/${id}/content`, { responseType: 'blob', timeout: 300000 }); return data },
+  /** Microsoft-viewer link for Word / Excel / PowerPoint in the in-portal viewer. */
+  previewWorkDocument: async (id: number): Promise<{ getUrl: string }> => { const { data } = await apiClient.get(`/rnd/requirement-work/documents/${id}/preview`); return data },
   // Tasks
   listTasks: async (source: string, id: number): Promise<import('@/types').RndTask[]> => { const { data } = await apiClient.get(`/rnd/requirement-work/${source}/${id}/tasks`); return data },
   myTasks: async (includeDone = false): Promise<import('@/types').RndTask[]> => { const { data } = await apiClient.get('/rnd/requirement-work/tasks/mine', { params: includeDone ? { include_done: true } : undefined }); return data },
@@ -3803,6 +3807,8 @@ export const rndApi = {
     const { data } = await apiClient.get(`/rnd/documents/${id}/content`, { responseType: 'blob' })
     return data
   },
+  /** Microsoft-viewer link for Word / Excel / PowerPoint in the in-portal viewer. */
+  previewDocument: async (id: number): Promise<{ getUrl: string }> => { const { data } = await apiClient.get(`/rnd/documents/${id}/preview`); return data },
   deleteDocument: async (id: number) => {
     const { data } = await apiClient.delete(`/rnd/documents/${id}`)
     return data
