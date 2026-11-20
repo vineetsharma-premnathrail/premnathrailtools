@@ -6,6 +6,7 @@
  *  approval, retention after the warranty) and are not invoiced yet — and
  *  "Create invoice": a draft sales invoice copied from the order,
  *  capped at what is left of the milestone / the units that reached it. */
+import { RecLink, customerHref } from '@/components/finance/RecordLink'
 import { useCallback, useEffect, useState } from 'react'
 import { accountsApi } from '@/lib/api'
 import { useCan } from '@/lib/permissions'
@@ -105,7 +106,7 @@ export default function SalesBillingDueTab({ soId }: { soId?: number | null }) {
           {loading ? <EmptyRow colSpan={10} text="Loading…" /> : rows.length === 0 ? <EmptyRow colSpan={10} text="Nothing due for invoicing." /> : rows.map((m) => (
             <tr key={m.billing_line_id}>
               <td style={{ ...tdStyle, fontWeight: 600 }}>{m.so_display}</td>
-              <td style={tdStyle}>{m.customer_name}</td>
+              <td style={tdStyle}><RecLink href={customerHref(m)}>{m.customer_name}</RecLink></td>
               <td style={tdStyle}>{m.percent}% {m.milestone_label.toLowerCase()}
                 {m.recovers_advance_percent ? <div style={{ fontSize: 11.5, color: TEXT.muted }}>recovers {m.recovers_advance_percent}% of the advance</div> : null}
                 {m.invoices.length > 0 && <div style={{ fontSize: 11.5, color: TEXT.muted }}>{m.invoices.map(([, n, s]) => `${n.startsWith('DRAFT-') ? 'draft' : n}${s === 'pending' && !n.startsWith('DRAFT-') ? ' (pending)' : ''}`).join(', ')}</div>}

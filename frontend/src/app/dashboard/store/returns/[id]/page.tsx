@@ -10,6 +10,7 @@ import { primaryBtnStyle, secondaryBtnStyle, RowCount, Pill, TableScroll, thStyl
 import StoreNav from '@/components/store/StoreNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { useRecordId } from '@/lib/recordRef'
+import RecLink, { safePath } from '@/components/store/RecLink'
 import MessageDialog from '@/components/erp/MessageDialog'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import PromptDialog from '@/components/erp/PromptDialog'
@@ -139,7 +140,7 @@ export default function StoreMaterialReturnDetailPage() {
             <DetailGroup title="Return">
               <DetailRow label="Store">{ret.location_name}</DetailRow>
               <DetailRow label="Source">{ret.source_type_label || ret.source_type}</DetailRow>
-              <DetailRow label={ret.source_issue_number ? 'Material Issue' : 'Source Description'}>{ret.source_issue_number || ret.source_description}</DetailRow>
+              <DetailRow label={ret.source_issue_number ? 'Material Issue' : 'Source Description'}>{ret.source_issue_number ? <RecLink href={safePath('/dashboard/store/issues', ret, 'source_issue_id')} title="Open the material issue">{ret.source_issue_number}</RecLink> : ret.source_description}</DetailRow>
               <DetailRow label="Department">{ret.department_name}</DetailRow>
             </DetailGroup>
             <DetailGroup last>
@@ -190,7 +191,7 @@ export default function StoreMaterialReturnDetailPage() {
                 <tbody>
                   {ret.items.map((line) => (
                     <tr key={line.id}>
-                      <td style={{ ...tdStyle, fontWeight: 600 }}>{line.item_code} — {line.item_name}</td>
+                      <td style={{ ...tdStyle, fontWeight: 600 }}><RecLink href={safePath('/dashboard/store', line, 'item_id')} title="Open the item" style={{ color: 'inherit' }}>{line.item_code} — {line.item_name}</RecLink></td>
                       <td style={numTdStyle}>{line.quantity.toLocaleString('en-IN', { maximumFractionDigits: 3 })} {line.uom}</td>
                       <td style={tdStyle}>
                         <Pill label={line.condition_label || line.condition} hex={line.condition === 'good' ? '#16a34a' : '#d97706'} />

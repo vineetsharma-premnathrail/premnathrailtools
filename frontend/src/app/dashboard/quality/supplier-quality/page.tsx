@@ -15,7 +15,7 @@ import { primaryBtnStyle, secondaryBtnStyle, RowCount } from '@/components/share
 import { sheetInput, sheetLabel, sheetHint, Req, Optional } from '@/components/shared/FormSheet'
 import { useCan } from '@/lib/permissions'
 import {
-  Pill, PageHeader, ErrorBanner, ActionSheet, sheetGap, tableWrapStyle, thStyle, tdStyle, filterInputStyle, fmtDate,
+  Pill, RecordLink, PageHeader, ErrorBanner, ActionSheet, sheetGap, tableWrapStyle, thStyle, tdStyle, filterInputStyle, fmtDate,
   AVL_STATUS_LABELS, AVL_STATUS_HEX, SAMPLING_LABELS,
 } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
@@ -165,7 +165,7 @@ export default function SupplierQualityPage() {
                 ) : avl.map((a) => (
                   <tr key={a.id} onClick={() => router.push(recordPath('/dashboard/quality/supplier-quality', a))} style={{ cursor: 'pointer' }}>
                     <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading }}>{a.vendor_name}</td>
-                    <td style={tdStyle}>{a.item_code ? `${a.item_code} — ` : ''}{a.item_name}</td>
+                    <td style={tdStyle}><RecordLink base="/dashboard/store" row={a} idKey="item_id" allowed={can('store', 'items', 'view')} title="Open the item">{a.item_code ? `${a.item_code} — ` : ''}{a.item_name}</RecordLink></td>
                     <td style={tdStyle}><Pill text={AVL_STATUS_LABELS[a.status]} hex={AVL_STATUS_HEX[a.status]} /></td>
                     <td style={tdStyle}>{SAMPLING_LABELS[a.sampling_state]}{a.skip_lot_active ? ' · skip-lot' : ''}</td>
                     <td style={tdStyle}>{a.consecutive_accepted}</td>

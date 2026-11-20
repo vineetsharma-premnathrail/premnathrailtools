@@ -33,6 +33,7 @@ import {
   inputStyle, sectionStyle, primaryBtnStyle, secondaryBtnStyle, linkBtnStyle, dangerLinkStyle, thStyle, tdStyle, numTd, numTh,
   inr, dmy, Field, ErrorBanner, InfoBanner, StatusPill, SubTabs, useFinanceSubTabs, PageHeader, TableWrap, EmptyRow, ledgerOptions,
 } from '@/components/finance/financeUi'
+import { RecLink, rowOpen, vendorHref } from '@/components/finance/RecordLink'
 import { RowCount, Pill, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import {
   FormSheet, FormPage, SheetColumns, SheetSection, SheetIcon, SheetIconName, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint,
@@ -420,7 +421,7 @@ function AccountGroupsSection() {
             tree.map(({ group: g, depth }) => {
               const deletable = !g.is_system && g.ledger_count === 0 && !hasChildren.has(g.id)
               return (
-                <tr key={g.id}>
+                <tr key={g.id} {...rowOpen(canEdit ? () => startEdit(g) : null, 'Open this group')}>
                   <td style={{ ...tdStyle, paddingLeft: 12 + depth * 22 }}>
                     <span style={{ fontWeight: depth === 0 ? 700 : 500, color: TEXT.heading }}>{depth > 0 && <span style={{ color: TEXT.muted }}>└ </span>}{g.name}</span>
                     <span style={{ ...mutedText, marginLeft: 8 }}>{g.code}</span>
@@ -692,7 +693,7 @@ function LedgersSection({ onGoOpening }: { onGoOpening: () => void }) {
                 )
               }
               rows.push(
-                <tr key={a.id}>
+                <tr key={a.id} {...rowOpen(canEdit ? () => startEdit(a) : null, 'Open this ledger')}>
                   <td style={{ ...tdStyle, fontWeight: 600, whiteSpace: 'nowrap' }}>{a.code}</td>
                   <td style={tdStyle}>{a.name}{a.account_sub_type && <span style={{ ...mutedText, marginLeft: 6 }}>({a.account_sub_type})</span>}</td>
                   <td style={tdStyle}>{NATURE_LABELS[a.account_type] || a.account_type}</td>
@@ -1099,7 +1100,7 @@ function BankCashSection({ onGoOpening }: { onGoOpening: () => void }) {
         <tbody>
           {loading ? <EmptyRow colSpan={8} text="Loading…" /> : accounts.length === 0 ? <EmptyRow colSpan={8} text="No bank or cash accounts yet — use + New Account to add your bank and cash-in-hand." /> :
             accounts.map((a) => (
-              <tr key={a.id}>
+              <tr key={a.id} {...rowOpen(canEdit ? () => startEdit(a) : null, 'Open this account')}>
                 <td style={{ ...tdStyle, textTransform: 'capitalize' }}>{a.account_kind}</td>
                 <td style={{ ...tdStyle, fontWeight: 600 }}>{a.bank_name}</td>
                 <td style={tdStyle}>{a.account_no || '—'}</td>
@@ -1398,9 +1399,9 @@ function VendorsSection() {
         <tbody>
           {loading ? <EmptyRow colSpan={vendorCols} text="Loading…" /> : visible.length === 0 ? <EmptyRow colSpan={vendorCols} text={vendors.length ? 'No vendors match the search — clear it to see all.' : 'No vendors yet — use + New Vendor.'} /> :
             visible.map((v) => (
-              <tr key={v.id}>
+              <tr key={v.id} {...rowOpen(canEdit && !vis.preview ? () => startEdit(v) : null, 'Open this vendor')}>
                 <td style={{ ...tdStyle, fontWeight: 600 }}>{v.code}</td>
-                <td style={tdStyle}>{v.name}</td>
+                <td style={tdStyle}>{vis.preview ? v.name : <RecLink href={vendorHref(v, 'id')}>{v.name}</RecLink>}</td>
                 <VisTd vis={vis} table="vendors" k="gst_type" style={tdStyle}>{GST_REG_LABELS[v.gst_registration_type || ''] || '—'}</VisTd>
                 <VisTd vis={vis} table="vendors" k="gstin" style={{ ...tdStyle, fontFamily: 'monospace' }}>{v.gstin || '—'}</VisTd>
                 <VisTd vis={vis} table="vendors" k="city_state" style={tdStyle}>{[v.city, v.state].filter(Boolean).join(', ') || '—'}</VisTd>
@@ -1616,7 +1617,7 @@ function InternalOrdersSection() {
         <tbody>
           {loading ? <EmptyRow colSpan={8} text="Loading…" /> : orders.length === 0 ? <EmptyRow colSpan={8} text="No internal orders yet — use + New Internal Order to track a job or campaign's cost." /> :
             orders.map((o) => (
-              <tr key={o.id}>
+              <tr key={o.id} {...rowOpen(canEdit ? () => startEdit(o) : null, 'Open this order')}>
                 <td style={{ ...tdStyle, fontWeight: 600 }}>{o.code}</td>
                 <td style={tdStyle}>{o.name}</td>
                 <td style={{ ...tdStyle, textTransform: o.order_type === 'it' ? 'uppercase' : 'capitalize' }}>{o.order_type}</td>

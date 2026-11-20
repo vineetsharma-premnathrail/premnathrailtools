@@ -13,6 +13,8 @@ import { SheetIcon, sheetInput } from '@/components/shared/FormSheet'
 import { TEXT } from '@/lib/theme'
 import { formatDate } from '@/lib/format'
 import { recordHref } from '@/lib/recordRef'
+import { RecordLink, safePath, useOrgPath } from '@/components/crm/RecordLink'
+import { useCan } from '@/lib/permissions'
 import { extractErrorMessages } from '@/lib/validation'
 import {
   FILE_KIND_BADGE, FILE_KIND_HEX, LINK_TYPE_HEX, LINK_TYPE_LABEL, salesLibraryApi,
@@ -66,14 +68,22 @@ export function ExpiryBadge({ doc }: { doc: Pick<LibDocument, 'expiry_date' | 'i
 }
 
 export function LinkChips({ links, max = 2 }: { links: LibLink[]; max?: number }) {
+  // Each chip opens the product / project / customer it names (signed link from link_id); a project page needs the Projects app.
+  const { user } = useCan()
+  const orgPath = useOrgPath()
+  const hrefOf = (l: LibLink) => l.link_type === 'organization' ? orgPath(l, 'link_id')
+    : l.link_type === 'project' ? (user?.apps?.includes('projects') ? safePath('/dashboard/projects', l, 'link_id') : null)
+    : safePath('/dashboard/products', l, 'link_id')
   if (!links.length) return <span style={{ color: TEXT.muted }}>—</span>
   const shown = links.slice(0, max)
   return (
     <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
       {shown.map((l) => (
-        <span key={`${l.link_type}-${l.link_id}`} title={`${LINK_TYPE_LABEL[l.link_type]}: ${l.name || l.link_id}`} style={{ ...pillStyle(LINK_TYPE_HEX[l.link_type]), fontWeight: 600, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {l.name || `${LINK_TYPE_LABEL[l.link_type]} ${l.link_id}`}
-        </span>
+        <RecordLink key={`${l.link_type}-${l.link_id}`} href={hrefOf(l)} style={{ display: 'inline-flex', maxWidth: 160, fontWeight: 400 }} title={`Open ${LINK_TYPE_LABEL[l.link_type].toLowerCase()}: ${l.name || l.link_id}`}>
+          <span title={`${LINK_TYPE_LABEL[l.link_type]}: ${l.name || l.link_id}`} style={{ ...pillStyle(LINK_TYPE_HEX[l.link_type]), fontWeight: 600, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {l.name || `${LINK_TYPE_LABEL[l.link_type]} ${l.link_id}`}
+          </span>
+        </RecordLink>
       ))}
       {links.length > max && <span title={links.slice(max).map((l) => l.name).filter(Boolean).join(', ')} style={{ fontSize: 11.5, color: TEXT.muted }}>+{links.length - max}</span>}
     </span>

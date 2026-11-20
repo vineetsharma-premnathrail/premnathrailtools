@@ -20,6 +20,7 @@ import {
 } from '@/components/finance/financeUi'
 import { RowCount } from '@/components/shared/ui'
 import { recordHref } from '@/lib/recordRef'
+import { RecLink, itemHref, useRowLink } from '@/components/finance/RecordLink'
 
 const TABS = ['Stock Value', 'Purchase / Sales Impact', 'Closing Stock'] as const
 type Tab = typeof TABS[number]
@@ -61,6 +62,7 @@ export default function FinanceInventoryPage() {
 // ─── Stock value ────────────────────────────────────────────────────────
 
 function StockValueTab() {
+  const go = useRowLink()
   const [data, setData] = useState<StockValueSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string[] | null>(null)
@@ -119,8 +121,8 @@ function StockValueTab() {
         <tbody>
           {loading ? <EmptyRow colSpan={8} text="Loading…" /> : !data || itemRows.length === 0 ? <EmptyRow colSpan={8} text={noCostOnly ? 'Every item in stock has a cost. Click Items without cost again to show all.' : 'No stock on hand in Store.'} />
             : itemRows.map((r) => (
-              <tr key={r.store_item_id}>
-                <td style={{ ...tdStyle, fontWeight: 600 }}>{r.item_code}</td>
+              <tr key={r.store_item_id} {...go(itemHref(r, 'store_item_id'), 'Open this item in Store')}>
+                <td style={{ ...tdStyle, fontWeight: 600 }}><RecLink href={itemHref(r, 'store_item_id')}>{r.item_code}</RecLink></td>
                 <td style={tdStyle}>{r.item_name}</td>
                 <td style={tdStyle}>{r.category || '—'}</td>
                 <td style={numTd}>{qty(r.quantity)}</td>
@@ -187,7 +189,7 @@ function ImpactTab() {
           {loading ? <EmptyRow colSpan={5} text="Loading…" /> : !data || data.rows.length === 0 ? <EmptyRow colSpan={5} text="No posted purchase or sales invoices in this range." />
             : data.rows.map((r, i) => (
               <tr key={i}>
-                <td style={tdStyle}>{r.description || (r.store_item_id ? `Store item #${r.store_item_id}` : '—')}</td>
+                <td style={tdStyle}><RecLink href={itemHref(r, 'store_item_id')}>{r.description || (r.store_item_id ? `Store item #${r.store_item_id}` : '—')}</RecLink></td>
                 <td style={numTd}>{qty(r.purchase_qty)}</td>
                 <td style={numTd}>{inr(r.purchase_value, { blankZero: true })}</td>
                 <td style={numTd}>{qty(r.sales_qty)}</td>
@@ -387,7 +389,7 @@ function ValuationDetail({ valuation, canPost, canCancel, onChange, onBack }: {
           {valuation.lines.length === 0 ? <EmptyRow colSpan={8} text="No items — Store had no stock on hand when this valuation was created." />
             : valuation.lines.map((l) => (
               <tr key={l.id}>
-                <td style={{ ...tdStyle, fontWeight: 600 }}>{l.item_code || '—'}</td>
+                <td style={{ ...tdStyle, fontWeight: 600 }}>{l.item_code ? <RecLink href={itemHref(l, 'store_item_id')}>{l.item_code}</RecLink> : '—'}</td>
                 <td style={tdStyle}>{l.item_name}</td>
                 <td style={tdStyle}>{l.category || '—'}</td>
                 <td style={numTd}>{canEditLines ? <NumCell key={`q-${l.id}-${l.quantity}`} value={l.quantity} onCommit={(v) => saveLine(l, { quantity: v })} /> : qty(l.quantity)}</td>

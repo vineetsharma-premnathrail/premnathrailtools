@@ -13,6 +13,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
 import { canOpenProjectPage, ErrorBanner, FlagPill, MILESTONE_HEX, MILESTONE_LABELS, PRIORITY_HEX, PRIORITY_LABELS, PROJECT_HEX, PROJECT_LABELS, Pill, ProgressBar, TASK_HEX, TASK_LABELS, smallActionBtn, inputStyle, sectionStyle, tdStyle, thStyle, todayIso } from './pmUi'
 import { RowCount } from '@/components/shared/ui'
+import RecordLink from '../RecordLink'
 import ScopeNote from '@/components/shared/ScopeNote'
 
 /** Shared task table — milestone workspace, department work and My Tasks. */
@@ -23,6 +24,8 @@ export function TaskTable({ tasks, onOpen, showAssignee = true, showProject = fa
   showProject?: boolean
   actions?: (t: PmProjectTask) => React.ReactNode
 }) {
+  const { user } = useAuth()
+  const canOpenProject = canOpenProjectPage(user)
   const cols = ['Task', ...(showProject ? ['Project / Milestone'] : []), ...(showAssignee ? ['Assigned to'] : []), 'Status', 'Priority', 'Due', 'Progress', ...(actions ? [''] : [])]
   return (
     <div style={{ overflowX: 'auto' }}>
@@ -36,7 +39,14 @@ export function TaskTable({ tasks, onOpen, showAssignee = true, showProject = fa
                 {t.status === 'blocked' && t.blocker_reason && <div style={{ fontSize: 12, color: '#b91c1c' }}>Blocked: {t.blocker_reason}</div>}
                 {t.status === 'cancelled' && t.cancel_reason && <div style={{ fontSize: 12, color: TEXT.muted }}>Cancelled: {t.cancel_reason}</div>}
               </td>
-              {showProject && <td style={tdStyle}>{t.project_code}<div style={{ fontSize: 12, color: TEXT.muted }}>{t.milestone_title}</div></td>}
+              {showProject && (
+                <td style={tdStyle}>
+                  {canOpenProject ? <RecordLink base="/dashboard/projects" row={t} idKey="project_id" title="Open this project">{t.project_code}</RecordLink> : t.project_code}
+                  <div style={{ fontSize: 12, color: TEXT.muted }}>
+                    {t.milestone_title ? <RecordLink base="/dashboard/projects/milestones" row={t} idKey="milestone_id" title="Open this milestone" style={{ color: TEXT.muted, fontWeight: 400, textDecoration: 'underline' }}>{t.milestone_title}</RecordLink> : null}
+                  </div>
+                </td>
+              )}
               {showAssignee && <td style={tdStyle}>{t.assignee_name || '—'}</td>}
               <td style={tdStyle}>
                 <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>

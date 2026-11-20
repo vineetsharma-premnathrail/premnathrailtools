@@ -54,6 +54,38 @@ QUARANTINE_DISPOSITIONS = {
 }
 
 
+def _reference_ids(db: Session, txns: list[StoreStockTransaction]) -> dict[tuple[str, str], int]:
+    """(reference_type, reference_number) -> id of the source document, one query per document kind on
+    the page, so Stock Movements can open the GRN / issue / return / ... a movement came from."""
+    from app.modules.maintenance.models.work_order import MaintenanceWorkOrder
+    from app.modules.p2p.models.goods_receipt import P2PGoodsReceipt
+    from app.modules.p2p.models.p2p_request import P2PRequest
+    from app.modules.store.models.material_issue import StoreMaterialIssue
+    from app.modules.store.models.material_return import StoreMaterialReturn
+    from app.modules.store.models.stock_adjustment import StoreStockAdjustment
+    from app.modules.store.models.stock_transfer import StoreStockTransfer
+
+    kinds = {
+        "grn": (P2PGoodsReceipt, P2PGoodsReceipt.grn_number),
+        "material_issue": (StoreMaterialIssue, StoreMaterialIssue.issue_number),
+        "material_return": (StoreMaterialReturn, StoreMaterialReturn.return_number),
+        "stock_transfer": (StoreStockTransfer, StoreStockTransfer.transfer_number),
+        "stock_adjustment": (StoreStockAdjustment, StoreStockAdjustment.adjustment_number),
+        "p2p_request": (P2PRequest, P2PRequest.p2p_number),
+        "maintenance_work_order": (MaintenanceWorkOrder, MaintenanceWorkOrder.wo_number),
+    }
+    wanted: dict[str, set[str]] = {}
+    for t in txns:
+        if t.reference_type in kinds and t.reference_number:
+            wanted.setdefault(t.reference_type, set()).add(t.reference_number)
+    out: dict[tuple[str, str], int] = {}
+    for kind, numbers in wanted.items():
+        model, col = kinds[kind]
+        for rid, num in db.query(model.id, col).filter(col.in_(numbers)).all():
+            out[(kind, num)] = rid
+    return out
+
+
 def _txn_to_response(db: Session, txn: StoreStockTransaction, entry_labels: dict[str, str] | None = None) -> StoreStockTransactionResponse:
     item = db.query(StoreItem).filter(StoreItem.id == txn.item_id).first()
     location = db.query(StoreLocation).filter(StoreLocation.id == txn.location_id).first()
@@ -170,7 +202,9 @@ async def list_transactions(
     response.headers["X-Total-Count"] = str(query.order_by(None).count())
     txns = query.offset(skip).limit(limit).all()
     labels = doc_type_labels(db, "stock_entry")
-    return [blank_model(user, _txn_to_response(db, t, labels), _TXN_VALUE_FIELDS) for t in txns]
+    refs = _reference_ids(db, txns)
+    return [blank_model(user, _txn_to_response(db, t, labels).model_copy(update={"reference_id": refs.get((t.reference_type, t.reference_number))}),
+                        _TXN_VALUE_FIELDS) for t in txns]
 
 
 @router.get("/transactions/posted-by")

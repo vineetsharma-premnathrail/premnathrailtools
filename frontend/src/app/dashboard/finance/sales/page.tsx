@@ -29,6 +29,7 @@ import {
 } from '@/components/finance/financeUi'
 import { RowCount, pillStyle, DetailGroup, DetailRow } from '@/components/shared/ui'
 import { recordHref } from '@/lib/recordRef'
+import { RecLink, rowOpen, stopRow, customerHref } from '@/components/finance/RecordLink'
 import { useDocCurrency } from '@/components/finance/DocCurrencyFields'
 import Select from '@/components/shared/Select'
 import FilterMenu from '@/components/shared/FilterMenu'
@@ -297,16 +298,16 @@ function InvoicesTab(ctx: Ctx) {
             const isMaker = userId != null && t.created_by_id === userId
             return (
               <Fragment key={t.id}>
-                <tr>
+                <tr {...rowOpen(() => toggle(t.id), 'Show the invoice details')}>
                   <td style={tdStyle}>
-                    <button type="button" style={{ ...linkBtnStyle, fontSize: 12.5 }} onClick={() => toggle(t.id)}>
+                    <button type="button" style={{ ...linkBtnStyle, fontSize: 12.5 }} onClick={(ev) => { ev.stopPropagation(); toggle(t.id) }}>
                       {expanded === t.id ? '▾' : '▸'} {isDraftNumber(t.invoice_number) ? 'Draft' : t.invoice_number}
                     </button>
-                    <ProofClip count={proofCounts[t.id]} />
+                    <span {...stopRow}><ProofClip count={proofCounts[t.id]} /></span>
                   </td>
                   <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{dmy(t.invoice_date)}</td>
                   <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{dmy(t.due_date)}</td>
-                  <td style={tdStyle}>{t.customer_name || '—'}</td>
+                  <td style={tdStyle}><RecLink href={customerHref(t)}>{t.customer_name || '—'}</RecLink></td>
                   <td style={{ ...tdStyle, fontSize: 11.5 }}>{t.customer_gstin || 'Unregistered'}</td>
                   <td style={tdStyle}>{t.place_of_supply_state_code || '—'}</td>
                   <td style={numTd}>{inr(t.invoice_amount)}</td>
@@ -331,7 +332,7 @@ function InvoicesTab(ctx: Ctx) {
                       {t.status === 'posted' && <StatusPill status={t.collection_status} labels={COLLECTION_LABELS} colors={COLLECTION_HEX} />}
                     </div>
                   </td>
-                  <td style={tdStyle}>
+                  <td style={tdStyle} {...stopRow}>
                     <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                       {t.status === 'pending' && t.approval_status !== 'pending' && can('accounts', 'sales_invoices', 'submit') && (
                         <button type="button" disabled={busy} style={linkBtnStyle} onClick={() => act(() => accountsApi.submitARTransaction(t.id), 'Could not submit the invoice for approval.')}>Submit for approval</button>
@@ -733,15 +734,15 @@ function CreditNotesTab(ctx: Ctx) {
             const isMaker = userId != null && n.created_by_id === userId
             return (
               <Fragment key={n.id}>
-                <tr>
+                <tr {...rowOpen(() => setExpanded(expanded === n.id ? null : n.id), 'Show the credit note details')}>
                   <td style={tdStyle}>
-                    <button type="button" style={{ ...linkBtnStyle, fontSize: 12.5 }} onClick={() => setExpanded(expanded === n.id ? null : n.id)}>
+                    <button type="button" style={{ ...linkBtnStyle, fontSize: 12.5 }} onClick={(ev) => { ev.stopPropagation(); setExpanded(expanded === n.id ? null : n.id) }}>
                       {expanded === n.id ? '▾' : '▸'} {isDraftNumber(n.note_number) ? 'Draft' : n.note_number}
                     </button>
-                    <ProofClip count={proofCounts[n.id]} />
+                    <span {...stopRow}><ProofClip count={proofCounts[n.id]} /></span>
                   </td>
                   <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{dmy(n.note_date)}</td>
-                  <td style={tdStyle}>{n.party_name || '—'}</td>
+                  <td style={tdStyle}><RecLink href={customerHref(n)}>{n.party_name || '—'}</RecLink></td>
                   <td style={tdStyle}>{n.original_invoice_number || '—'}</td>
                   <td style={tdStyle}>{REASON_LABELS[n.reason] || n.reason}</td>
                   <td style={numTd}>{inr(n.taxable_amount)}</td>
@@ -754,7 +755,7 @@ function CreditNotesTab(ctx: Ctx) {
                       {n.status === 'pending' && <ApprovalBadge status={n.approval_status} stage={n.approval_stage} />}
                     </div>
                   </td>
-                  <td style={tdStyle}>
+                  <td style={tdStyle} {...stopRow}>
                     {n.status === 'pending' && (
                       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                         {n.approval_status !== 'pending' && can('accounts', 'credit_notes', 'submit') && (

@@ -15,6 +15,7 @@ import ProjectUnitTable, { DEPARTMENT_COLUMNS, DepartmentCell } from '@/componen
 import { thStyle, tdStyle } from '@/components/sales/SalesUi'
 import { DetailCard, DetailGroup, DetailRow, RowCount } from '@/components/shared/ui'
 import { ErrorBanner, sectionStyle } from '@/components/projects/work/pmUi'
+import RecordLink from '@/components/projects/RecordLink'
 
 export default function UnitsTab({ project }: { project: PmProject }) {
   const [data, setData] = useState<ProjectUnitsResponse | null>(null)
@@ -43,7 +44,7 @@ export default function UnitsTab({ project }: { project: PmProject }) {
       <DetailCard tour="pm-units-summary">
         <DetailGroup title={hasUnits ? 'Order' : 'Project'} last>
           {hasUnits && <DetailRow label="Sales order">{soNumber}</DetailRow>}
-          <DetailRow label="Machine">{project.machine_serial}</DetailRow>
+          <DetailRow label="Machine">{project.machine_serial ? <RecordLink base="/dashboard/projects/service-projects" row={project} idKey="machine_id" title="Open this machine">{project.machine_serial}</RecordLink> : null}</DetailRow>
           <DetailRow label="Customer PO">{poNumber ? `${poNumber}${data.customer_po_date ? ` dated ${formatDate(data.customer_po_date)}` : ''}` : null}</DetailRow>
           {hasUnits && data.order_value !== null && data.order_value !== undefined && <DetailRow label="Order value (incl. GST)">{formatINR(data.order_value)}</DetailRow>}
           {hasUnits && <DetailRow label="Delivered">{`${data.vehicles_delivered} of ${data.vehicles_total} vehicles${data.lots_total ? ` · ${data.lots_total} spares lot(s)` : ''}`}</DetailRow>}

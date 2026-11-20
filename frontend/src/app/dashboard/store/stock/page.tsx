@@ -3,6 +3,8 @@
 import FilterMenu from '@/components/shared/FilterMenu'
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import RecLink, { safePath } from '@/components/store/RecLink'
 import { useRequireApp } from '@/hooks/useAuth'
 import { storeApi } from '@/lib/api'
 import { StoreItem, StoreLocation, StoreStockBalance } from '@/types'
@@ -31,6 +33,7 @@ const QUARANTINE_DISPOSITIONS = [
 
 export default function StoreStockPage() {
   const { isAuthorized, isLoading, user } = useRequireApp('store')
+  const router = useRouter()
   const { can, canFeature } = useCan()
   // Opening Stock Import (stock already on the shelves at go-live): anyone
   // with Store › Adjustments › Create (2026-11-02, was admin only).
@@ -135,9 +138,9 @@ export default function StoreStockPage() {
     return Array.from(ids, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name))
   }, [filteredBalances])
   const matrixRows = useMemo(() => {
-    const rows = new Map<number, { item_id: number; label: string; uom: string; byStore: Map<number, number>; total: number }>()
+    const rows = new Map<number, { item_id: number; href: string | null; label: string; uom: string; byStore: Map<number, number>; total: number }>()
     for (const b of filteredBalances) {
-      const r = rows.get(b.item_id) || { item_id: b.item_id, label: `${b.item_code} — ${b.item_name}`, uom: b.uom || '', byStore: new Map(), total: 0 }
+      const r = rows.get(b.item_id) || { item_id: b.item_id, href: safePath('/dashboard/store', b, 'item_id'), label: `${b.item_code} — ${b.item_name}`, uom: b.uom || '', byStore: new Map(), total: 0 }
       const q = Number(b.available_qty || 0)
       r.byStore.set(b.location_id, (r.byStore.get(b.location_id) || 0) + q)
       r.total += q
@@ -390,8 +393,8 @@ export default function StoreStockPage() {
                 <tr><td colSpan={matrixStores.length + 2} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>{hasFilters ? 'No stock matches the filters.' : 'No stock recorded yet — stock arrives through a GRN (or the Opening Stock Import at go-live).'}</td></tr>
               )}
               {!loading && matrixRows.map((r) => (
-                <tr key={r.item_id} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
-                  <td title={r.label} style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body, maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.label}</td>
+                <tr key={r.item_id} onClick={r.href ? () => router.push(r.href as string) : undefined} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: r.href ? 'pointer' : undefined }}>
+                  <td title={r.label} style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body, maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}><RecLink href={r.href} title="Open the item" style={{ color: TEXT.body }}>{r.label}</RecLink></td>
                   {matrixStores.map((s) => {
                     const q = r.byStore.get(s.id)
                     return <td key={s.id} style={{ padding: '12px 16px', fontSize: 13, textAlign: 'right', color: q ? TEXT.secondary : TEXT.muted, whiteSpace: 'nowrap' }}>{q != null ? `${qty(q)} ${r.uom}` : '—'}</td>
@@ -421,8 +424,8 @@ export default function StoreStockPage() {
               <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>{hasFilters ? 'No balances match the filters.' : 'No stock recorded yet — stock arrives through a GRN (or the Opening Stock Import at go-live).'}</td></tr>
             )}
             {!loading && filteredBalances.map((b) => (
-              <tr key={b.id} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
-                <td title={`${b.item_code || ''} — ${b.item_name || ''}`} style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body, maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.item_code || '—'} — {b.item_name || '—'}</td>
+              <tr key={b.id} onClick={() => { const href = safePath('/dashboard/store', b, 'item_id'); if (href) router.push(href) }} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
+                <td title={`${b.item_code || ''} — ${b.item_name || ''}`} style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body, maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}><RecLink href={safePath('/dashboard/store', b, 'item_id')} title="Open the item" style={{ color: TEXT.body }}>{b.item_code || '—'} — {b.item_name || '—'}</RecLink></td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{b.location_name || '—'}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', color: TEXT.secondary }}>{qty(b.on_hand_qty)} {b.uom || ''}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', color: TEXT.secondary }}>{qty(b.reserved_qty)} {b.uom || ''}</td>
@@ -434,7 +437,7 @@ export default function StoreStockPage() {
                   {b.quarantine_qty > 0 ? (
                     <>
                       {qty(b.quarantine_qty)} {b.uom || ''}
-                      {canPost && <span onClick={() => openClear(b)} style={{ marginLeft: 10, color: '#FF6A2A', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Clear</span>}
+                      {canPost && <span onClick={(e) => { e.stopPropagation(); openClear(b) }} style={{ marginLeft: 10, color: '#FF6A2A', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Clear</span>}
                     </>
                   ) : '—'}
                 </td>

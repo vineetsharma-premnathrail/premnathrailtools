@@ -21,6 +21,7 @@ import BulkImportDialog from '@/components/erp/BulkImportDialog'
 import ExportDialog from '@/components/erp/ExportDialog'
 import { SERVICE_TYPES } from '@/components/erp/serviceTypes'
 import { recordPath } from '@/lib/recordRef'
+import RecordLink, { CUSTOMER_PAGE } from '@/components/projects/RecordLink'
 
 const STATUS_LABELS: Record<SRStatus, string> = {
   open: 'Open',
@@ -324,9 +325,11 @@ export default function ServiceRequestsPage() {
                       {sr.request_number}
                     </span>
                   </td>
-                  <VisTd vis={vis} table="service_requests" k="machine_serial" style={{ padding: '12px 8px', fontSize: 13, color: '#57534e', whiteSpace: 'nowrap' }}>{project?.serial_number || '—'}</VisTd>
+                  <VisTd vis={vis} table="service_requests" k="machine_serial" style={{ padding: '12px 8px', fontSize: 13, color: '#57534e', whiteSpace: 'nowrap' }}>
+                    {project?.serial_number ? <RecordLink base="/dashboard/projects/service-projects" row={project} title="Open this machine">{project.serial_number}</RecordLink> : '—'}
+                  </VisTd>
                   <VisTd vis={vis} table="service_requests" k="client_site" style={{ padding: '12px 8px', fontSize: 12.5, color: '#57534e' }}>
-                    <div>{project?.client_company || '—'}</div>
+                    <div>{project?.client_company ? <RecordLink base={CUSTOMER_PAGE} row={project} idKey="customer_id" title="Open this customer">{project.client_company}</RecordLink> : '—'}</div>
                     <div style={{ color: '#57534e', fontSize: 12 }}>{project?.site_name || ''}</div>
                   </VisTd>
                   <VisTd vis={vis} table="service_requests" k="issue_summary" data-fit-clamp style={{ padding: '12px 8px', fontSize: 13, color: '#57534e' }}>

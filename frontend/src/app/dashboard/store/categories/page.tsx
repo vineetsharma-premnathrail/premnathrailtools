@@ -256,7 +256,7 @@ export default function StoreCategoriesPage() {
               <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No categories yet — use + Add Category to create the first one.</td></tr>
             )}
             {categories.map((c) => (
-              <tr key={c.id} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
+              <tr key={c.id} onClick={can('store', 'categories', 'edit') ? () => openEdit(c) : undefined} title={can('store', 'categories', 'edit') ? 'Open to edit this category' : undefined} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: can('store', 'categories', 'edit') ? 'pointer' : undefined }}>
                 <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: c.parent_id ? 400 : 600, color: TEXT.body, paddingLeft: c.parent_id ? 32 : 16 }}>
                   {c.parent_id ? '↳ ' : ''}{c.name}
                 </td>
@@ -267,7 +267,7 @@ export default function StoreCategoriesPage() {
                 <td style={{ padding: '12px 16px' }}>
                   <Pill label={c.is_active ? 'Active' : 'Inactive'} hex={c.is_active ? SUCCESS.hover : TEXT.muted} />
                 </td>
-                <td style={{ padding: '0 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                <td onClick={(e) => e.stopPropagation()} style={{ padding: '0 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
                   {can('store', 'categories', 'edit') && <span onClick={() => openEdit(c)} style={{ color: BRAND.primaryActive, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', marginRight: 14 }}>Edit</span>}
                   {canDelete('store', 'categories', null) && <span onClick={() => setDeleteTarget(c)} style={{ color: '#b91c1c', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Delete</span>}
                 </td>

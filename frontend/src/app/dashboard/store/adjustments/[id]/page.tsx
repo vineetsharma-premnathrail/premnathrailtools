@@ -10,6 +10,7 @@ import { primaryBtnStyle, secondaryBtnStyle, RowCount, Pill, TableScroll, thStyl
 import StoreNav from '@/components/store/StoreNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { useRecordId } from '@/lib/recordRef'
+import RecLink, { safePath } from '@/components/store/RecLink'
 import MessageDialog from '@/components/erp/MessageDialog'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import PromptDialog from '@/components/erp/PromptDialog'
@@ -182,7 +183,7 @@ export default function StoreStockAdjustmentDetailPage() {
                 <tbody>
                   {adjustment.items.map((line) => (
                     <tr key={line.id}>
-                      <td style={{ ...tdStyle, fontWeight: 600 }}>{line.item_code} — {line.item_name}</td>
+                      <td style={{ ...tdStyle, fontWeight: 600 }}><RecLink href={safePath('/dashboard/store', line, 'item_id')} title="Open the item" style={{ color: 'inherit' }}>{line.item_code} — {line.item_name}</RecLink></td>
                       <td style={numTdStyle}>{fmtQty(line.existing_quantity)} {line.uom}</td>
                       <td style={numTdStyle}>{fmtQty(line.actual_quantity)} {line.uom}</td>
                       <td style={{ ...numTdStyle, fontWeight: 700, color: line.difference === 0 ? TEXT.muted : line.difference > 0 ? '#15803d' : '#b91c1c' }}>

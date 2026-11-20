@@ -30,6 +30,7 @@ import { useVisibility, type VisibilityApi } from '@/lib/visibility'
 import { VisTd, VisTh } from '@/lib/visibilityComponents'
 import { sampleInquiries, sampleOrganizations, sampleTenders } from '@/lib/crmPreviewSamples'
 import ScopeNote from '@/components/shared/ScopeNote'
+import { RecordLink, useOrgPath, useUserPath } from '@/components/crm/RecordLink'
 
 const PINNED_KEY = PINNED_INQUIRY_TENDER_KEY
 
@@ -102,6 +103,8 @@ export default function InquiriesPage() {
   const vis = useVisibility('crm:inquiries_tenders')
   const showCol = (key: string) => key === 'universal_id' || vis.showColumn('inquiries_tenders', key)
   const { can } = useCan()
+  const orgPath = useOrgPath()
+  const userPath = useUserPath()
   const [showExport, setShowExport] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const router = useRouter()
@@ -490,10 +493,14 @@ export default function InquiriesPage() {
                     </span>
                   </div>
                 </td>
-                <VisTd vis={vis} table="inquiries_tenders" k="org_name" style={{ padding: '7px 16px', fontSize: 13, fontWeight: 600, color: '#1f1108', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.35 }}>{orgById.get(r.org_id)?.name || 'Not provided'}</VisTd>
+                <VisTd vis={vis} table="inquiries_tenders" k="org_name" style={{ padding: '7px 16px', fontSize: 13, fontWeight: 600, color: '#1f1108', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.35 }}>
+                  {orgById.get(r.org_id)?.name ? <RecordLink href={orgPath(r.record, 'org_id')} style={{ color: '#1f1108' }} title="Open the customer organization">{orgById.get(r.org_id)?.name}</RecordLink> : 'Not provided'}
+                </VisTd>
                 <VisTd vis={vis} table="inquiries_tenders" k="product" title={r.product} style={{ padding: '7px 16px', fontSize: 12.5, color: '#1f1108', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.product}</VisTd>
                 <VisTd vis={vis} table="inquiries_tenders" k="created_at" style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{r.created_at === 'Not provided' ? r.created_at : formatDate(r.created_at)}</VisTd>
-                <VisTd vis={vis} table="inquiries_tenders" k="created_by_name" title={r.created_by_name} style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.created_by_name}</VisTd>
+                <VisTd vis={vis} table="inquiries_tenders" k="created_by_name" title={r.created_by_name} style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {r.created_by_name !== 'Not provided' ? <RecordLink href={userPath(r.record, 'created_by_id')} style={{ color: '#78716c', fontWeight: 400 }} title="Open the user">{r.created_by_name}</RecordLink> : r.created_by_name}
+                </VisTd>
               </tr>
               )
             })}

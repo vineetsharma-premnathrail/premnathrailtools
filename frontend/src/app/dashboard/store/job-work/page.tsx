@@ -20,6 +20,7 @@ import { recordPath } from '@/lib/recordRef'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import Select from '@/components/shared/Select'
+import RecLink, { safePath } from '@/components/store/RecLink'
 
 // Job work / subcontracting (SAP item category L, ME2O, GST ITC-04): the
 // challan is a Material Issue of type Job work; its material sits in
@@ -45,14 +46,14 @@ interface Challan {
   /** Every item expected back, with the expected quantity (material sent can come back as several items). */
   output_items?: { item_id: number; quantity?: number | null }[]
 }
-interface VendorStock { vendor_name?: string | null; item_code?: string | null; item_name?: string | null; uom?: string | null; quantity: number; value: number; challans: string[]; oldest_challan_date: string; overdue: boolean }
+interface VendorStock { vendor_id?: number | null; item_id?: number; vendor_name?: string | null; item_code?: string | null; item_name?: string | null; uom?: string | null; quantity: number; value: number; challans: string[]; oldest_challan_date: string; overdue: boolean }
 interface Receipt {
-  id: number; receipt_number: string; challan_number?: string | null; issue_number?: string | null; vendor_name?: string | null; receipt_date: string
+  id: number; issue_id?: number | null; vendor_id?: number | null; inspection_lot_id?: number | null; receipt_number: string; challan_number?: string | null; issue_number?: string | null; vendor_name?: string | null; receipt_date: string
   output_item_code?: string | null; output_item_name?: string | null; output_quantity: number; uom?: string | null; output_batch_number?: string | null
   component_value?: number | null; job_charge_rate?: number | null; output_unit_cost?: number | null; inspection_lot_number?: string | null
   vendor_challan_number?: string | null
   /** Every processed item received (one receipt can bring back several). */
-  outputs?: { item_id: number; item_name?: string | null; uom?: string | null; quantity: number; batch_number?: string | null; job_charge_rate?: number | null; unit_cost?: number | null; inspection_lot_number?: string | null }[]
+  outputs?: { item_id: number; item_name?: string | null; uom?: string | null; quantity: number; batch_number?: string | null; job_charge_rate?: number | null; unit_cost?: number | null; inspection_lot_id?: number | null; inspection_lot_number?: string | null }[]
 }
 
 const STATUS_LABELS: Record<string, string> = { open: 'At vendor', due_back: 'Past expected return', overdue: 'Rule 45 limit passed', closed: 'Closed' }
@@ -74,7 +75,7 @@ const money = (v?: number | null) => (v == null ? '—' : `₹${Number(v).toLoca
 // Receipts saved before several items per receipt read their single header item.
 const outsOf = (r: Receipt) => (r.outputs?.length ? r.outputs : [{
   item_id: 0, item_name: r.output_item_name, uom: r.uom, quantity: r.output_quantity, batch_number: r.output_batch_number,
-  job_charge_rate: r.job_charge_rate, unit_cost: r.output_unit_cost, inspection_lot_number: r.inspection_lot_number,
+  job_charge_rate: r.job_charge_rate, unit_cost: r.output_unit_cost, inspection_lot_id: r.inspection_lot_id, inspection_lot_number: r.inspection_lot_number,
 }])
 
 function Badge({ status }: { status: string }) {
@@ -188,11 +189,11 @@ export default function JobWorkPage() {
                 <tr key={c.issue_id} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }} onClick={() => router.push(recordPath('/dashboard/store/issues', c, 'issue_id'))}>
                   <td style={{ ...td, fontWeight: 600, color: TEXT.body }}>{c.challan_number || '—'}<div style={{ fontSize: 11.5, color: TEXT.muted, fontWeight: 400 }}>{c.issue_number}</div></td>
                   <td style={{ ...td, whiteSpace: 'nowrap' }}>{fmtDate(c.challan_date)}</td>
-                  <td style={td}>{c.vendor_name || '—'}{c.process && <div style={{ fontSize: 11.5, color: TEXT.muted }}>{humanize(c.process)}</div>}</td>
+                  <td style={td}>{c.vendor_name ? <RecLink href={c.vendor_id ? safePath('/dashboard/p2p/vendors', c, 'vendor_id') : null} title="Open the vendor" style={{ color: TEXT.secondary, fontWeight: 400 }}>{c.vendor_name}</RecLink> : '—'}{c.process && <div style={{ fontSize: 11.5, color: TEXT.muted }}>{humanize(c.process)}</div>}</td>
                   <td style={td}>
                     {c.lines.map((l) => (
                       <div key={l.issue_item_id} style={{ marginBottom: 3 }}>
-                        <b style={{ color: TEXT.body }}>{l.item_name}</b>{l.batch_number ? ` · ${l.batch_number}` : ''} — {fmtQty(l.quantity_sent)} / {fmtQty(l.quantity_returned)} / {fmtQty(+(l.quantity_consumed + l.quantity_scrap).toFixed(4))} /{' '}
+                        <b style={{ color: TEXT.body }}><RecLink href={safePath('/dashboard/store', l, 'item_id')} title="Open the item" style={{ color: TEXT.body }}>{l.item_name}</RecLink></b>{l.batch_number ? ` · ${l.batch_number}` : ''} — {fmtQty(l.quantity_sent)} / {fmtQty(l.quantity_returned)} / {fmtQty(+(l.quantity_consumed + l.quantity_scrap).toFixed(4))} /{' '}
                         <b style={{ color: l.quantity_outstanding > 0 ? '#7c3aed' : '#16a34a' }}>{fmtQty(l.quantity_outstanding)}</b> {l.uom || ''}
                         {l.quantity_return_pending > 0 && <span style={{ color: '#d97706' }}> ({fmtQty(l.quantity_return_pending)} return awaiting approval)</span>}
                       </div>
@@ -226,8 +227,8 @@ export default function JobWorkPage() {
               {!loading && vendorStock.length === 0 && <tr><td colSpan={6} style={{ ...td, textAlign: 'center' }}>No stock is with vendors — material shows here once a job-work challan is issued.</td></tr>}
               {!loading && vendorStock.map((s, i) => (
                 <tr key={i} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
-                  <td style={{ ...td, fontWeight: 600, color: TEXT.body }}>{s.vendor_name || '—'}</td>
-                  <td style={td}>{s.item_code || '—'} — {s.item_name || '—'}</td>
+                  <td style={{ ...td, fontWeight: 600, color: TEXT.body }}>{s.vendor_name ? <RecLink href={s.vendor_id ? safePath('/dashboard/p2p/vendors', s, 'vendor_id') : null} title="Open the vendor" style={{ color: TEXT.body }}>{s.vendor_name}</RecLink> : '—'}</td>
+                  <td style={td}><RecLink href={s.item_id ? safePath('/dashboard/store', s, 'item_id') : null} title="Open the item" style={{ color: TEXT.secondary, fontWeight: 400 }}>{s.item_code || '—'} — {s.item_name || '—'}</RecLink></td>
                   <td style={{ ...tdNum, fontWeight: 600, color: '#7c3aed' }}>{fmtQty(s.quantity)} {s.uom || ''}</td>
                   {seeValues && <td style={tdNum}>{money(s.value)}</td>}
                   <td style={td}>{s.challans.join(', ') || '—'}</td>
@@ -250,14 +251,14 @@ export default function JobWorkPage() {
                 <tr key={r.id} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
                   <td style={{ ...td, fontWeight: 600, color: TEXT.body }}>{r.receipt_number}{r.vendor_challan_number && <div style={{ fontSize: 11.5, color: TEXT.muted, fontWeight: 400 }}>Vendor DC {r.vendor_challan_number}</div>}</td>
                   <td style={{ ...td, whiteSpace: 'nowrap' }}>{fmtDate(r.receipt_date)}</td>
-                  <td style={td}>{r.challan_number || r.issue_number || '—'}</td>
-                  <td style={td}>{r.vendor_name || '—'}</td>
-                  <td style={td}>{outsOf(r).map((o, i) => <div key={i}>{fmtQty(o.quantity)} {o.uom || ''} {o.item_name || ''}</div>)}</td>
+                  <td style={td}>{r.challan_number || r.issue_number ? <RecLink href={r.issue_id ? safePath('/dashboard/store/issues', r, 'issue_id') : null} title="Open the challan (material issue)">{r.challan_number || r.issue_number}</RecLink> : '—'}</td>
+                  <td style={td}>{r.vendor_name ? <RecLink href={r.vendor_id ? safePath('/dashboard/p2p/vendors', r, 'vendor_id') : null} title="Open the vendor" style={{ color: TEXT.secondary, fontWeight: 400 }}>{r.vendor_name}</RecLink> : '—'}</td>
+                  <td style={td}>{outsOf(r).map((o, i) => <div key={i}>{fmtQty(o.quantity)} {o.uom || ''} {o.item_name ? <RecLink href={o.item_id ? safePath('/dashboard/store', o, 'item_id') : null} title="Open the item" style={{ color: TEXT.secondary, fontWeight: 400 }}>{o.item_name}</RecLink> : ''}</div>)}</td>
                   <td style={td}>{outsOf(r).map((o, i) => <div key={i}>{o.batch_number || '—'}</div>)}</td>
                   {seeValues && <td style={tdNum}>{money(r.component_value)}</td>}
                   <td style={tdNum}>{outsOf(r).map((o, i) => <div key={i}>{o.job_charge_rate != null ? `${money(o.job_charge_rate)} / ${o.uom || 'unit'}` : '—'}</div>)}</td>
                   {seeValues && <td style={tdNum}>{outsOf(r).map((o, i) => <div key={i}>{money(o.unit_cost)}</div>)}</td>}
-                  <td style={td}>{outsOf(r).map((o, i) => <div key={i}>{o.inspection_lot_number || '—'}</div>)}</td>
+                  <td style={td}>{outsOf(r).map((o, i) => <div key={i}>{o.inspection_lot_number ? <RecLink href={can('quality', 'inspection_lots', 'view') && o.inspection_lot_id ? safePath('/dashboard/quality/lots', o, 'inspection_lot_id') : null} title="Open the quality lot">{o.inspection_lot_number}</RecLink> : '—'}</div>)}</td>
                 </tr>
               ))}
             </tbody>

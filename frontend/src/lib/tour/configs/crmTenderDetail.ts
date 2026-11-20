@@ -71,7 +71,7 @@ const steps: TourStep[] = [
   {
     target: 'tender-rnd-status',
     title: 'R&D ID, revision and status',
-    purpose: 'Appears once the requirement has been sent to R&D: its R&D ID (RDR-year-number), the current revision (R0, R1, …) and where R&D\'s review stands — Awaiting R&D review, Accepted, R&D asked for details (the question shows in a purple "R&D is waiting for your response" banner — answer it with Reply to R&D; the requirement itself is not sent again), Responded, Closed by R&D (R&D had nothing to share — the reason is on the request card in the Requirement Movement tab; re-send if R&D work is needed later) or Superseded (older requirements may also show Returned to BD).',
+    purpose: 'Appears once the requirement has been sent to R&D: its R&D ID (RDR-year-number), the current revision (R0, R1, …) and where R&D\'s review stands — Awaiting R&D review, Accepted, R&D asked for details (the question shows in a purple "R&D is waiting for your response" banner — answer it with Reply to R&D; the requirement itself is not sent again), Responded, Closed by R&D (R&D had nothing to share — the reason is on the request card in the Requirement Movement tab; re-send if R&D work is needed later) or Superseded (older requirements may also show Returned to BD). People with R&D access can click the R&D ID to open the requirement in R&D.',
     why: 'Each send is a new revision with its own ID. There is no Discussion channel any more — the return reason is how R&D asks for corrections.',
   },
   {

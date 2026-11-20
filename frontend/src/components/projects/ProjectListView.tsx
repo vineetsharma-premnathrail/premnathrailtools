@@ -10,6 +10,7 @@ import { TEXT } from '@/lib/theme'
 import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
+import RecordLink, { CUSTOMER_PAGE } from './RecordLink'
 import { useCan } from '@/lib/permissions'
 import ScopeNote from '@/components/shared/ScopeNote'
 import { useVisibility } from '@/lib/visibility'
@@ -252,7 +253,9 @@ function ProjectListViewInner({ showProjects, showMachines }: { showProjects: bo
                 <tr key={r.key} onClick={() => router.push(recordPath('/dashboard/projects/service-projects', r.m))} style={{ cursor: 'pointer' }}>
                   <td style={{ ...tdStyle, fontWeight: 700, whiteSpace: 'nowrap' }}>{r.m.serial_number}</td>
                   <td style={tdStyle}>{r.m.model_name || '—'}</td>
-                  <VisTd vis={vis} table="all_projects" k="client" style={tdStyle}>{r.m.client_company || '—'}</VisTd>
+                  <VisTd vis={vis} table="all_projects" k="client" style={tdStyle}>
+                    {r.m.client_company ? <RecordLink base={CUSTOMER_PAGE} row={r.m} idKey="customer_id" title="Open this customer">{r.m.client_company}</RecordLink> : '—'}
+                  </VisTd>
                   <VisTd vis={vis} table="all_projects" k="site" style={tdStyle}>{r.m.site_name || '—'}</VisTd>
                   {/* Stage is shown only; it is changed on the machine's own page (owner, 2026-10-31). */}
                   <td style={tdStyle}>

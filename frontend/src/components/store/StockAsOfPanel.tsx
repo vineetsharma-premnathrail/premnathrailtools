@@ -7,6 +7,8 @@ import { inputStyle, secondaryBtnStyle, RowCount } from '@/components/shared/ui'
 import DateField from '@/components/erp/DateField'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
+import { useRouter } from 'next/navigation'
+import RecLink, { safePath } from '@/components/store/RecLink'
 
 // Stock on a posting date (SAP MB5B): rebuilt from the stock ledger, never from
 // today's balances — opening, receipts, issues and closing per item and store,
@@ -60,6 +62,7 @@ const numTh: React.CSSProperties = { ...th, textAlign: 'right' }
 const fmtQ = (n?: number | null) => (n || 0).toLocaleString('en-IN', { maximumFractionDigits: 3 })
 
 export default function StockAsOfPanel({ locationId, search, canExport }: { locationId: string; search: string; canExport: boolean }) {
+  const router = useRouter()
   const [toDate, setToDate] = useState(todayIso())
   const [fromDate, setFromDate] = useState(todayIso().slice(0, 8) + '01')
   const [report, setReport] = useState<AsOfReport | null>(null)
@@ -138,8 +141,8 @@ export default function StockAsOfPanel({ locationId, search, canExport }: { loca
             {loading && <tr><td colSpan={13} style={{ ...td, textAlign: 'center', color: TEXT.muted }}>Building stock on {formatDate(toDate)}…</td></tr>}
             {!loading && rows.length === 0 && <tr><td colSpan={13} style={{ ...td, textAlign: 'center', color: TEXT.muted }}>No stock or movements for this date range.</td></tr>}
             {!loading && rows.map((r) => (
-              <tr key={`${r.item_id}-${r.location_id}`}>
-                <td style={td}><b>{r.item_code}</b> {r.item_name}</td>
+              <tr key={`${r.item_id}-${r.location_id}`} onClick={() => { const href = safePath('/dashboard/store', r, 'item_id'); if (href) router.push(href) }} title="Open the item" style={{ cursor: 'pointer' }}>
+                <td style={td}><RecLink href={safePath('/dashboard/store', r, 'item_id')} style={{ color: 'inherit', fontWeight: 400 }}><b>{r.item_code}</b> {r.item_name}</RecLink></td>
                 <td style={td}>{r.location_name || '—'}</td>
                 <td style={num}>{fmtQ(r.opening_qty)} {r.uom}</td>
                 <td style={num}>{fmtQ(r.receipt_qty)}</td>

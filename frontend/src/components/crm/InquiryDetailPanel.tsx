@@ -304,7 +304,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
       <MessageDialog open={!!torError} variant="error" title="Send Technical Requirement Failed" message={torError} onClose={() => setTorError('')} />
       <MessageDialog open={!!error} variant="error" title="Inquiry Action Failed" message={error} onClose={() => setError('')} />
 
-      {!editing && <VisSection vis={vis} k="inq_detail_rnd"><RndIntakeCard rnd={rnd} tourId="inq-rnd-status" canResend={canSendTor} sending={sendingTOR} onResend={openTorPicker} /></VisSection>}
+      {!editing && <VisSection vis={vis} k="inq_detail_rnd"><RndIntakeCard rnd={rnd} source="inquiry" record={inquiry} tourId="inq-rnd-status" canResend={canSendTor} sending={sendingTOR} onResend={openTorPicker} /></VisSection>}
       {!editing && !vis.preview && bdQuestion && latestRequest && (
         <VisSection vis={vis} k="inq_detail_rnd"><RndWaitingBanner question={bdQuestion} canReply={canSendTor} onReply={() => setShowReply(true)} tourId="inq-rnd-waiting" /></VisSection>
       )}

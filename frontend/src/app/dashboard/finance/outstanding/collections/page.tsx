@@ -4,6 +4,7 @@
  *  customers by priority, contact log with promises to pay, the dunning run
  *  and its reminder letters (managed Word documents). Disputed amounts are
  *  left out everywhere on this page. */
+import { RecLink, customerHref, rowOpen } from '@/components/finance/RecordLink'
 import { Fragment, useEffect, useState } from 'react'
 import { useRequireApp } from '@/hooks/useAuth'
 import { accountsApi } from '@/lib/api'
@@ -104,7 +105,7 @@ export default function CollectionsPage() {
               return (
                 <tr key={r.customer_id} onClick={() => setSelected(active ? null : r)} style={{ cursor: 'pointer', background: active ? `${BRAND.primary}14` : undefined }}>
                   <td style={tdStyle}><StatusPill status={r.priority} labels={PRIORITY_LABELS} colors={PRIORITY_HEX} /></td>
-                  <td style={{ ...tdStyle, fontWeight: 600 }}>{r.customer_name}</td>
+                  <td style={{ ...tdStyle, fontWeight: 600 }}><RecLink href={customerHref(r)}>{r.customer_name}</RecLink></td>
                   <td style={{ ...numTd, fontWeight: 700, color: '#b91c1c' }}>{inr(r.overdue_amount)}</td>
                   <td style={numTd}>{r.invoices}</td>
                   <td style={numTd}>{r.max_days_overdue}</td>
@@ -158,9 +159,9 @@ function LettersTable({ letters, onChanged }: { letters: DunningLetter[]; onChan
           {letters.length === 0 ? <EmptyRow colSpan={8} text="No reminder letters yet — run dunning to issue them." />
             : letters.map((l) => (
               <Fragment key={l.id}>
-                <tr>
+                <tr {...rowOpen(() => setOpen(open === l.id ? null : l.id), 'Show the letter')}>
                   <td style={{ ...tdStyle, fontWeight: 600 }}>{l.letter_number}</td>
-                  <td style={tdStyle}>{l.customer_name || '—'}</td>
+                  <td style={tdStyle}><RecLink href={customerHref(l)}>{l.customer_name || '—'}</RecLink></td>
                   <td style={tdStyle}>{dmy(l.letter_date)}</td>
                   <td style={numTd}>{l.dunning_level}</td>
                   <td style={numTd}>{inr(l.total_overdue)}</td>
@@ -454,7 +455,7 @@ function DunningRunDialog({ onClose, onDone }: { onClose: () => void; onDone: ()
                 : customers.map((c) => (
                   <tr key={c.customer_id}>
                     <td style={tdStyle}><input type="checkbox" checked={picked.has(c.customer_id)} onChange={() => toggle(c.customer_id)} /></td>
-                    <td style={{ ...tdStyle, fontWeight: 600 }}>{c.customer_name}</td>
+                    <td style={{ ...tdStyle, fontWeight: 600 }}><RecLink href={customerHref(c)}>{c.customer_name}</RecLink></td>
                     <td style={numTd}>{c.level}</td>
                     <td style={numTd}>{inr(c.total_overdue)}</td>
                     <td style={{ ...tdStyle, fontSize: 12 }}>

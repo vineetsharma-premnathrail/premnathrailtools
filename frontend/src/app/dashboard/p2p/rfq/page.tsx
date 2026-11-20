@@ -10,6 +10,7 @@ import { p2pApi, rfqApi } from '@/lib/api'
 import { P2PRequest, RFQ } from '@/types'
 import { TEXT, GLASS, SHADOWS, BRAND, BORDER } from '@/lib/theme'
 import P2PNav from '@/components/p2p/P2PNav'
+import RecordLink, { RECORD_BASE } from '@/components/p2p/RecordLink'
 import ScopeNote from '@/components/shared/ScopeNote'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
@@ -151,7 +152,7 @@ export default function P2PRfqPage() {
               <tr key={`pr-${pr.id}`} onClick={canStartRfq ? () => startRfq(pr) : undefined} style={{ borderTop: `1px solid ${BORDER.light}`, cursor: canStartRfq ? 'pointer' : 'default' }}
                 title={canStartRfq ? undefined : "Starting a quotation request needs 'Create' on Procurement › R.F.Q — ask an admin to add it to your role."}>
                 <td style={{ ...tdStyle, color: TEXT.muted }}>—</td>
-                <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{pr.p2p_number}</td>
+                <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}><RecordLink base={RECORD_BASE.pr} row={pr} title={`Open ${pr.p2p_number}`} style={{ color: TEXT.heading }}>{pr.p2p_number}</RecordLink></td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}><Pill label="RFQ pending" hex="#dc2626" /></td>
                 <td style={{ ...tdStyle, color: TEXT.muted }}>—</td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatDate(pr.created_at)}</td>
@@ -163,7 +164,7 @@ export default function P2PRfqPage() {
             {shownRfqs.map((rfq) => (
               <tr key={rfq.id} onClick={() => router.push(recordPath('/dashboard/p2p/rfq', rfq))} style={{ borderTop: `1px solid ${BORDER.light}`, cursor: 'pointer' }}>
                 <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{rfq.rfq_number}</td>
-                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{rfq.p2p_number || '—'}</td>
+                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{rfq.p2p_number ? <RecordLink base={RECORD_BASE.pr} row={rfq} idKey="p2p_request_id" title={`Open ${rfq.p2p_number}`}>{rfq.p2p_number}</RecordLink> : '—'}</td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
                   <Pill label={RFQ_STATUS_LABELS[rfq.status] ?? rfq.status} hex={RFQ_STATUS_HEX[rfq.status] ?? '#78716c'} />
                 </td>

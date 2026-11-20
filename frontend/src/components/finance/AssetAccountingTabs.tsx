@@ -4,6 +4,7 @@
 // capital-order settlement), Retirements (scrap / sale, full or partial),
 // Reconciliation (register vs ledger) and Tax Depreciation (Income-tax block
 // schedule + deferred tax). Backend: accounts/routes/asset_accounting.py.
+import { RecLink, poHref, customerHref, voucherHref } from '@/components/finance/RecordLink'
 import React, { useEffect, useMemo, useState } from 'react'
 import { accountsApi, crmApi } from '@/lib/api'
 import { extractErrorMessages } from '@/lib/validation'
@@ -178,7 +179,7 @@ export function CapitalisationTab({ canManage }: { canManage: boolean }) {
             <thead><tr><th style={thStyle}>PO <RowCount count={queue.received_not_invoiced.length} /></th><th style={thStyle}>Vendor</th><th style={thStyle}>Item</th><th style={numTh}>Qty received, not billed</th><th style={numTh}>Value at PO rate</th></tr></thead>
             <tbody>
               {queue.received_not_invoiced.map((r) => (
-                <tr key={r.po_item_id}><td style={tdStyle}>{r.po_number}</td><td style={tdStyle}>{r.vendor_name}</td><td style={tdStyle}>{r.description}</td>
+                <tr key={r.po_item_id}><td style={tdStyle}><RecLink href={poHref(r)}>{r.po_number}</RecLink></td><td style={tdStyle}>{r.vendor_name}</td><td style={tdStyle}>{r.description}</td>
                   <td style={numTd}>{r.received_not_invoiced_qty}</td><td style={numTd}>{inr(r.estimated_value)}</td></tr>
               ))}
             </tbody>
@@ -303,8 +304,8 @@ export function RetirementsTab({ canManage }: { canManage: boolean }) {
               <td style={numTd}>{inr(r.retired_cost)}</td><td style={numTd}>{inr(r.retired_accumulated_depreciation)}</td>
               <td style={numTd}>{inr(r.sale_value, { blankZero: true })}</td>
               <td style={{ ...numTd, color: r.gain_loss >= 0 ? '#15803d' : '#b91c1c' }}>{r.gain_loss >= 0 ? inr(r.gain_loss) : `(${inr(-r.gain_loss)})`}</td>
-              <td style={tdStyle}>{r.customer_name ? `${r.customer_name} · ${r.ar_status === 'pending' ? 'invoice draft — post under Sales' : r.ar_invoice_number}` : '—'}</td>
-              <td style={tdStyle}>{r.journal_entry_number}</td>
+              <td style={tdStyle}>{r.customer_name ? <><RecLink href={customerHref(r)}>{r.customer_name}</RecLink>{` · ${r.ar_status === 'pending' ? 'invoice draft — post under Sales' : r.ar_invoice_number}`}</> : '—'}</td>
+              <td style={tdStyle}>{r.journal_entry_number ? <RecLink href={voucherHref(r)}>{r.journal_entry_number}</RecLink> : null}</td>
             </tr>
           ))}
         </tbody>

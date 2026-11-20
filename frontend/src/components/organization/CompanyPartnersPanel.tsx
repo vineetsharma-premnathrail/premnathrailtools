@@ -9,6 +9,7 @@ import { FormSheet, SheetSection, SheetIcon, SHEET, sheetBtn, sheetLabel, sheetH
 import TeamMemberPicker from '@/components/rnd/TeamMemberPicker'
 import { secondaryBtnStyle, Pill } from '@/components/shared/ui'
 import { useCan } from '@/lib/permissions'
+import { RecordLink, useUserPath } from '@/components/crm/RecordLink'
 
 type Partner = { id: number; name: string; email: string; designation?: string | null; is_active: boolean }
 
@@ -21,6 +22,7 @@ type Partner = { id: number; name: string; email: string; designation?: string |
  */
 export default function CompanyPartnersPanel({ sectionStyle }: { sectionStyle: React.CSSProperties }) {
   const { canFeature } = useCan()
+  const userPath = useUserPath()
   const [partners, setPartners] = useState<Partner[]>([])
   const [users, setUsers] = useState<DirectoryUser[]>([])
   const [editing, setEditing] = useState(false)
@@ -108,7 +110,7 @@ export default function CompanyPartnersPanel({ sectionStyle }: { sectionStyle: R
         <div style={{ borderTop: `1px solid ${BORDER.normal}` }}>
           {partners.map((p) => (
             <div key={p.id} style={{ display: 'flex', alignItems: 'baseline', gap: 10, padding: '10px 0', borderBottom: `1px solid ${BORDER.normal}`, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 13.5, fontWeight: 600, color: TEXT.heading }}>{p.name}</span>
+              <span style={{ fontSize: 13.5, fontWeight: 600, color: TEXT.heading }}><RecordLink href={userPath(p)} style={{ color: TEXT.heading }} title="Open the user">{p.name}</RecordLink></span>
               {!p.is_active && <Pill label="Inactive" hex="#b91c1c" />}
               <span style={{ fontSize: 12.5, color: TEXT.secondary }}>{[p.designation, p.email].filter(Boolean).join(' · ')}</span>
             </div>

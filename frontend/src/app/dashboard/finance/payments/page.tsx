@@ -3,7 +3,7 @@
 /** Payments & Receipts — one voucher model for vendor payments, customer
  *  receipts, expense payments, other receipts and contra, with bill-wise
  *  allocation of party money and later allocation of advances. */
-import { Fragment, Suspense, useContext, useEffect, useMemo, useState } from 'react'
+import { Fragment, Suspense, type ReactNode, useContext, useEffect, useMemo, useState } from 'react'
 import ScopeNote from '@/components/shared/ScopeNote'
 import { useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -38,6 +38,7 @@ import {
 } from '@/components/finance/financeUi'
 import { RowCount, DetailGroup, DetailRow } from '@/components/shared/ui'
 import { useRecordId } from '@/lib/recordRef'
+import { RecLink, vendorHref, customerHref, poHref } from '@/components/finance/RecordLink'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import Select from '@/components/shared/Select'
 import FilterMenu from '@/components/shared/FilterMenu'
@@ -485,8 +486,9 @@ function PaymentsPage() {
     }
   }
 
-  function partyCell(p: PaymentTransaction) {
-    if (p.vendor_name || p.customer_name) return p.vendor_name || p.customer_name
+  function partyCell(p: PaymentTransaction): ReactNode {
+    if (p.vendor_name) return <RecLink href={vendorHref(p)}>{p.vendor_name}</RecLink>
+    if (p.customer_name) return <RecLink href={customerHref(p)}>{p.customer_name}</RecLink>
     if (p.lines?.length) return p.lines.map((l) => `${l.gl_account_code || ''} ${l.gl_account_name || ''}`.trim()).join(', ')
     if (p.payment_type === 'contra') return 'Bank/cash transfer'
     return p.narration || '—'
@@ -918,7 +920,7 @@ function PaymentsPage() {
                     <VisTd vis={vis} table="vouchers" k="bank_reco" style={tdStyle}><StatusPill status={p.reconciliation_status} labels={RECON_LABELS} colors={RECON_HEX} /></VisTd>
                     <td style={tdStyle}>
                       <StatusPill status={p.status} labels={STATUS_LABELS} colors={STATUS_HEX} />
-                      {p.is_advance && <div style={{ fontSize: 11, color: '#7c3aed', marginTop: 2 }}>Advance{p.sales_order_number ? ` · ${p.sales_order_number}` : p.purchase_order_number ? ` · ${p.purchase_order_number}` : ''}</div>}
+                      {p.is_advance && <div style={{ fontSize: 11, color: '#7c3aed', marginTop: 2 }}>Advance{p.sales_order_number ? ` · ${p.sales_order_number}` : p.purchase_order_number ? <> · <RecLink href={poHref(p)}>{p.purchase_order_number}</RecLink></> : ''}</div>}
                       {p.status === 'pending_approval' && p.approval_stage && <div style={{ fontSize: 11, color: TEXT.muted, marginTop: 2 }}>{p.approval_stage}</div>}
                     </td>
                     <td style={{ ...tdStyle, whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
@@ -1008,7 +1010,7 @@ function VoucherDetail({ p, onRemoveAllocation }: { p: PaymentTransaction; onRem
           {!p.cheque_number && p.cheque_date && <DetailRow label="Cheque date">{dmy(p.cheque_date)}</DetailRow>}
           {p.reference_no && <DetailRow label="Reference">{p.reference_no}</DetailRow>}
           {p.cleared_date && <DetailRow label="Cleared in bank on">{dmy(p.cleared_date)}</DetailRow>}
-          {p.is_advance && <DetailRow label="Advance against">{p.sales_order_number || p.purchase_order_number || `On account${p.advance_reason ? ` — ${p.advance_reason}` : ''}`}</DetailRow>}
+          {p.is_advance && <DetailRow label="Advance against">{p.sales_order_number || (p.purchase_order_number ? <RecLink href={poHref(p)}>{p.purchase_order_number}</RecLink> : null) || `On account${p.advance_reason ? ` — ${p.advance_reason}` : ''}`}</DetailRow>}
         </DetailGroup>
         <DetailGroup title="Record" last>
           <DetailRow label="Recorded by">{p.created_by_name || null}</DetailRow>

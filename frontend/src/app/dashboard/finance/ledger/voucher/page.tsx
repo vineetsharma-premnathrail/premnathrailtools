@@ -17,6 +17,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import FinanceNav from '@/components/finance/FinanceNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { recordHref, useRecordId } from '@/lib/recordRef'
+import { RecLink, vendorHref, customerHref } from '@/components/finance/RecordLink'
 import {
   sectionStyle, primaryBtnStyle, secondaryBtnStyle, linkBtnStyle,
   thStyle, tdStyle, numTd, numTh, inr, dmy,
@@ -109,8 +110,8 @@ function Voucher({ entryRef }: { entryRef: string | null }) {
     ? SOURCE_DOCUMENTS[entry.reference_document_type] ?? { label: entry.reference_document_type.replace(/_/g, ' '), where: 'the document that posted it' }
     : null
   const partyOf = (l: JournalEntry['lines'][number]) =>
-    l.vendor_id ? `Vendor: ${vendors.find((v) => v.id === l.vendor_id)?.name || `#${l.vendor_id}`}`
-      : l.customer_id ? `Customer: ${customers.find((c) => c.id === l.customer_id)?.name || `#${l.customer_id}`}` : '—'
+    l.vendor_id ? <>Vendor: <RecLink href={vendorHref(l)}>{vendors.find((v) => v.id === l.vendor_id)?.name || `#${l.vendor_id}`}</RecLink></>
+      : l.customer_id ? <>Customer: <RecLink href={customerHref(l)}>{customers.find((c) => c.id === l.customer_id)?.name || `#${l.customer_id}`}</RecLink></> : '—'
   const title = entry.status === 'draft' ? 'Draft journal' : entry.entry_number
 
   const startEdit = () => {

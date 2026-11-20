@@ -11,7 +11,7 @@ import { TEXT } from '@/lib/theme'
 import QualityNav from '@/components/quality/QualityNav'
 import { primaryBtnStyle, RowCount } from '@/components/shared/ui'
 import {
-  Pill, PageHeader, ErrorBanner, tableWrapStyle, thStyle, tdStyle, filterInputStyle, fmtDate, LOT_STATUS_LABELS,
+  Pill, RecordLink, PageHeader, ErrorBanner, tableWrapStyle, thStyle, tdStyle, filterInputStyle, fmtDate, LOT_STATUS_LABELS,
 } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
 import Select from '@/components/shared/Select'
@@ -78,11 +78,11 @@ export default function FirstArticlesPage() {
             ) : rows.map((f) => (
               <tr key={f.id} onClick={() => router.push(recordPath('/dashboard/quality/first-articles', f))} style={{ cursor: 'pointer' }}>
                 <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{f.fai_number}</td>
-                <td style={tdStyle}>{f.item_code ? `${f.item_code} — ` : ''}{f.item_name}</td>
+                <td style={tdStyle}><RecordLink base="/dashboard/store" row={f} idKey="item_id" allowed={can('store', 'items', 'view')} title="Open the item">{f.item_code ? `${f.item_code} — ` : ''}{f.item_name}</RecordLink></td>
                 <td style={tdStyle}>{f.vendor_name || 'In-house'}<div style={{ fontSize: 11.5, color: TEXT.muted }}>{f.source_reference || ''}</div></td>
                 <td style={tdStyle}>{f.drawing_ref || '—'}</td>
                 <td style={tdStyle}>{TRIGGER_LABELS[f.trigger] || f.trigger}</td>
-                <td style={tdStyle}>{f.lot_number || '—'}{f.lot_status ? <div style={{ fontSize: 11.5, color: TEXT.muted }}>{LOT_STATUS_LABELS[f.lot_status] || f.lot_status}</div> : null}</td>
+                <td style={tdStyle}>{f.lot_number ? <RecordLink base="/dashboard/quality/lots" row={f} idKey="lot_id" allowed={can('quality', 'inspection_lots', 'view')} title="Open the inspection lot">{f.lot_number}</RecordLink> : '—'}{f.lot_status ? <div style={{ fontSize: 11.5, color: TEXT.muted }}>{LOT_STATUS_LABELS[f.lot_status] || f.lot_status}</div> : null}</td>
                 <td style={tdStyle}><Pill text={STATUS_LABELS[f.status] || f.status} hex={STATUS_HEX[f.status]} /></td>
                 <td style={tdStyle}>{f.decided_by_name ? `${f.decided_by_name}, ${fmtDate(f.decided_at)}` : '—'}</td>
               </tr>

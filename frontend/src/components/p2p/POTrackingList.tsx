@@ -16,6 +16,8 @@ import FilterMenu from '@/components/shared/FilterMenu'
 import DateField from '@/components/erp/DateField'
 import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/ProjectUnitPicker'
 import POTrackingDetail from '@/components/p2p/POTrackingDetail'
+import RecordLink, { RECORD_BASE } from '@/components/p2p/RecordLink'
+import { useCan } from '@/lib/permissions'
 import { DueChip, PO_CARD, PO_TD, PO_TH, STAGE_ORDER, StageBadge, TrackRow, clip, clip2, money } from '@/components/p2p/POTrackingShared'
 
 type Data = {
@@ -69,6 +71,8 @@ function Progress({ row }: { row: TrackRow }) {
 
 export default function POTrackingList({ lead }: { lead?: React.ReactNode }) {
   const narrow = useNarrow()
+  const { can } = useCan()
+  const canOpenVendor = can('p2p', 'vendors', 'view')
   const [data, setData] = useState<Data | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -254,8 +258,12 @@ export default function POTrackingList({ lead }: { lead?: React.ReactNode }) {
                       </td>
                       <td style={{ ...td, whiteSpace: 'nowrap' }}>{formatDate(r.po_date)}</td>
                       <td style={{ ...td, whiteSpace: 'nowrap' }}><StageBadge stage={r.stage} label={r.stage_label} /></td>
-                      <td style={{ ...td, whiteSpace: 'nowrap' }} title={r.vendor_name || undefined}>{clip(r.vendor_name)}</td>
-                      <td style={{ ...td, whiteSpace: 'nowrap' }}>{r.p2p_number || '—'}</td>
+                      <td style={{ ...td, whiteSpace: 'nowrap' }} title={r.vendor_name || undefined}>
+                        <RecordLink base={RECORD_BASE.vendor} row={r} idKey="vendor_id" allowed={canOpenVendor} title="Open the vendor" style={{ fontWeight: 500 }}>{clip(r.vendor_name)}</RecordLink>
+                      </td>
+                      <td style={{ ...td, whiteSpace: 'nowrap' }}>
+                        {r.p2p_number ? <RecordLink base={RECORD_BASE.pr} row={r} idKey="p2p_request_id" title={`Open ${r.p2p_number}`} style={{ fontWeight: 500 }}>{r.p2p_number}</RecordLink> : '—'}
+                      </td>
                       {!split && (
                         <td data-fit-clamp style={td}>
                           <div title={[r.purpose_label, r.charged_to].filter(Boolean).join(' · ') || undefined} style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{clip2([r.purpose_label, r.charged_to].filter(Boolean).join(' · '))}</div>

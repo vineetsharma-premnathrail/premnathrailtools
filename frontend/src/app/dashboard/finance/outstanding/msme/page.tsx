@@ -4,6 +4,7 @@
  *  bills of micro / small / medium suppliers against their statutory pay-by
  *  date, and the year-end 43B(h) statement of micro / small dues unpaid beyond
  *  the limit (disallowed this year, allowed when paid). */
+import { RecLink, vendorHref } from '@/components/finance/RecordLink'
 import { useEffect, useState } from 'react'
 import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
@@ -87,7 +88,7 @@ export default function MsmeDuesPage() {
           <tbody>
             {!alerts || shownBills.length === 0 ? <EmptyRow colSpan={8} text={alerts ? (billFilter ? 'No bills in this group. Click the highlighted card again to show all bills.' : 'No open bills of MSME suppliers.') : alertsError ? 'MSME dues could not be loaded — see the message above.' : 'Loading…'} /> : shownBills.map((r) => (
               <tr key={r.invoice_id}>
-                <td style={tdStyle}>{r.vendor_name} <span style={{ opacity: 0.6 }}>({r.vendor_code})</span></td>
+                <td style={tdStyle}><RecLink href={vendorHref(r)}>{r.vendor_name}</RecLink> <span style={{ opacity: 0.6 }}>({r.vendor_code})</span></td>
                 <td style={tdStyle}>{r.msme_category}</td>
                 <td style={tdStyle}>{r.invoice_number}</td>
                 <td style={tdStyle}>{dmy(r.invoice_date)}</td>

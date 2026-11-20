@@ -12,6 +12,7 @@ import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { moduleWords } from '@/lib/permissionWords'
 import { RowCount, Pill } from '@/components/shared/ui'
+import { RecordLink, useBranchPath } from '@/components/crm/RecordLink'
 
 const APPROVAL_ROLE_FLAGS: { key: keyof User; label: string }[] = [
   { key: 'is_partner', label: 'Partner' },
@@ -35,6 +36,7 @@ const APPROVAL_ROLE_FLAGS: { key: keyof User; label: string }[] = [
 export default function OrganizationUsersPage() {
   const { isAuthorized, isLoading } = useRequireOrgTab('users')
   const router = useRouter()
+  const branchPath = useBranchPath()
   const [users, setUsers] = useState<User[]>([])
   const [apps, setApps] = useState<{ id: string; label: string }[]>([])
   const [loading, setLoading] = useState(true)
@@ -115,7 +117,7 @@ export default function OrganizationUsersPage() {
                   <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{u.name}</td>
                   <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{u.email}</td>
                   <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{u.department || '—'}</td>
-                  <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{u.branch_name || '—'}</td>
+                  <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{u.branch_name ? <RecordLink href={branchPath(u, 'branch_id')} style={{ color: TEXT.secondary, fontWeight: 400 }} title="Open the branch">{u.branch_name}</RecordLink> : '—'}</td>
                   <td style={{ padding: '12px 16px' }} data-tour={idx === 0 ? 'org-users-role-badge' : undefined}>
                     <span style={{ fontSize: 12, fontWeight: 600, padding: '4px 10px', borderRadius: 8, textTransform: 'capitalize', whiteSpace: 'nowrap', background: 'rgba(59,130,246,0.08)', color: '#2563eb' }}>
                       {u.role}

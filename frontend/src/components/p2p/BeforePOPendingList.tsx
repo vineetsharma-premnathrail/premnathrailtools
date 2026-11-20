@@ -15,6 +15,7 @@ import { useCan } from '@/lib/permissions'
 import { RowCount, smallSecondaryBtnStyle, StatChip, inputStyle } from '@/components/shared/ui'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { PO_CARD, PO_TD, PO_TH, clip } from '@/components/p2p/POTrackingShared'
+import RecordLink, { RECORD_BASE } from '@/components/p2p/RecordLink'
 
 const itemsText = (r: PrePoReceipt) => r.items.slice(0, 2).map((i) => i.item_name).join(', ') + (r.items.length > 2 ? ` +${r.items.length - 2} more` : '')
 
@@ -80,7 +81,9 @@ export default function BeforePOPendingList() {
             {shown.map((r) => (
               <tr key={r.id}>
                 <td style={{ ...PO_TD, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{r.receipt_number}</td>
-                <td style={{ ...PO_TD, fontWeight: 600, whiteSpace: 'nowrap' }} title={r.vendor_name}>{clip(r.vendor_name)}</td>
+                <td style={{ ...PO_TD, fontWeight: 600, whiteSpace: 'nowrap' }} title={r.vendor_name}>
+                  <RecordLink base={RECORD_BASE.vendor} row={r} idKey="vendor_id" allowed={can('p2p', 'vendors', 'view')} title={`Open ${r.vendor_name}`} style={{ color: TEXT.heading }}>{clip(r.vendor_name)}</RecordLink>
+                </td>
                 <td style={{ ...PO_TD, whiteSpace: 'nowrap' }}>{formatDate(r.received_date)}</td>
                 <td style={PO_TD} title={r.items.map((i) => `${i.item_name} × ${i.quantity}`).join(', ')}>
                   <strong>{r.items.length}</strong> · {clip(itemsText(r))}

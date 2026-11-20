@@ -178,7 +178,7 @@ export default function ServiceVisitsTab({ srId, srStatus, assignedId, srChangea
           <tbody>
             {data && data.visits.length === 0 && <tr><td colSpan={9} style={{ ...tdStyle, color: '#78716c' }}>No visits logged yet.</td></tr>}
             {data?.visits.map((v) => (
-              <tr key={v.id}>
+              <tr key={v.id} onClick={() => setDocFor(docFor === v.id ? null : v.id)} title="Click to open this visit's service report" style={{ cursor: 'pointer', background: docFor === v.id ? 'rgba(244,113,59,0.06)' : undefined }}>
                 <td style={tdStyle}>{formatDate(v.visit_date)}</td>
                 <td style={tdStyle}>{v.engineer_name || '—'}</td>
                 <td style={tdStyle}>{v.arrive_at ? `${formatDateTime(v.arrive_at)} → ${v.depart_at ? formatDateTime(v.depart_at) : '—'}` : '—'}</td>
@@ -187,7 +187,7 @@ export default function ServiceVisitsTab({ srId, srStatus, assignedId, srChangea
                 <td style={tdStyle}>{inr(v.travel_cost + v.stay_cost + v.misc_cost)}</td>
                 <td style={{ ...tdStyle, maxWidth: 260, whiteSpace: 'pre-wrap' }}>{v.work_done}</td>
                 <td style={tdStyle}>{v.customer_signed_at ? `${v.customer_sign_name}, ${formatDateTime(v.customer_signed_at)}` : 'Not signed'}</td>
-                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
                   <button type="button" style={{ ...btn, marginRight: 6 }} onClick={() => setDocFor(docFor === v.id ? null : v.id)}>Report</button>
                   {open && mayTouch(v) && visitFeat('edit') && (
                     <button type="button" style={{ ...btn, marginRight: 6 }} onClick={() => startEdit(v)}>Edit</button>

@@ -15,6 +15,7 @@ import { TEXT } from '@/lib/theme'
 import DateField from '@/components/erp/DateField'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
+import { rowOpen } from '@/components/finance/RecordLink'
 import { FormSheet, SheetColumns, SheetSection, SHEET, sheetInput, SheetError } from '@/components/shared/FormSheet'
 import { SField, SRow, SheetFooter, sw, sg } from '@/components/finance/financeSheet'
 import Select from '@/components/shared/Select'
@@ -87,6 +88,14 @@ export function ProfitCentresTab() {
     } catch (e) { setFormError(errText(e, 'Could not save the profit centre')) } finally { setSaving(false) }
   }
 
+  const editCentre = (p: ProfitCentre) => {
+    setFormError(null)
+    setForm({
+      id: p.id, code: p.code, name: p.name, segment: p.segment, branch_id: p.branch_id ? String(p.branch_id) : '', parent_id: p.parent_id ? String(p.parent_id) : '',
+      valid_from: p.valid_from || '', valid_to: p.valid_to || '', status: p.status, is_default: p.is_default, description: p.description || '',
+    })
+  }
+
   const assign = async (payload: { cost_center_id?: number; branch_id?: number }, pcId: string) => {
     try {
       await profitCentresApi.assign({ ...payload, profit_center_id: pcId ? Number(pcId) : null })
@@ -115,7 +124,7 @@ export function ProfitCentresTab() {
         </tr></thead>
         <tbody>
           {rows.length === 0 ? <EmptyRow colSpan={9} text="No profit centres yet — create one per plant and business line (new machines, service, spares) plus a corporate default." /> : rows.map((p) => (
-            <tr key={p.id}>
+            <tr key={p.id} {...rowOpen(canEdit ? () => editCentre(p) : null, 'Open this profit centre')}>
               <td style={{ ...tdStyle, fontWeight: 700 }}>{p.code}{p.is_default && <span style={{ fontSize: 10.5, color: '#0f766e', marginLeft: 6 }}>DEFAULT</span>}</td>
               <td style={tdStyle}>{p.name}</td><td style={tdStyle}>{p.segment_label}</td><td style={tdStyle}>{p.branch_name || 'Company-wide'}</td>
               <td style={tdStyle}>{p.parent_code || '—'}</td>
@@ -123,10 +132,7 @@ export function ProfitCentresTab() {
               <td style={{ ...tdStyle, color: TEXT.secondary }}>{p.cost_center_codes.join(', ') || '—'}</td>
               <td style={tdStyle}><StatusPill status={p.status} colors={PC_STATUS_HEX} /></td>
               <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                {canEdit && <span style={{ ...linkBtnStyle, marginRight: 10 }} onClick={() => { setFormError(null); setForm({
-                  id: p.id, code: p.code, name: p.name, segment: p.segment, branch_id: p.branch_id ? String(p.branch_id) : '', parent_id: p.parent_id ? String(p.parent_id) : '',
-                  valid_from: p.valid_from || '', valid_to: p.valid_to || '', status: p.status, is_default: p.is_default, description: p.description || '',
-                }) }}>Edit</span>}
+                {canEdit && <span style={{ ...linkBtnStyle, marginRight: 10 }} onClick={() => editCentre(p)}>Edit</span>}
                 {canDelete && <span style={dangerLinkStyle} onClick={() => setDeleting(p)}>Delete</span>}
               </td>
             </tr>

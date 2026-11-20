@@ -29,6 +29,7 @@ import {
 } from '@/components/finance/financeUi'
 import { RowCount, pillStyle } from '@/components/shared/ui'
 import { VOUCHER_LABELS } from '@/components/finance/voucherLabels'
+import { RecLink, customerHref, vendorHref, voucherHref, useRowLink } from '@/components/finance/RecordLink'
 import { CostCenterReport, InternalOrdersReport } from '@/components/finance/ControllingReports'
 import Select from '@/components/shared/Select'
 
@@ -149,6 +150,7 @@ export default function FinanceReportsPage() {
   const { isAuthorized, isLoading } = useRequireApp('accounts')
   const { tabs: visibleTabs, tab, setTab } = useFinanceSubTabs(TABS, TAB_KEYS)
   const { can } = useCan()
+  const go = useRowLink()
   const [fromDate, setFromDate] = useState(fyStartIso())
   const [toDate, setToDate] = useState(todayIso())
   const [error, setError] = useState<string[] | null>(null)
@@ -504,7 +506,7 @@ export default function FinanceReportsPage() {
               : rep.parties.length === 0 ? <EmptyRow colSpan={10} text={`No ${partyWord.toLowerCase()} has anything outstanding.`} />
               : rep.parties.map((p) => (
                 <tr key={p.party_id}>
-                  <td style={{ ...tdStyle, fontWeight: 600 }}>{p.party_name}</td>
+                  <td style={{ ...tdStyle, fontWeight: 600 }}><RecLink href={isAR ? customerHref(p, 'party_id') : vendorHref(p, 'party_id')}>{p.party_name}</RecLink></td>
                   <td style={numTd}>{p.open_bills}</td>
                   {BUCKETS.map((b) => <td key={b.key} style={{ ...numTd, color: b.key !== 'not_due' && p[b.key] > 0 ? BUCKET_HEX[b.key] : undefined }}>{inr(p[b.key], { blankZero: true })}</td>)}
                   <td style={{ ...numTd, fontWeight: 700 }}>{inr(p.outstanding)}</td>
@@ -812,10 +814,10 @@ export default function FinanceReportsPage() {
                       <td style={{ ...numTd, fontWeight: 600 }}>{drcr(ledgerShown.opening_balance)}</td>
                     </tr>
                     {ledgerShown.rows.length === 0 ? <EmptyRow colSpan={6} text="No postings in this range." /> : ledgerShown.rows.map((r, i) => (
-                      <tr key={`${r.journal_entry_id}-${i}`}>
+                      <tr key={`${r.journal_entry_id}-${i}`} {...go(voucherHref(r), 'Open the voucher')}>
                         <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{dmy(r.posting_date)}</td>
                         <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                          <div style={{ fontWeight: 600 }}>{r.entry_number}</div>
+                          <div style={{ fontWeight: 600 }}><RecLink href={voucherHref(r)}>{r.entry_number}</RecLink></div>
                           <div style={{ fontSize: 11, color: TEXT.muted }}>{r.voucher_type ? (VOUCHER_LABELS[r.voucher_type] || r.voucher_type.replace(/_/g, ' ')) : ''}</div>
                         </td>
                         <td style={{ ...tdStyle, color: TEXT.secondary }}>{r.description || '—'}</td>

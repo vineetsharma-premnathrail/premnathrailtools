@@ -17,6 +17,7 @@ import Select from '@/components/shared/Select'
 import { useVisibility } from '@/lib/visibility'
 import { VisSection } from '@/lib/visibilityComponents'
 import { sampleVendorSuggestions } from '@/lib/storePreviewSamples'
+import RecLink, { safePath } from '@/components/store/RecLink'
 
 export type ItemErpValues = Pick<StoreItem,
   'preferred_vendor_id' | 'make' | 'manufacturer' | 'manufacturer_part_number' | 'min_order_qty'
@@ -339,7 +340,7 @@ export function ItemVendorSuggestions({ itemId, preview = false }: { itemId: num
                 <tr key={`${r.vendor_id ?? ''}-${r.vendor_name}`}>
                   <td style={tdStyle}>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      {r.vendor_name}
+                      {preview || !r.vendor_id ? r.vendor_name : <RecLink href={safePath('/dashboard/p2p/vendors', r, 'vendor_id')} title="Open the vendor" style={{ color: 'inherit' }}>{r.vendor_name}</RecLink>}
                       {r.preferred && <Pill label="Preferred" hex="#16a34a" />}
                     </span>
                   </td>

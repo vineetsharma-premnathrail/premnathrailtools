@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useRequireOrgTab } from '@/app/dashboard/organization/_lib/useRequireOrgTab'
 import { useCan } from '@/lib/permissions'
+import { RecordLink, useUserPath } from '@/components/crm/RecordLink'
 import { approvalsApi, usersApi } from '@/lib/api'
 import { ApprovalDelegationInfo, ApprovalTransactionType, DirectoryUser } from '@/types'
 import { BORDER, GLASS, SHADOWS, TEXT } from '@/lib/theme'
@@ -26,6 +27,7 @@ const STATE_HEX: Record<string, string> = { active: '#16A34A', upcoming: '#2563E
 export default function DelegationsPage() {
   const { isAuthorized, isLoading } = useRequireOrgTab('delegations')
   const { can } = useCan()
+  const userPath = useUserPath()
   const [rows, setRows] = useState<ApprovalDelegationInfo[]>([])
   const [users, setUsers] = useState<DirectoryUser[]>([])
   const [types, setTypes] = useState<ApprovalTransactionType[]>([])
@@ -87,8 +89,8 @@ export default function DelegationsPage() {
             {visible.length === 0 && <tr><td colSpan={8} style={{ ...td, textAlign: 'center', color: TEXT.muted }}>No delegations.</td></tr>}
             {visible.map((d) => (
               <tr key={d.id}>
-                <td style={td}>{d.delegator_name}</td>
-                <td style={td}>{d.delegate_name}</td>
+                <td style={td}><RecordLink href={userPath(d, 'delegator_id')} style={{ color: TEXT.body, fontWeight: 400 }} title="Open the user">{d.delegator_name}</RecordLink></td>
+                <td style={td}><RecordLink href={userPath(d, 'delegate_id')} style={{ color: TEXT.body, fontWeight: 400 }} title="Open the user">{d.delegate_name}</RecordLink></td>
                 <td style={td}>{new Date(d.start_date).toLocaleDateString('en-GB')}</td>
                 <td style={td}>{new Date(d.end_date).toLocaleDateString('en-GB')}</td>
                 <td style={td}>{d.workflow_label || (d.module_label ? `${d.module_label} (all)` : 'All approvals')}</td>

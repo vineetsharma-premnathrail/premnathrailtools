@@ -11,6 +11,7 @@ import { primaryBtnStyle, secondaryBtnStyle, RowCount, Pill, TableScroll, thStyl
 import StoreNav from '@/components/store/StoreNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { useRecordId } from '@/lib/recordRef'
+import RecLink, { safePath } from '@/components/store/RecLink'
 import MessageDialog from '@/components/erp/MessageDialog'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
@@ -228,7 +229,7 @@ export default function StoreStockTransferDetailPage() {
                 <tbody>
                   {transfer.items.map((line) => (
                     <tr key={line.id}>
-                      <td style={{ ...tdStyle, fontWeight: 600 }}>{line.item_code} — {line.item_name}</td>
+                      <td style={{ ...tdStyle, fontWeight: 600 }}><RecLink href={safePath('/dashboard/store', line, 'item_id')} title="Open the item" style={{ color: 'inherit' }}>{line.item_code} — {line.item_name}</RecLink></td>
                       <td style={numTdStyle}>{line.quantity.toLocaleString('en-IN', { maximumFractionDigits: 3 })} {line.uom}</td>
                       <td style={tdStyle}>{line.batch_number || '—'}</td>
                       <td style={tdStyle}>{line.remarks || '—'}</td>

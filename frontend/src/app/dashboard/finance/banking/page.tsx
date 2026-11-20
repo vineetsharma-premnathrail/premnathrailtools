@@ -24,6 +24,7 @@ import {
   thStyle, tdStyle, numTd, numTh, inr, dmy, todayIso,
   Field, ErrorBanner, InfoBanner, StatusPill, SubTabs, useFinanceSubTabs, PageHeader, TableWrap, EmptyRow, StatCard,
 } from '@/components/finance/financeUi'
+import { RecLink, voucherHref, useRowLink } from '@/components/finance/RecordLink'
 import { RowCount } from '@/components/shared/ui'
 
 const PAY_MODE_LABELS: Record<string, string> = { cheque: 'Cheque', neft: 'NEFT', rtgs: 'RTGS', imps: 'IMPS', upi: 'UPI', cash: 'Cash', dd: 'Demand Draft' }
@@ -162,6 +163,7 @@ function AccountsTab({ accounts, loading, onOpenBook }: { accounts: BankAccount[
 // ─── Bank / cash book ─────────────────────────────────────────────────
 
 function BookTab({ accounts, accountId, setAccountId }: { accounts: BankAccount[]; accountId: string; setAccountId: (v: string) => void }) {
+  const go = useRowLink()
   const [from, setFrom] = useState(`${todayIso().slice(0, 7)}-01`)
   const [to, setTo] = useState(todayIso())
   const [data, setData] = useState<GLLedger | null>(null)
@@ -242,9 +244,9 @@ function BookTab({ accounts, accountId, setAccountId }: { accounts: BankAccount[
               </tr>
               {data.rows.length === 0 && <EmptyRow colSpan={7} text="No receipts or payments in this range." />}
               {data.rows.map((r, i) => (
-                <tr key={`${r.journal_entry_id}-${i}`}>
+                <tr key={`${r.journal_entry_id}-${i}`} {...go(voucherHref(r), 'Open the voucher')}>
                   <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{dmy(r.posting_date)}</td>
-                  <td style={{ ...tdStyle, whiteSpace: 'nowrap', fontWeight: 600 }}>{r.entry_number}</td>
+                  <td style={{ ...tdStyle, whiteSpace: 'nowrap', fontWeight: 600 }}><RecLink href={voucherHref(r)}>{r.entry_number}</RecLink></td>
                   <td style={tdStyle}>{VOUCHER_LABELS[r.voucher_type] || r.voucher_type}</td>
                   <td style={{ ...tdStyle, color: TEXT.secondary }}>{r.description || '—'}</td>
                   <td style={{ ...numTd, color: '#15803d' }}>{inr(r.debit_amount, { blankZero: true })}</td>

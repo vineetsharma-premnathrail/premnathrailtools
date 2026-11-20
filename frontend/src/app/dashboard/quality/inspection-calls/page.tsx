@@ -14,7 +14,7 @@ import QualityNav from '@/components/quality/QualityNav'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { Field, Section, inputStyle, primaryBtnStyle, secondaryBtnStyle, RowCount } from '@/components/shared/ui'
 import {
-  Pill, PageHeader, ErrorBanner, tableWrapStyle, thStyle, tdStyle, filterInputStyle, fmtDate, fmtQty,
+  Pill, RecordLink, PageHeader, ErrorBanner, tableWrapStyle, thStyle, tdStyle, filterInputStyle, fmtDate, fmtQty,
 } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
@@ -32,6 +32,7 @@ type Tab = typeof TABS[number][0]
 
 function CallsTab() {
   const router = useRouter()
+  const { can } = useCan()
   // Columns the user's roles hide; in the Role editor's preview the list shows sample rows and loads nothing.
   const vis = useVisibility('quality:inspection_calls')
   const [rows, setRows] = useState<QualityInspectionCall[]>(vis.preview ? sampleCalls : [])
@@ -99,7 +100,7 @@ function CallsTab() {
                     {c.order_reference || '—'}<div style={{ fontSize: 11.5, color: TEXT.muted }}>{c.project_label || c.customer_name || ''}</div>
                     {c.op_number && <div style={{ marginTop: 4 }}><OrderProjectChip opNumber={c.op_number} elementNo={c.element_no} label={c.element_label} /></div>}
                   </VisTd>
-                  <VisTd vis={vis} table="calls" k="item" style={tdStyle}>{c.item_code ? `${c.item_code} — ` : ''}{c.item_name}</VisTd>
+                  <VisTd vis={vis} table="calls" k="item" style={tdStyle}><RecordLink base="/dashboard/store" row={c} idKey="item_id" allowed={can('store', 'items', 'view')} title="Open the item">{c.item_code ? `${c.item_code} — ` : ''}{c.item_name}</RecordLink></VisTd>
                   <VisTd vis={vis} table="calls" k="qty" style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{fmtQty(c.quantity, c.uom)}</VisTd>
                   <VisTd vis={vis} table="calls" k="call_date" style={{ ...tdStyle, whiteSpace: 'nowrap', color: soon ? '#DC2626' : TEXT.body, fontWeight: soon ? 700 : 400 }}>{fmtDate(c.call_date)}</VisTd>
                   <VisTd vis={vis} table="calls" k="inspector" style={tdStyle}>{c.inspector_name || '—'}</VisTd>

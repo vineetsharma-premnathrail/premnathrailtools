@@ -25,6 +25,7 @@ import PoDeliveryCostsPanel from '@/components/p2p/PoDeliveryCostsPanel'
 import UploadPODialog from '@/components/p2p/UploadPODialog'
 import DiscardPoDraftDialog, { DiscardPoDraftTarget } from '@/components/p2p/DiscardPoDraftDialog'
 import PrTracker from '@/components/p2p/PrTracker'
+import RecordLink, { RECORD_BASE } from '@/components/p2p/RecordLink'
 import { useVisibility } from '@/lib/visibility'
 import { VisSection, VisTd, VisTh } from '@/lib/visibilityComponents'
 import { sampleHistory, sampleRequisition } from '@/lib/p2pPreviewSamples'
@@ -703,7 +704,8 @@ export default function MyP2PRequestDetailPage() {
               <Fragment key={it.id}>
                 <tr>
                 <td style={{ ...tdStyle, color: TEXT.secondary }}>{idx + 1}</td>
-                <td style={{ ...tdStyle, minWidth: 200 }}>{it.item_code && <span style={{ fontWeight: 700, color: TEXT.heading }}>{it.item_code} — </span>}{it.item_name}</td>
+                <td style={{ ...tdStyle, minWidth: 200 }}>{it.item_code && <span style={{ fontWeight: 700, color: TEXT.heading }}>
+                  <RecordLink base={RECORD_BASE.item} row={it} idKey="store_item_id" allowed={can('store', 'items', 'view')} title="Open the item" style={{ color: TEXT.heading, fontWeight: 700 }}>{it.item_code}</RecordLink> — </span>}{it.item_name}</td>
                 <VisTd vis={vis} table="detail_lines" k="make" style={{ ...tdStyle, color: TEXT.secondary }}>{it.make || '—'}</VisTd>
                 <VisTd vis={vis} table="detail_lines" k="part_code" style={{ ...tdStyle, color: TEXT.secondary }}>{it.part_code || '—'}</VisTd>
                 <VisTd vis={vis} table="detail_lines" k="uom" style={{ ...tdStyle, color: TEXT.secondary }}>{it.unit || '—'}</VisTd>
@@ -921,9 +923,9 @@ export default function MyP2PRequestDetailPage() {
                     const mine = r.buyer_id != null && r.buyer_id === user?.id
                     const readable = rfqReadable(r)
                     return (
-                      <tr key={r.id}>
+                      <tr key={r.id} onClick={mayOpenRfq(r) ? () => router.push(recordPath('/dashboard/p2p/rfq', r)) : undefined} style={mayOpenRfq(r) ? { cursor: 'pointer' } : undefined}>
                         <td style={{ ...tdStyle, fontWeight: 700, color: TEXT.heading, whiteSpace: 'nowrap' }}>
-                          {r.rfq_number}
+                          <RecordLink base={RECORD_BASE.rfq} row={r} allowed={mayOpenRfq(r)} title={`Open ${r.rfq_number}`} style={{ color: TEXT.heading, fontWeight: 700 }}>{r.rfq_number}</RecordLink>
                           {!readable && <div style={{ fontSize: 11.5, fontWeight: 400, color: TEXT.muted }}>RFQ of {r.buyer_name || r.created_by_name || 'another buyer'}</div>}
                         </td>
                         <td style={{ ...tdStyle, color: TEXT.secondary }}>{r.buyer_name || r.created_by_name || '—'}{mine ? <span style={{ color: TEXT.muted }}> (you)</span> : null}</td>
@@ -946,7 +948,7 @@ export default function MyP2PRequestDetailPage() {
                           {(r.awarded_vendors || []).length > 0 && <div style={{ color: TEXT.muted }}>Awarded: {(r.awarded_vendors || []).join(', ')}</div>}
                           </>}
                         </td>
-                        <td style={{ ...tdStyle, textAlign: 'right' }}>
+                        <td style={{ ...tdStyle, textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
                           <div style={{ display: 'inline-flex', gap: 8, flexWrap: 'nowrap' }}>
                             {mayOpenRfq(r) && (
                               <button type="button" onClick={() => router.push(recordPath('/dashboard/p2p/rfq', r))} style={smallSecondaryBtnStyle}>Open</button>
@@ -1016,7 +1018,7 @@ export default function MyP2PRequestDetailPage() {
             </>}
           />
           <DetailGroup>
-            <DetailRow label="Vendor">{po.vendor_name || null}</DetailRow>
+            <DetailRow label="Vendor">{po.vendor_name ? <RecordLink base={RECORD_BASE.vendor} row={po} idKey="vendor_id" allowed={can('p2p', 'vendors', 'view')} title="Open the vendor">{po.vendor_name}</RecordLink> : null}</DetailRow>
             <DetailRow label="Expected delivery">{po.expected_delivery ? formatDate(po.expected_delivery) : null}</DetailRow>
             {seePrices && <DetailRow label="PO value (incl. tax)">{poLinesTotal != null ? money(poLinesTotal) : null}</DetailRow>}
             {canFeature('p2p', 'purchase_orders', 'po_document', 'view') && (
@@ -1048,7 +1050,8 @@ export default function MyP2PRequestDetailPage() {
                       <td style={tdStyle}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                           <span>
-                            {l.item_code && <span style={{ fontWeight: 700, color: TEXT.heading }}>{l.item_code} — </span>}
+                            {l.item_code && <span style={{ fontWeight: 700, color: TEXT.heading }}>
+                              <RecordLink base={RECORD_BASE.item} row={l} idKey="store_item_id" allowed={can('store', 'items', 'view')} title="Open the item" style={{ color: TEXT.heading, fontWeight: 700 }}>{l.item_code}</RecordLink> — </span>}
                             {l.item_name}{l.make ? <span style={{ color: TEXT.muted }}> · {l.make}</span> : null}
                           </span>
                           {l.category && l.category !== 'stock' && (

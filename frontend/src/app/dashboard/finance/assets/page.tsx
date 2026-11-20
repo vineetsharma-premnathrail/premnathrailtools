@@ -1,5 +1,6 @@
 'use client'
 
+import { rowOpen } from '@/components/finance/RecordLink'
 import React, { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -279,7 +280,7 @@ function RegisterTab({ canManage }: { canManage: boolean }) {
         <tbody>
           {loading ? <EmptyRow colSpan={11} text="Loading…" /> : assets.length === 0 ? <EmptyRow colSpan={11} text="No assets in the register — use + Register asset." />
             : assets.map((a) => (
-              <tr key={a.id}>
+              <tr key={a.id} {...rowOpen(can('accounts', 'fixed_assets', 'edit') ? () => setEditing(a) : null, 'Open this asset')}>
                 <td style={{ ...tdStyle, fontWeight: 600 }}>{a.asset_code}</td>
                 <td style={tdStyle}>
                   {a.name}

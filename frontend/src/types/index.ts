@@ -3777,6 +3777,8 @@ export interface StoreStockTransaction {
   batch_number?: string | null
   reference_type?: string | null
   reference_number?: string | null
+  /** Source document id (found by its number) — opens the GRN / issue / return … */
+  reference_id?: number | null
   vendor_name?: string | null
   transaction_date: string
   remarks?: string | null
@@ -4438,6 +4440,8 @@ export interface QualityInspectionLot {
   inspection_type: QualityInspectionType
   status: QualityLotStatus
   source_type: 'grn' | 'work_order' | 'ncr' | 'manual' | 'work_order_operation' | 'material_return' | 'pre_po_receipt'
+  /** Id of the source document (GRN, return, …) — opens it from the lot. */
+  source_id?: number | null
   source_reference?: string | null
   ncr_id?: number | null
   // Sales › Order Projects link (the vehicle / lot this lot inspects).

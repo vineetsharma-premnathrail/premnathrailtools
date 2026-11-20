@@ -92,7 +92,7 @@ const config: TourConfig = {
     {
       target: 'orgs-table-rows',
       title: 'Customer Organization rows',
-      purpose: 'Click anywhere on a row (other than the pin icon) to open that customer organization\'s full detail page — contacts, linked inquiries/tenders, and edit access. If it says "No customer organizations found" right now, that just means nothing matches the current search/filters yet.',
+      purpose: 'Click anywhere on a row (other than the pin icon) to open that customer organization\'s full detail page — contacts, linked inquiries/tenders, and edit access. If it says "No customer organizations found" right now, that just means nothing matches the current search/filters yet. The Created By name links to that person\'s user page.',
     },
   ],
 }

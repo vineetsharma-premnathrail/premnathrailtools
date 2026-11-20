@@ -14,6 +14,7 @@ import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordHref } from '@/lib/recordRef'
 import { segmentBtnStyle, RowCount } from '@/components/shared/ui'
+import { RecordLink, safeHref, useOrgPath } from '@/components/crm/RecordLink'
 
 type Bucket = 'open' | 'overdue' | 'today'
 
@@ -37,6 +38,7 @@ const panelStyle: React.CSSProperties = {
 export default function FollowUpsPage() {
   const { isAuthorized, isLoading } = useRequireApp('crm')
   const router = useRouter()
+  const orgPath = useOrgPath()
   const searchParams = useSearchParams()
   const bucket: Bucket = (['open', 'overdue', 'today'] as Bucket[]).includes(searchParams.get('bucket') as Bucket)
     ? (searchParams.get('bucket') as Bucket)
@@ -119,8 +121,12 @@ export default function FollowUpsPage() {
               return (
                 <tr key={a.id} onClick={() => openRow(a)} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: clickable ? 'pointer' : 'default' }}>
                   <td style={{ padding: '7px 16px', fontSize: 13, fontWeight: 600, color: '#1f1108', whiteSpace: 'nowrap' }}>{a.activity_type || 'Follow Up'}</td>
-                  <td style={{ padding: '7px 16px', fontSize: 13, fontWeight: 600, color: clickable ? '#FF7A45' : '#a8a29e', whiteSpace: 'nowrap' }}>{a.related_label || '—'}</td>
-                  <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#1f1108', whiteSpace: 'nowrap' }}>{a.org_name || '—'}</td>
+                  <td style={{ padding: '7px 16px', fontSize: 13, fontWeight: 600, color: clickable ? '#FF7A45' : '#a8a29e', whiteSpace: 'nowrap' }}>
+                    {clickable ? <RecordLink href={safeHref('/dashboard/crm/inquiries', a, 'related_id', { type: a.related_module })} style={{ color: '#FF7A45' }} title="Open this record">{a.related_label || '—'}</RecordLink> : (a.related_label || '—')}
+                  </td>
+                  <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#1f1108', whiteSpace: 'nowrap' }}>
+                    {a.org_name ? <RecordLink href={orgPath(a, 'org_id')} style={{ color: '#1f1108', fontWeight: 400 }} title="Open the customer organization">{a.org_name}</RecordLink> : '—'}
+                  </td>
                   <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{a.next_followup ? formatDate(a.next_followup) : 'To Be Decided'}</td>
                   <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{a.assigned_to || '—'}</td>
                   <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#57534e', maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={a.remarks ? stripHtml(a.remarks) : ''}>

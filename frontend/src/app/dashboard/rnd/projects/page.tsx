@@ -19,6 +19,7 @@ import { ORIGIN_HEX as ORIGIN_COLORS, ORIGIN_LABELS as ORIGIN_NAMES, normalizeOr
 import { useVisibility } from '@/lib/visibility'
 import { VisTd, VisTh } from '@/lib/visibilityComponents'
 import { sampleProjects } from '@/lib/rndPreviewSamples'
+import { RecordLink, useUserPath } from '@/components/crm/RecordLink'
 
 const STAGE_LABELS: Record<string, string> = { initiation: 'Initiation', research: 'Research', development: 'Development', feasibility: 'Feasibility', handover: 'Handover', closed: 'Closed' }
 const STATUS_LABELS: Record<string, string> = { active: 'Active', on_hold: 'On Hold', cancelled: 'Cancelled' }
@@ -47,6 +48,7 @@ export default function RndProjectListPage() {
 function RndProjectList() {
   const { isAuthorized, isLoading } = useRequireApp('rnd')
   const { can } = useCan()
+  const userPath = useUserPath()
   const router = useRouter()
   const searchParams = useSearchParams()
   const vis = useVisibility('rnd:projects')
@@ -170,7 +172,11 @@ function RndProjectList() {
                         {STATUS_LABELS[p.status] || p.status}
                       </span>
                     </td>
-                    <VisTd vis={vis} table="projects" k="lead" style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{p.lead_name || '—'}</VisTd>
+                    <VisTd vis={vis} table="projects" k="lead" style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                      {p.leads?.length ? p.leads.map((l, i) => (
+                        <span key={l.id}>{i > 0 && ', '}<RecordLink href={userPath(l)} style={{ color: TEXT.body, fontWeight: 400 }} title="Open the user">{l.name}</RecordLink></span>
+                      )) : (p.lead_name || '—')}
+                    </VisTd>
                     <VisTd vis={vis} table="projects" k="target_end" style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{p.target_end_date ? formatDate(p.target_end_date) : 'Not decided'}</VisTd>
                   </tr>
                 )

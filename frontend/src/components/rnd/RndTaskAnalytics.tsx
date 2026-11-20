@@ -8,7 +8,9 @@
 //   Pending = open and not overdue · Cancelled tasks are left out of the tiles
 //   and of progress. Project progress = average of its non-cancelled tasks.
 
+import { useRouter } from 'next/navigation'
 import { TEXT, BORDER } from '@/lib/theme'
+import { RecordLink, safePath, useUserPath } from '@/components/crm/RecordLink'
 import { formatDate } from '@/lib/format'
 import { Pill, RowCount, TableScroll, chipBtnStyle, thStyle, tdStyle, numThStyle, numTdStyle } from '@/components/shared/ui'
 import { priorityLabel, priorityTone } from '@/lib/priority'
@@ -59,7 +61,15 @@ function groupKey(g: RndTaskGroup): string {
   return g.kind ? `${g.kind}-${g.id ?? `${g.source}-${g.record_id}`}` : `user-${g.user_id}`
 }
 
+/** The page a task's Project / Requirement cell opens (same targets as the By project view). */
+function parentHref(p: RndTaskRow['parent']): string | null {
+  if (p.kind === 'requirement') return safePath(`/dashboard/rnd/requirements/${p.source || 'inquiry'}`, p, 'record_id')
+  return safePath(p.kind === 'machine' ? '/dashboard/rnd/machine-tasks' : p.kind === 'pm_project' ? '/dashboard/rnd/project-tasks' : '/dashboard/rnd/projects', p)
+}
+
 function GroupTable({ rows, nameHeader, showDept, onOpen, tour }: { rows: RndTaskGroup[]; nameHeader: string; showDept?: boolean; onOpen?: (g: RndTaskGroup) => void; tour: string }) {
+  const router = useRouter()
+  const userPath = useUserPath()
   const sorted = [...rows].sort((a, b) => natural(groupLabel(a), groupLabel(b)))
   const cols = showDept ? 7 : 6
   return (
@@ -76,15 +86,20 @@ function GroupTable({ rows, nameHeader, showDept, onOpen, tour }: { rows: RndTas
         <tbody>
           {sorted.length === 0 ? (
             <tr><td colSpan={cols} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted, padding: 20 }}>No tasks match these filters.</td></tr>
-          ) : sorted.map((g) => (
-            <tr key={groupKey(g)} onClick={onOpen ? () => onOpen(g) : undefined} style={{ cursor: onOpen ? 'pointer' : 'default' }}>
-              <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading }}>{groupLabel(g)}</td>
+          ) : sorted.map((g) => {
+            // By project rows open their project / requirement; By person rows (no onOpen) open that person's user page.
+            const personHref = !onOpen && !g.kind ? userPath(g, 'user_id') : null
+            const open = onOpen ? () => onOpen(g) : personHref ? () => router.push(personHref) : undefined
+            return (
+            <tr key={groupKey(g)} onClick={open} style={{ cursor: open ? 'pointer' : 'default' }}>
+              <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading }}><RecordLink href={personHref} style={{ color: TEXT.heading }} title="Open the user">{groupLabel(g)}</RecordLink></td>
               {showDept && <td style={tdStyle}>{g.department || '—'}</td>}
               <td style={numTdStyle}>{g.total}</td><td style={numTdStyle}>{g.pending}</td><td style={numTdStyle}>{g.completed}</td>
               <td style={{ ...numTdStyle, color: g.overdue ? '#DC2626' : TEXT.body, fontWeight: g.overdue ? 700 : 400 }}>{g.overdue}</td>
               <td style={tdStyle}><ProgressCell value={g.progress} /></td>
             </tr>
-          ))}
+            )
+          })}
         </tbody>
       </table>
     </TableScroll>
@@ -104,6 +119,7 @@ export default function RndTaskAnalyticsView({ rows, total, analytics, view, onV
   pageSize: number
   onPage: (p: number) => void
 }) {
+  const userPath = useUserPath()
   const t = analytics?.totals
   const VIEWS: { key: TaskView; label: string }[] = [{ key: 'task', label: 'By task' }, { key: 'person', label: 'By person' }, { key: 'project', label: 'By project / requirement' }]
   const sorted = [...(rows || [])].sort(taskSort)
@@ -153,10 +169,10 @@ export default function RndTaskAnalyticsView({ rows, total, analytics, view, onV
                       </td>
                       <td style={tdStyle}><Pill label={r.type === 'requirement' ? 'Requirement' : r.type === 'project' ? 'Project' : 'Prototype'} hex={r.type === 'requirement' ? '#FF6A2A' : r.type === 'project' ? '#047857' : '#2563EB'} /></td>
                       <td style={tdStyle}>
-                        <div style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{r.parent.ref}</div>
+                        <div style={{ fontWeight: 600, whiteSpace: 'nowrap' }}><RecordLink href={parentHref(r.parent)} style={{ color: TEXT.body }} title="Open this project / requirement">{r.parent.ref}</RecordLink></div>
                         {r.parent.title && <div style={{ fontSize: 12, color: TEXT.muted }}>{r.parent.title}</div>}
                       </td>
-                      <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{r.assignee?.name || '—'}</td>
+                      <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{r.assignee ? <RecordLink href={userPath(r.assignee)} style={{ color: TEXT.body, fontWeight: 400 }} title="Open the user">{r.assignee.name}</RecordLink> : '—'}</td>
                       <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{r.assignee?.department || '—'}</td>
                       <td style={tdStyle}><Pill label={priorityLabel(r.priority)} hex={pt.color} /></td>
                       <td style={tdStyle}><Pill label={st.label} hex={st.hex} /></td>

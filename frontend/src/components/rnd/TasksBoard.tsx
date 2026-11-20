@@ -37,6 +37,7 @@ import { useAuthStore } from '@/store/authStore'
 import { useFormDraft } from '@/lib/formDraft'
 import DraftBanner from '@/components/shared/DraftBanner'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
+import { RecordLink, useUserPath } from '@/components/crm/RecordLink'
 
 export type TaskInput = RndTaskCreateInput
 
@@ -619,6 +620,7 @@ export function TaskView({
 }) {
   const user = useAuthStore((st) => st.user)
   const userName = user?.name || user?.email || undefined
+  const userPath = useUserPath()
   const mine = task.assigned_to_id === userId
   const isSub = !!task.parent_task_id
   const parent = isSub ? all.find((t) => t.id === task.parent_task_id) : undefined
@@ -927,7 +929,7 @@ export function TaskView({
                         <tr key={s.id} onClick={() => onOpen(s.id)} style={{ cursor: 'pointer' }}
                           onMouseEnter={(e) => { e.currentTarget.style.background = SOFT }} onMouseLeave={(e) => { e.currentTarget.style.background = '' }}>
                           <td style={{ ...td, fontWeight: 600, color: INK }}>{s.title}</td>
-                          <td style={td}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><Avatar name={s.assigned_to} size={24} />{s.assigned_to_id === userId ? <b style={{ color: BLUE }}>You</b> : s.assigned_to}</span></td>
+                          <td style={td}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><Avatar name={s.assigned_to} size={24} />{s.assigned_to_id === userId ? <b style={{ color: BLUE }}>You</b> : <RecordLink href={userPath(s, 'assigned_to_id')} style={{ color: BODY, fontWeight: 400 }} title="Open the user">{s.assigned_to}</RecordLink>}</span></td>
                           <td style={{ ...td, whiteSpace: 'nowrap', color: s.is_overdue ? '#be123c' : BODY }}>{formatDate(s.due_date)}</td>
                           <td style={td}><Chip text={ss.text} c={ss.c} bg={ss.bg} /></td>
                           <td style={td}><span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Bar value={taskPercent(s)} color="#16a34a" /><span style={{ fontSize: 12, width: 34 }}>{taskPercent(s)}%</span></span></td>
@@ -1090,6 +1092,7 @@ export default function TasksBoard({ api, userId, canManage, canCreate = canMana
   /** Change to reload (e.g. when the caller's record changes). */
   reloadKey?: string | number
 }) {
+  const userPath = useUserPath()
   const [tasks, setTasks] = useState<RndTask[] | null>(null)
   const [people, setPeople] = useState<RndPerson[]>([])
   const [team, setTeam] = useState<RndPerson[]>([])
@@ -1281,8 +1284,8 @@ export default function TasksBoard({ api, userId, canManage, canCreate = canMana
                         {t.pending_approval && <span style={{ color: '#b45309', fontWeight: 600 }}>Approval waiting</span>}
                       </div>
                     </td>
-                    <td style={td}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><Avatar name={t.assigned_to} size={26} />{t.assigned_to_id === userId ? <b style={{ color: BLUE }}>You</b> : t.assigned_to}</span></td>
-                    <td style={td}>{t.created_by_id === userId ? 'You' : t.created_by}</td>
+                    <td style={td}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><Avatar name={t.assigned_to} size={26} />{t.assigned_to_id === userId ? <b style={{ color: BLUE }}>You</b> : <RecordLink href={userPath(t, 'assigned_to_id')} style={{ color: BODY, fontWeight: 400 }} title="Open the user">{t.assigned_to}</RecordLink>}</span></td>
+                    <td style={td}>{t.created_by_id === userId ? 'You' : <RecordLink href={userPath(t, 'created_by_id')} style={{ color: BODY, fontWeight: 400 }} title="Open the user">{t.created_by}</RecordLink>}</td>
                     <td style={td}><Chip text={PRIORITY_LABELS[pr]} c={PRIORITY_HEX[pr]} bg={`${PRIORITY_HEX[pr]}1a`} /></td>
                     <td style={{ ...td, whiteSpace: 'nowrap', color: t.is_overdue ? '#be123c' : BODY, fontWeight: t.is_overdue ? 600 : 400 }}>{formatDate(t.due_date)}</td>
                     <td style={td}><Chip text={ss.text} c={ss.c} bg={ss.bg} /></td>

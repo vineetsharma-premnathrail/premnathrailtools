@@ -18,6 +18,8 @@ import { recordPath } from '@/lib/recordRef'
 import { useVisibility } from '@/lib/visibility'
 import { VisTd, VisTh } from '@/lib/visibilityComponents'
 import { sampleRequirements } from '@/lib/rndPreviewSamples'
+import { useCan } from '@/lib/permissions'
+import { RecordLink, safeHref, useUserPath } from '@/components/crm/RecordLink'
 
 // Nothing picked = both. Clicking the picked one again clears it.
 const SOURCE_RADIOS = [
@@ -90,6 +92,10 @@ export default function RndRequirementsPage() {
   const { isAuthorized, isLoading, user } = useRequireApp('rnd')
   const router = useRouter()
   const vis = useVisibility('rnd:requirements')
+  const { can } = useCan()
+  const userPath = useUserPath()
+  // The inquiry / tender number opens its CRM page only for people who may see CRM inquiries (else plain text).
+  const canOpenCrm = !vis.preview && can('crm', 'inquiries_tenders', 'view')
 
   const [rows, setRows] = useState<RndRequirementRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -240,7 +246,9 @@ export default function RndRequirementsPage() {
                     <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{r.status ? SHORT_STATUS[r.status] || REVISION_STATUS_LABEL[r.status] : '—'}</td>
                     <VisTd vis={vis} table="requirements" k="source" style={{ ...cellStyle, whiteSpace: 'nowrap' }}>
                       <span style={{ fontSize: 11, fontWeight: 600, color: TEXT.muted }}>{r.source === 'inquiry' ? 'Inquiry' : 'Tender'}</span><br />
-                      {r.universal_id}
+                      {canOpenCrm
+                        ? <RecordLink href={safeHref('/dashboard/crm/inquiries', r, 'record_id', { type: r.source })} style={{ color: TEXT.body, fontWeight: 400 }} title={`Open the ${r.source} in CRM`}>{r.universal_id}</RecordLink>
+                        : r.universal_id}
                     </VisTd>
                     <VisTd vis={vis} table="requirements" k="customer" style={{ ...cellStyle, whiteSpace: 'normal' }} data-fit-clamp="" title={r.org_name || undefined}><div>{r.org_name || '—'}</div></VisTd>
                     <VisTd vis={vis} table="requirements" k="product" style={{ ...cellStyle, whiteSpace: 'normal' }} data-fit-clamp=""
@@ -253,7 +261,11 @@ export default function RndRequirementsPage() {
                         <>
                           {(() => { const st = shortResponse(r.rnd_request, !!r.waiting_on_bd); return <div style={{ fontWeight: 600, color: st.color }}>{st.text}</div> })()}
                           <div style={{ fontSize: 11.5, color: TEXT.muted, marginTop: 2 }}>
-                            {r.rnd_request.assigned_to_id == null ? 'Team' : r.rnd_request.assigned_to_id === user?.id ? 'You' : (r.rnd_request.assigned_to || '').split(' ')[0]} · {r.waiting_on_bd || r.rnd_request.waiting_on === 'bd' ? 'due paused' : shortDate(r.rnd_request.due_date)}
+                            {r.rnd_request.assigned_to_id == null ? 'Team' : (
+                              <RecordLink href={userPath(r.rnd_request, 'assigned_to_id')} style={{ color: TEXT.muted, fontWeight: 400 }} title="Open the user">
+                                {r.rnd_request.assigned_to_id === user?.id ? 'You' : (r.rnd_request.assigned_to || '').split(' ')[0]}
+                              </RecordLink>
+                            )} · {r.waiting_on_bd || r.rnd_request.waiting_on === 'bd' ? 'due paused' : shortDate(r.rnd_request.due_date)}
                           </div>
                         </>
                       ) : <span style={{ fontSize: 12, color: TEXT.muted }}>Not assigned</span>}

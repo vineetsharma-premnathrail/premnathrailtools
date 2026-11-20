@@ -25,10 +25,11 @@ import { useCan } from '@/lib/permissions'
 import Select from '@/components/shared/Select'
 import FilterMenu from '@/components/shared/FilterMenu'
 import PrintRegisterSheet from '@/components/store/PrintRegisterSheet'
+import RecLink, { safePath } from '@/components/store/RecLink'
 
 type BinType = 'rack' | 'shelf' | 'bin'
 type Bin = { id: number; location_id: number; parent_id: number | null; bin_type: BinType; code: string; name?: string | null; is_active: boolean }
-type Move = { id: number; move_number: string; item_code?: string; item_name?: string; uom?: string; from_bin_code?: string | null; to_bin_code?: string | null; quantity: number; move_date?: string; remarks?: string | null; created_by_name?: string | null }
+type Move = { id: number; item_id?: number; move_number: string; item_code?: string; item_name?: string; uom?: string; from_bin_code?: string | null; to_bin_code?: string | null; quantity: number; move_date?: string; remarks?: string | null; created_by_name?: string | null }
 type StockRow = { item_id: number; item_code?: string; item_name?: string; uom?: string; location_id: number; location_name?: string; bin_id: number | null; bin_code?: string | null; bin_name?: string | null; quantity: number }
 
 const TYPE_LABEL: Record<BinType, string> = { rack: 'Rack', shelf: 'Shelf', bin: 'Bin' }
@@ -284,7 +285,7 @@ export default function StoreBinsPage() {
           <tbody>
             {rows.map((r) => (
               <tr key={`${r.item_id}-${r.bin_id}`}>
-                <td style={{ padding: '6px 0', fontSize: 12.5, color: TEXT.body, fontWeight: 600 }}>{r.item_code} — {r.item_name}</td>
+                <td style={{ padding: '6px 0', fontSize: 12.5, color: TEXT.body, fontWeight: 600 }}><RecLink href={safePath('/dashboard/store', r, 'item_id')} title="Open the item" style={{ color: TEXT.body }}>{r.item_code} — {r.item_name}</RecLink></td>
                 <td style={{ padding: '6px 12px', fontSize: 12.5, fontWeight: 700, color: r.quantity < 0 ? '#b91c1c' : TEXT.body, whiteSpace: 'nowrap', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtQty(r.quantity)} {r.uom || ''}</td>
               </tr>
             ))}
@@ -440,7 +441,7 @@ export default function StoreBinsPage() {
                       <td style={td}>
                         <Pill label={putaway ? 'Put away' : m.to_bin_code ? 'Move' : 'Taken out'} hex={putaway ? SUCCESS.hover : '#0891b2'} />
                       </td>
-                      <td style={{ ...td, color: TEXT.body, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`${m.item_code || ''} — ${m.item_name || ''}`}>{m.item_code || '—'} — {m.item_name || '—'}</td>
+                      <td style={{ ...td, color: TEXT.body, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`${m.item_code || ''} — ${m.item_name || ''}`}><RecLink href={safePath('/dashboard/store', m, 'item_id')} title="Open the item" style={{ color: TEXT.body, fontWeight: 400 }}>{m.item_code || '—'} — {m.item_name || '—'}</RecLink></td>
                       <td style={{ ...td, fontWeight: 700, color: TEXT.body, whiteSpace: 'nowrap', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtQty(m.quantity)} {m.uom || ''}</td>
                       <td style={{ ...td, whiteSpace: 'nowrap' }}>{m.from_bin_code || 'Unassigned'} → {m.to_bin_code || 'Unassigned'}</td>
                       <td style={td}>{m.created_by_name || '—'}</td>

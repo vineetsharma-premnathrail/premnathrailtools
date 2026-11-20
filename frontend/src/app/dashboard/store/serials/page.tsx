@@ -19,6 +19,7 @@ import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import FilterMenu from '@/components/shared/FilterMenu'
+import RecLink, { safePath } from '@/components/store/RecLink'
 
 const STATUS_HEX: Record<string, string> = {
   quality: '#d97706', in_stock: '#16a34a', blocked: '#dc2626', in_transit: '#2563eb', issued: '#7c3aed',
@@ -131,11 +132,11 @@ export default function StoreSerialsPage() {
             {!loading && rows.map((r) => (
               <tr key={r.id} onClick={() => open(r.id)} style={{ cursor: 'pointer' }}>
                 <td style={{ ...td, fontWeight: 700, color: TEXT.body }}>{r.serial_no}</td>
-                <td style={{ ...td, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`${r.item_code || ''} — ${r.item_name || ''}`}>{r.item_code || '—'} — {r.item_name || '—'}</td>
+                <td style={{ ...td, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`${r.item_code || ''} — ${r.item_name || ''}`}><RecLink href={safePath('/dashboard/store', r, 'item_id')} title="Open the item" style={{ color: TEXT.secondary, fontWeight: 400 }}>{r.item_code || '—'} — {r.item_name || '—'}</RecLink></td>
                 <td style={td}><Badge status={r.status} label={r.status_label} />{r.on_transfer ? <span style={{ fontSize: 11, color: TEXT.muted, marginLeft: 6 }}>on transfer</span> : null}</td>
                 <td style={td}>{r.location_name || '—'}{r.bin_code ? ` · ${r.bin_code}` : ''}</td>
-                <td style={td}>{r.grn_number || '—'}{r.vendor_name ? ` · ${r.vendor_name}` : ''}</td>
-                <td style={{ ...td, maxWidth: 260 }}>{r.issued_to || (r.issue_number ? r.issue_number : '—')}</td>
+                <td style={td}>{r.grn_number ? <RecLink href={safePath('/dashboard/store/grn', r, 'grn_id')} title="Open the goods receipt">{r.grn_number}</RecLink> : '—'}{r.vendor_name ? ` · ${r.vendor_name}` : ''}</td>
+                <td style={{ ...td, maxWidth: 260 }}>{r.issued_to || (r.issue_number ? <RecLink href={safePath('/dashboard/store/issues', r, 'issue_id')} title="Open the material issue">{r.issue_number}</RecLink> : '—')}</td>
                 <td style={{ ...td, whiteSpace: 'nowrap' }}>{r.vendor_warranty_until ? formatDate(r.vendor_warranty_until) : '—'}</td>
               </tr>
             ))}
@@ -158,14 +159,14 @@ export default function StoreSerialsPage() {
           <div style={{ padding: '20px 24px' }}>
             <SheetSection icon="list" title="Details" extra={<Badge status={detail.status} label={detail.status_label} />}>
               <DetailGroup last={!detail.issue_number && !detail.issued_to}>
-                <DetailRow label="GRN">{detail.grn_number}</DetailRow>
+                <DetailRow label="GRN">{detail.grn_number ? <RecLink href={safePath('/dashboard/store/grn', detail, 'grn_id')} title="Open the goods receipt">{detail.grn_number}</RecLink> : null}</DetailRow>
                 <DetailRow label="Vendor">{detail.vendor_name}</DetailRow>
                 <DetailRow label="Received on">{detail.received_date ? formatDate(detail.received_date) : null}</DetailRow>
                 <DetailRow label="Supplier warranty until">{detail.vendor_warranty_until ? formatDate(detail.vendor_warranty_until) : null}</DetailRow>
               </DetailGroup>
               {(detail.issue_number || detail.issued_to) && (
                 <DetailGroup last>
-                  {detail.issue_number && <DetailRow label="Issue">{detail.issue_number}</DetailRow>}
+                  {detail.issue_number && <DetailRow label="Issue"><RecLink href={safePath('/dashboard/store/issues', detail, 'issue_id')} title="Open the material issue">{detail.issue_number}</RecLink></DetailRow>}
                   {detail.issued_to && <DetailRow label="Issued to">{detail.issued_to}</DetailRow>}
                 </DetailGroup>
               )}

@@ -34,6 +34,7 @@ import {
   useFinanceSubTabs,
 } from '@/components/finance/financeUi'
 import { RowCount, pillStyle } from '@/components/shared/ui'
+import { rowOpen } from '@/components/finance/RecordLink'
 
 const TABS = ['Planning', 'Plan vs Actual', 'Activity Rates', 'Allocations', 'Overhead'] as const
 type Tab = typeof TABS[number]
@@ -460,6 +461,11 @@ function ActivityRatesTab() {
     } catch (e) { setFormError(errMsg(e, 'Could not save the rate')) }
   }
 
+  const editRate = (r: (typeof rows)[number]) => {
+    setFormError(null)
+    setForm({ id: r.id, activity_type: r.activity_type, object: r.workstation_id ? 'workstation' : 'cost_center', workstation_id: String(r.workstation_id ?? ''), cost_center_id: String(r.cost_center_id ?? ''), valid_from: r.valid_from, valid_to: r.valid_to ?? '', fixed_rate: String(r.fixed_rate), variable_rate: String(r.variable_rate), notes: r.notes ?? '' })
+  }
+
   return (
     <div>
       <InfoBanner>Activity prices for production costing. A time log is costed at the rate valid on its date: the workstation&apos;s own rate, else its cost centre&apos;s, else the workstation&apos;s flat hourly rate. A plain hour (no activity type) costs machine + labour hour. Rates belong to one financial year; fixed vs variable split shows how much is capacity cost.</InfoBanner>
@@ -473,7 +479,7 @@ function ActivityRatesTab() {
         <tbody>
           {rows.length === 0 ? <EmptyRow colSpan={9} text="No activity rates yet — production uses each workstation's flat hourly rate until you add some." />
             : rows.map((r) => (
-              <tr key={r.id}>
+              <tr key={r.id} {...rowOpen(can('accounts', 'activity_rates', 'edit') ? () => editRate(r) : null, 'Open this rate')}>
                 <td style={tdStyle}><b>{r.activity_type}</b> {r.activity_label}</td>
                 <td style={tdStyle}>{r.workstation_label || r.cost_center_label}<span style={{ color: TEXT.muted }}>{r.workstation_label ? ' (workstation)' : ' (cost centre)'}</span></td>
                 <td style={tdStyle}>{r.financial_year}</td>
@@ -481,7 +487,7 @@ function ActivityRatesTab() {
                 <td style={numTd}>{inr(r.fixed_rate)}</td><td style={numTd}>{inr(r.variable_rate)}</td><td style={{ ...numTd, fontWeight: 700 }}>{inr(r.rate)}</td>
                 <td style={numTd}>{r.fixed_share_pct}%</td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                  {can('accounts', 'activity_rates', 'edit') && <button style={linkBtnStyle} onClick={() => { setFormError(null); setForm({ id: r.id, activity_type: r.activity_type, object: r.workstation_id ? 'workstation' : 'cost_center', workstation_id: String(r.workstation_id ?? ''), cost_center_id: String(r.cost_center_id ?? ''), valid_from: r.valid_from, valid_to: r.valid_to ?? '', fixed_rate: String(r.fixed_rate), variable_rate: String(r.variable_rate), notes: r.notes ?? '' }) }}>Edit</button>}
+                  {can('accounts', 'activity_rates', 'edit') && <button style={linkBtnStyle} onClick={() => editRate(r)}>Edit</button>}
                   {can('accounts', 'activity_rates', 'delete') && <>{' · '}<button style={dangerLinkStyle} onClick={() => setToDelete(r)}>Delete</button></>}
                 </td>
               </tr>
@@ -577,6 +583,10 @@ function AllocationsTab() {
       setForm(null); load()
     } catch (e) { setFormError(errMsg(e, 'Could not save the cycle')) }
   }
+  const editCycle = (c: (typeof cycles)[number]) => {
+    setFormError(null)
+    setForm({ id: c.id, code: c.code, name: c.name, method: c.method, assessment_gl_account_id: String(c.assessment_gl_account_id ?? ''), valid_from: c.valid_from ?? '', valid_to: c.valid_to ?? '', status: c.status, notes: c.notes ?? '', segments: c.segments.map((s) => ({ ...s, receivers: s.receivers.map((r) => ({ cost_center_id: r.cost_center_id, percent: r.percent })) })) })
+  }
   const setSeg = (i: number, patch: Partial<CoSegment>) => form && setForm({ ...form, segments: form.segments.map((s, j) => (j === i ? { ...s, ...patch } : s)) })
 
   return (
@@ -592,7 +602,7 @@ function AllocationsTab() {
         <thead><tr><th style={thStyle}>Cycle <RowCount count={cycles.length} /></th><th style={thStyle}>Method</th><th style={thStyle}>Segments</th><th style={thStyle}>Last posted</th><th style={thStyle}>Status</th><th style={thStyle}></th></tr></thead>
         <tbody>
           {cycles.length === 0 ? <EmptyRow colSpan={6} text="No allocation cycles yet — use + New cycle to share a cost centre's costs out to others." /> : cycles.map((c) => (
-            <tr key={c.id}>
+            <tr key={c.id} {...rowOpen(can('accounts', 'allocations', 'edit') ? () => editCycle(c) : null, 'Open this cycle')}>
               <td style={tdStyle}><b>{c.code}</b> — {c.name}</td>
               <td style={tdStyle}>{c.method_label}{c.assessment_gl_label ? ` · ${c.assessment_gl_label}` : ''}</td>
               <td style={tdStyle}>{c.segments.map((s) => <div key={s.id}>{s.sender_label} → {s.receivers.map((r) => r.label).join(', ')} <span style={{ color: TEXT.muted }}>({BASIS_LABELS[s.basis]})</span></div>)}</td>
@@ -600,7 +610,7 @@ function AllocationsTab() {
               <td style={tdStyle}><StatusPill status={c.status} labels={STATUS_LABELS} colors={STATUS_HEX} /></td>
               <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
                 <button style={linkBtnStyle} onClick={() => testRun(c)}>Test run {period}</button>
-                {can('accounts', 'allocations', 'edit') && <>{' · '}<button style={linkBtnStyle} onClick={() => { setFormError(null); setForm({ id: c.id, code: c.code, name: c.name, method: c.method, assessment_gl_account_id: String(c.assessment_gl_account_id ?? ''), valid_from: c.valid_from ?? '', valid_to: c.valid_to ?? '', status: c.status, notes: c.notes ?? '', segments: c.segments.map((s) => ({ ...s, receivers: s.receivers.map((r) => ({ cost_center_id: r.cost_center_id, percent: r.percent })) })) }) }}>Edit</button></>}
+                {can('accounts', 'allocations', 'edit') && <>{' · '}<button style={linkBtnStyle} onClick={() => editCycle(c)}>Edit</button></>}
                 {can('accounts', 'allocations', 'delete') && <>{' · '}<button style={dangerLinkStyle} onClick={() => setDeleteCycle(c)}>Delete</button></>}
               </td>
             </tr>

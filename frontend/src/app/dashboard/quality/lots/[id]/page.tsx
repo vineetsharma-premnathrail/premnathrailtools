@@ -20,7 +20,7 @@ import { qualityPrintApi } from '@/lib/qualityPrintApi'
 import { downloadBlob } from '@/lib/reports/download'
 import { Field, Section, InfoRow, DetailCard, DetailSummary, DetailGroup, DetailRow, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, RowCount } from '@/components/shared/ui'
 import {
-  Pill, PageHeader, ErrorBanner, ActionSheet, SheetBlock, fmtQty, fmtDate, INSPECTION_TYPE_LABELS, LOT_STATUS_LABELS, LOT_STATUS_HEX,
+  Pill, RecordLink, PageHeader, ErrorBanner, ActionSheet, SheetBlock, fmtQty, fmtDate, INSPECTION_TYPE_LABELS, LOT_STATUS_LABELS, LOT_STATUS_HEX,
   DECISION_LABELS, SEVERITY_HEX, NCR_STATUS_LABELS, NCR_STATUS_HEX,
 } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
@@ -41,6 +41,11 @@ const SOURCE_LABELS: Record<string, string> = {
   grn: 'GRN', work_order: 'Work order output', ncr: 'NCR re-inspection', manual: 'Manual',
   work_order_operation: 'Production gate', material_return: 'Job work receipt',
   pre_po_receipt: 'Before PO receipt',
+}
+
+// Where the document a lot came from opens (store pages); sources without a page of their own stay plain text.
+const SOURCE_PAGES: Record<string, { base: string; tab: string }> = {
+  grn: { base: '/dashboard/store/grn', tab: 'grn' }, material_return: { base: '/dashboard/store/returns', tab: 'returns' },
 }
 
 const head: React.CSSProperties = { ...cell, fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: SHEET.MUTED, borderTop: 'none', whiteSpace: 'nowrap' }
@@ -252,6 +257,14 @@ export default function LotDetailPage() {
         </VisSection>
         <VisSection vis={vis} k="detail_material">
         <DetailGroup title="Material">
+          <DetailRow label="Item">
+            <RecordLink base="/dashboard/store" row={lot} idKey="item_id" allowed={!preview && can('store', 'items', 'view')} title="Open the item">{`${lot.item_code ? `${lot.item_code} — ` : ''}${lot.item_name}`}</RecordLink>
+          </DetailRow>
+          <DetailRow label="Source">
+            {lot.source_reference ? (SOURCE_PAGES[lot.source_type] ? (
+              <RecordLink base={SOURCE_PAGES[lot.source_type].base} row={lot} idKey="source_id" allowed={!preview && can('store', SOURCE_PAGES[lot.source_type].tab, 'view')} title="Open the source document">{lot.source_reference}</RecordLink>
+            ) : lot.source_reference) : null}
+          </DetailRow>
           <DetailRow label="Vendor">{lot.vendor_name}</DetailRow>
           <DetailRow label="Batch / serial">{lot.batch_number}</DetailRow>
           <DetailRow label="Stock">{lot.stock_in_quality ? `Held in Quality stock at ${lot.location_name || 'store'}` : 'No stock behind this lot'}</DetailRow>

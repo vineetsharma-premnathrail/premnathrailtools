@@ -3,6 +3,7 @@
 /** Credit Management (SAP FD32 / UKM): every customer's credit exposure vs
  *  limit and overdues, credit blocks, and release requests decided through
  *  the central approval engine. */
+import { RecLink, customerHref } from '@/components/finance/RecordLink'
 import { useEffect, useState } from 'react'
 import { useRequireApp } from '@/hooks/useAuth'
 import { accountsApi } from '@/lib/api'
@@ -81,7 +82,7 @@ export default function CreditPage() {
             : shownRows.length === 0 ? <EmptyRow colSpan={11} text={holdOnly ? 'No customer is on hold. Click Customers on hold again to show everyone.' : 'No customer has a credit limit, open invoices or open orders.'} />
             : shownRows.map((r) => (
               <tr key={r.customer_id} style={{ background: r.would_block ? 'rgba(220,38,38,0.04)' : undefined }}>
-                <td style={{ ...tdStyle, fontWeight: 600 }}>{r.customer_name}</td>
+                <td style={{ ...tdStyle, fontWeight: 600 }}><RecLink href={customerHref(r)}>{r.customer_name}</RecLink></td>
                 <td style={numTd}>{r.credit_limit != null ? inr(r.credit_limit) : '—'}</td>
                 <td style={numTd}>{inr(r.open_ar, { blankZero: true })}</td>
                 <td style={numTd}>{inr(r.unbilled_delivered, { blankZero: true })}</td>
@@ -117,7 +118,7 @@ export default function CreditPage() {
               : shownReleases.map((r) => (
                 <tr key={r.id}>
                   <td style={{ ...tdStyle, fontWeight: 600 }}>{r.release_number}<div style={{ fontSize: 11, color: TEXT.muted }}>{r.requested_by_name}</div></td>
-                  <td style={tdStyle}>{r.customer_name}</td>
+                  <td style={tdStyle}><RecLink href={customerHref(r)}>{r.customer_name}</RecLink></td>
                   <td style={tdStyle}>{CP_LABELS[r.checkpoint]}</td>
                   <td style={tdStyle}>{r.so_number || 'Any order'}</td>
                   <td style={{ ...tdStyle, fontSize: 12, maxWidth: 280 }}>{r.block_reasons}</td>

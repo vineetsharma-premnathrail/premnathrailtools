@@ -1,6 +1,8 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { RecordLink, useUserPath } from '@/components/crm/RecordLink'
 import { rndApi } from '@/lib/api'
 import { DirectoryUser, RndProjectDetail } from '@/types'
 import { extractErrorMessages } from '@/lib/validation'
@@ -23,6 +25,8 @@ export default function RndProjectMembers({
   onSaved: (p: RndProjectDetail) => void
 }) {
   const currentLeads = project.lead_ids?.length ? project.lead_ids : project.lead_id ? [project.lead_id] : []
+  const router = useRouter()
+  const userPath = useUserPath()
   const [editing, setEditing] = useState(false)
   const [leadIds, setLeadIds] = useState<number[]>(currentLeads)
   const [teamIds, setTeamIds] = useState<number[]>(project.team_member_ids || [])
@@ -77,9 +81,11 @@ export default function RndProjectMembers({
             <tbody>
               {rows.map((r) => {
                 const u = users.find((x) => x.id === r.id)
+                // A member is a user: the row opens their user page (signed ref from whichever list carries this person).
+                const href = userPath(project.leads?.find((m) => m.id === r.id) ?? project.team_members?.find((m) => m.id === r.id) ?? u)
                 return (
-                  <tr key={`${r.role}-${r.id}`}>
-                    <td style={{ ...tdStyle, fontWeight: 600, color: SHEET.INK }}>{nameOf(r.id)}</td>
+                  <tr key={`${r.role}-${r.id}`} onClick={href ? () => router.push(href) : undefined} style={{ cursor: href ? 'pointer' : undefined }}>
+                    <td style={{ ...tdStyle, fontWeight: 600, color: SHEET.INK }}><RecordLink href={href} style={{ color: SHEET.INK }} title="Open the user">{nameOf(r.id)}</RecordLink></td>
                     <td style={tdStyle}>{r.role}</td>
                     <td style={tdStyle}>{u?.email || '—'}</td>
                     <td style={tdStyle}>{u?.department || '—'}</td>

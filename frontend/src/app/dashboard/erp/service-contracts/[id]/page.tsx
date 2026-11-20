@@ -14,6 +14,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import ErpNav from '@/components/erp/ErpNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import RecordLink from '@/components/projects/RecordLink'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import ReasonSheet from '@/components/shared/ReasonSheet'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
@@ -136,7 +137,7 @@ export default function ServiceContractDetailPage() {
             </DetailGroup>
             {(c.renewed_from_number || c.cancel_reason) && (
               <DetailGroup title="History" last={!c.terms}>
-                {c.renewed_from_number && <DetailRow label="Renewal of">{c.renewed_from_number}</DetailRow>}
+                {c.renewed_from_number && <DetailRow label="Renewal of"><RecordLink base="/dashboard/erp/service-contracts" row={c} idKey="renewed_from_id">{c.renewed_from_number}</RecordLink></DetailRow>}
                 {c.cancel_reason && <DetailRow label="Cancelled because">{c.cancel_reason}</DetailRow>}
               </DetailGroup>
             )}

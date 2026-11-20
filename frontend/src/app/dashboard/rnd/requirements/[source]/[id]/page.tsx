@@ -21,6 +21,7 @@ import { SheetIcon } from '@/components/shared/FormSheet'
 import { rndRequestBadge, RndRequestCloseSheet, openQuery, daysSince, QUERY_CHANNEL_LABEL } from '@/components/crm/RndRequestBlock'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
+import { RecordLink, safeHref } from '@/components/crm/RecordLink'
 import { priorityLabel } from '@/lib/priority'
 import { REVISION_STATUS_LABEL, type RndRequirementDetailV2 } from '@/types/rndIntake'
 
@@ -41,7 +42,7 @@ const hasTabParam = () => typeof window !== 'undefined' && !!TAB_PARAMS[new URLS
 
 export default function RndRequirementDetailPage() {
   const { isAuthorized, isLoading, user } = useRequireApp('rnd')
-  const { canFeature } = useCan()
+  const { can, canFeature } = useCan()
   // Role-level gates (R&D › Requirements features) on top of the per-requirement access.
   const see = (feature: string) => canFeature('rnd', 'requirements', feature, 'view')
   const router = useRouter()
@@ -125,7 +126,9 @@ export default function RndRequirementDetailPage() {
             {/* Sends before 2026-10-30 carried a separate TOR number; newer ones are known by the R&D ID itself. */}
             {intake && data.offer_number && !data.offer_number.startsWith(intake.rd_number) && (<><span style={{ fontSize: 11, color: '#d6d3d1' }}>·</span><span style={{ fontSize: 11, fontWeight: 600, color: TEXT.muted }}>{data.offer_number}</span></>)}
             <span style={{ fontSize: 11, color: '#d6d3d1' }}>·</span>
-            <span style={{ fontSize: 11, fontWeight: 600, color: TEXT.muted }}>{data.source === 'inquiry' ? 'Inquiry' : 'Tender'} {data.universal_id}</span>
+            <span style={{ fontSize: 11, fontWeight: 600, color: TEXT.muted }}>{data.source === 'inquiry' ? 'Inquiry' : 'Tender'}{' '}
+              <RecordLink href={can('crm', 'inquiries_tenders', 'view') ? safeHref('/dashboard/crm/inquiries', data, 'record_id', { type: data.source }) : null} style={{ color: TEXT.muted }} title={`Open the ${data.source} in CRM`}>{data.universal_id}</RecordLink>
+            </span>
           </div>
           <h1 style={{ fontSize: 20, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{data.title}</h1>
           <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '4px 0 0' }}>

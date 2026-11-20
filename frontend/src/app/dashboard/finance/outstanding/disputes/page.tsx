@@ -4,6 +4,7 @@
  *  sales invoice, tracked open → under review → resolved by credit note,
  *  write-off or the customer paying. Open disputes are shown apart in aging
  *  and left out of dunning and of the overdue credit block. */
+import { RecLink, customerHref } from '@/components/finance/RecordLink'
 import { useEffect, useState } from 'react'
 import { useRequireApp } from '@/hooks/useAuth'
 import { accountsApi } from '@/lib/api'
@@ -98,7 +99,7 @@ export default function DisputesPage() {
             : rows.map((d) => (
               <tr key={d.id}>
                 <td style={{ ...tdStyle, fontWeight: 600 }}>{d.dispute_number}<div style={{ fontSize: 11, color: TEXT.muted }}>{dmy(d.raised_on)}</div></td>
-                <td style={tdStyle}>{d.customer_name}</td>
+                <td style={tdStyle}><RecLink href={customerHref(d)}>{d.customer_name}</RecLink></td>
                 <td style={tdStyle}>{d.invoice_number}</td>
                 <td style={{ ...numTd, fontWeight: 700, color: '#7c3aed' }}>{inr(d.disputed_amount)}</td>
                 <td style={numTd}>{inr(d.invoice_due ?? 0)}</td>

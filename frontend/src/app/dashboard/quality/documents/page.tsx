@@ -263,7 +263,7 @@ export default function QualityDocumentsPage() {
               <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No documents match — use + Upload Document to add one.</td></tr>
             ) : (
               documents.map((d) => (
-                <tr key={d.id}>
+                <tr key={d.id} onClick={() => handleView(d)} title="Open the document" style={{ cursor: 'pointer' }}>
                   <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 600, color: TEXT.heading, borderTop: `1px solid ${BORDER.light}` }}>{d.title}</td>
                   <td style={{ padding: '10px 14px', borderTop: `1px solid ${BORDER.light}` }}>
                     <Pill label={DOC_TYPE_LABELS[d.doc_type] || d.doc_type} hex={DOC_TYPE_HEX[d.doc_type]} />

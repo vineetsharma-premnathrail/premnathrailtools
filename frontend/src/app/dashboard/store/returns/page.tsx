@@ -14,6 +14,7 @@ import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import ScopeNote from '@/components/shared/ScopeNote'
+import RecLink, { safePath } from '@/components/store/RecLink'
 
 const STATUS_LABELS: Record<string, string> = { pending_approval: 'Pending Approval', approved: 'Approved', rejected: 'Rejected', cancelled: 'Withdrawn' }
 const STATUS_HEX: Record<string, string> = { pending_approval: '#d97706', approved: '#16a34a', rejected: '#dc2626', cancelled: '#78716c' }
@@ -74,7 +75,7 @@ export default function StoreMaterialReturnsPage() {
               <tr key={r.id} onClick={() => router.push(recordPath('/dashboard/store/returns', r))} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
                 <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body, whiteSpace: 'nowrap' }}>{r.return_number}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{r.location_name || '—'}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{r.source_issue_number || r.source_description || r.source_type_label || '—'}</td>
+                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{r.source_issue_number ? <RecLink href={safePath('/dashboard/store/issues', r, 'source_issue_id')} title="Open the issue this return came from">{r.source_issue_number}</RecLink> : (r.source_description || r.source_type_label || '—')}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{formatDate(r.return_date)}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, textAlign: 'right' }}>{r.items.length}</td>
                 <td style={{ padding: '12px 16px' }}>

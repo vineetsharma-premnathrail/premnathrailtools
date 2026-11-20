@@ -11,6 +11,7 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
+import { RecordLink, useUserPath } from '@/components/crm/RecordLink'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { FormSheet, SheetColumns, SheetSection, SheetIcon, FileDropZone, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 
@@ -57,6 +58,7 @@ export default function RndDocumentsPanel({
 }) {
   const [docs, setDocs] = useState<RndDocument[]>([])
   const { can, canDelete } = useCan()
+  const userPath = useUserPath()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | string[]>('')
   const [projects, setProjects] = useState<RndProject[]>([])
@@ -268,7 +270,7 @@ export default function RndDocumentsPanel({
                   </div>
                 </div>
                 <span style={{ fontSize: 11.5, color: TEXT.muted, flex: 'none' }}>
-                  {d.uploaded_by_name || '—'}{d.created_at ? ` · ${formatDate(d.created_at)}` : ''}
+                  {d.uploaded_by_name ? <RecordLink href={userPath(d, 'uploaded_by_id')} style={{ color: TEXT.muted, fontWeight: 400 }} title="Open the user">{d.uploaded_by_name}</RecordLink> : '—'}{d.created_at ? ` · ${formatDate(d.created_at)}` : ''}
                 </span>
                 <span style={{ display: 'flex', gap: 12, flex: 'none' }}>
                   <span onClick={() => handleView(d)} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>

@@ -291,12 +291,13 @@ export default function MyLinesPage() {
               )
               return (
                 <Fragment key={g.key}>
-                  <tr style={late ? { background: 'rgba(220,38,38,0.045)' } : undefined}>
-                    <td style={{ ...tdStyle, whiteSpace: 'nowrap', fontWeight: 700 }}>
+                  <tr onClick={() => toggle(g.key)} title={open ? 'Click to hide the lines' : 'Click to see the lines'}
+                    style={{ cursor: 'pointer', ...(late ? { background: 'rgba(220,38,38,0.045)' } : {}) }}>
+                    <td style={{ ...tdStyle, whiteSpace: 'nowrap', fontWeight: 700 }} onClick={(e) => e.stopPropagation()}>
                       <Link href={recordPath('/dashboard/p2p', r, 'p2p_request_id')} style={{ color: TEXT.heading, textDecoration: 'none' }}>{r.p2p_number}</Link>
                     </td>
                     <td style={{ ...tdStyle, minWidth: 220 }} title={sub || undefined}>
-                      <button type="button" onClick={() => toggle(g.key)} aria-expanded={open} aria-label={`${open ? 'Hide' : 'Show'} the ${n} line${n === 1 ? '' : 's'} of ${r.p2p_number}${g.category ? ` · ${g.category}` : ''}`}
+                      <button type="button" onClick={(e) => { e.stopPropagation(); toggle(g.key) }} aria-expanded={open} aria-label={`${open ? 'Hide' : 'Show'} the ${n} line${n === 1 ? '' : 's'} of ${r.p2p_number}${g.category ? ` · ${g.category}` : ''}`}
                         style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', cursor: 'pointer', textAlign: 'left', color: TEXT.heading }}>
                         <div style={{ fontWeight: 600 }}>{open ? '▾' : '▸'} {g.category || 'No category'} <span style={{ fontWeight: 400, color: TEXT.muted }}>· {n} item{n === 1 ? '' : 's'}</span></div>
                         <div style={{ fontSize: 11.5, color: TEXT.muted, whiteSpace: 'normal' }}>
@@ -314,7 +315,7 @@ export default function MyLinesPage() {
                         {g.po_rejected && <Pill label="PO rejected — upload again" hex="#d97706" title="The PO made for a line here was rejected in approval. The vendor stays chosen; the buyer uploads a corrected PO." />}
                       </div>
                     </td>
-                    <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                    <td style={{ ...tdStyle, whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
                       {g.rfqs.length ? g.rfqs.map((q, i) => (
                         <span key={q.id}>{i > 0 && ', '}
                           {groupMine || canWorkAll
@@ -323,7 +324,7 @@ export default function MyLinesPage() {
                         </span>
                       )) : <span style={{ color: TEXT.muted }}>—</span>}
                     </td>
-                    <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                    <td style={{ ...tdStyle, whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
                       {g.pos.length ? g.pos.map((po, i) => (
                         <span key={po.id}>{i > 0 && ', '}
                           <Link href={recordPath('/dashboard/p2p/purchase-orders', po)} style={{ color: '#2563eb', textDecoration: 'none' }} title={po.stage_label}>{po.po_number}</Link>
@@ -336,7 +337,7 @@ export default function MyLinesPage() {
                     <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{isUrgent(r.priority) ? <Pill label={priorityLabel(r.priority)} hex="#dc2626" /> : <span style={{ color: TEXT.muted }}>{priorityLabel(r.priority)}</span>}</td>
                     <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{r.requester_name || '—'}</td>
                     {isHead && <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{g.buyer_name || <span style={{ color: '#b91c1c', fontWeight: 600 }}>Unassigned</span>}</td>}
-                    <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                    <td style={{ ...tdStyle, whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
                       <div style={{ display: 'inline-flex', gap: 6 }}>
                         {youCanRaise && (
                           <button type="button" data-tour="my-lines-raise-rfq" style={smallSecondaryBtnStyle}
@@ -368,8 +369,12 @@ export default function MyLinesPage() {
                             {l.po_rejected && <Pill label="PO rejected — upload again" hex="#d97706" title="The PO made for this line was rejected in approval. The vendor stays chosen; the buyer uploads a corrected PO." />}
                           </div>
                         </td>
-                        <td style={{ ...tdStyle, whiteSpace: 'nowrap', color: TEXT.muted }}>{l.rfqs.length ? l.rfqs.map((q) => q.rfq_number).join(', ') : '—'}</td>
-                        <td style={{ ...tdStyle, whiteSpace: 'nowrap', color: TEXT.muted }}>{l.pos.length ? l.pos.map((po) => po.po_number).join(', ') : '—'}</td>
+                        <td style={{ ...tdStyle, whiteSpace: 'nowrap', color: TEXT.muted }}>{l.rfqs.length ? l.rfqs.map((q, i) => (
+                          <span key={q.id}>{i > 0 && ', '}{groupMine || canWorkAll ? <Link href={recordPath('/dashboard/p2p/rfq', q)} style={{ color: '#2563eb', textDecoration: 'none' }}>{q.rfq_number}</Link> : q.rfq_number}</span>
+                        )) : '—'}</td>
+                        <td style={{ ...tdStyle, whiteSpace: 'nowrap', color: TEXT.muted }}>{l.pos.length ? l.pos.map((po, i) => (
+                          <span key={po.id}>{i > 0 && ', '}<Link href={recordPath('/dashboard/p2p/purchase-orders', po)} style={{ color: '#2563eb', textDecoration: 'none' }}>{po.po_number}</Link></span>
+                        )) : '—'}</td>
                         <td style={tdStyle} />
                         <td style={tdStyle} />
                         <td style={tdStyle} />

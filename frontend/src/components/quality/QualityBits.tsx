@@ -7,6 +7,8 @@
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import { FormSheet, SheetIcon, SheetIconName, SheetSection, sheetBtn, SHEET } from '@/components/shared/FormSheet'
 import { Pill as SharedPill } from '@/components/shared/ui'
+import { useRouter } from 'next/navigation'
+import { recordPath } from '@/lib/recordRef'
 
 export const INSPECTION_TYPE_LABELS: Record<string, string> = {
   incoming: 'Incoming (GRN)', job_work: 'Job work receipt', first_article: 'First article (FAI)', in_process: 'In-process',
@@ -167,5 +169,24 @@ export function SheetBlock({ icon, title, extra, color, children, style }: {
         {children}
       </SheetSection>
     </div>
+  )
+}
+
+// A cell that names ANOTHER record (item, GRN, inspection lot ...): a real link to that record's page, so it can be
+// opened in a new tab and a click does not also trigger the row's own click. `row[idKey]_ref` is the signed link the API
+// sends next to every id; with no ref (sample rows, deleted record) or without `allowed`, the text stays plain.
+export function RecordLink({ base, row, idKey = 'id', allowed = true, title, children }: {
+  base: string; row: object; idKey?: string; allowed?: boolean; title?: string; children: React.ReactNode
+}) {
+  const router = useRouter()
+  let href: string | null = null
+  if (allowed) { try { href = recordPath(base, row, idKey) } catch { href = null } }
+  if (!href) return <>{children}</>
+  const to = href
+  return (
+    <a href={to} title={title} style={{ color: '#2563eb', fontWeight: 600, textDecoration: 'none', cursor: 'pointer' }}
+      onClick={(e) => { e.stopPropagation(); if (!e.ctrlKey && !e.metaKey && !e.shiftKey) { e.preventDefault(); router.push(to) } }}>
+      {children}
+    </a>
   )
 }

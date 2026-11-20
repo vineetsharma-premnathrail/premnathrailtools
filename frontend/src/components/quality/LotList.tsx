@@ -9,10 +9,11 @@ import { TEXT } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
 import Select from '@/components/shared/Select'
 import {
-  Pill, ErrorBanner, tableWrapStyle, thStyle, tdStyle, filterInputStyle, fmtQty, fmtDate,
+  Pill, RecordLink, ErrorBanner, tableWrapStyle, thStyle, tdStyle, filterInputStyle, fmtQty, fmtDate,
   INSPECTION_TYPE_LABELS, LOT_STATUS_LABELS, LOT_STATUS_HEX, DECISION_LABELS,
 } from '@/components/quality/QualityBits'
 import { RowCount } from '@/components/shared/ui'
+import { useCan } from '@/lib/permissions'
 import { useVisibility } from '@/lib/visibility'
 import { VisTd, VisTh } from '@/lib/visibilityComponents'
 import { sampleLots } from '@/lib/qualityPreviewSamples'
@@ -20,6 +21,12 @@ import ScopeNote from '@/components/shared/ScopeNote'
 
 // Inspection types that can exist while Quality is live for incoming inspection only (qualityLive.ts).
 const LIVE_LOT_TYPES = ['incoming', 'stock_reinspection', 'sales_return']
+
+// Where the document a lot came from opens (store pages; the source_id_ref link comes from the API). Sources without a
+// page of their own (production, Before-PO receipts, NCR) stay plain text.
+const SOURCE_PAGES: Record<string, { base: string; tab: string }> = {
+  grn: { base: '/dashboard/store/grn', tab: 'grn' }, material_return: { base: '/dashboard/store/returns', tab: 'returns' },
+}
 
 const VIEW_LABELS: Record<string, string> = {
   waiting: 'Lots waiting', in_inspection: 'In inspection', overdue: 'Lots waiting too long', decided_month: 'Decided this month', rejected_month: 'Rejected this month',
@@ -29,6 +36,7 @@ const VIEW_LABELS: Record<string, string> = {
  *  and My Inspections (`mine`: open lots assigned to me or unassigned). */
 export default function LotList({ mine = false, initialType = '', initialView = '' }: { mine?: boolean; initialType?: string; initialView?: string }) {
   const router = useRouter()
+  const { can } = useCan()
   // Columns the user's roles hide; in the Role editor's preview the list shows sample rows and loads nothing.
   const vis = useVisibility('quality:inspection_lots')
   const [lots, setLots] = useState<QualityInspectionLot[]>(vis.preview ? sampleLots : [])
@@ -113,13 +121,20 @@ export default function LotList({ mine = false, initialType = '', initialView = 
             ) : lots.map((l) => {
               const open = ['created', 'in_inspection', 'results_recorded'].includes(l.status)
               const late = open && l.age_days > waitingDays
+              const srcPage = SOURCE_PAGES[l.source_type]
               return (
                 <tr key={l.id} onClick={vis.preview ? undefined : () => router.push(recordPath('/dashboard/quality/lots', l))} style={{ cursor: vis.preview ? 'default' : 'pointer' }}>
                   <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{l.lot_number}</td>
-                  <VisTd vis={vis} table="lots" k="item" style={tdStyle}>{l.item_code ? `${l.item_code} — ` : ''}{l.item_name}</VisTd>
+                  <VisTd vis={vis} table="lots" k="item" style={tdStyle}>
+                    <RecordLink base="/dashboard/store" row={l} idKey="item_id" allowed={!vis.preview && can('store', 'items', 'view')} title="Open the item">{l.item_code ? `${l.item_code} — ` : ''}{l.item_name}</RecordLink>
+                  </VisTd>
                   <VisTd vis={vis} table="lots" k="qty" style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{fmtQty(l.quantity, l.uom)}</VisTd>
                   <VisTd vis={vis} table="lots" k="type" style={tdStyle}>{INSPECTION_TYPE_LABELS[l.inspection_type] || l.inspection_type}</VisTd>
-                  <VisTd vis={vis} table="lots" k="source" style={tdStyle}>{l.source_reference || l.source_type}</VisTd>
+                  <VisTd vis={vis} table="lots" k="source" style={tdStyle}>
+                    {srcPage && l.source_reference ? (
+                      <RecordLink base={srcPage.base} row={l} idKey="source_id" allowed={!vis.preview && can('store', srcPage.tab, 'view')} title="Open the source document">{l.source_reference}</RecordLink>
+                    ) : (l.source_reference || l.source_type)}
+                  </VisTd>
                   <td style={tdStyle}><Pill text={LOT_STATUS_LABELS[l.status] || l.status} hex={LOT_STATUS_HEX[l.status]} /></td>
                   <VisTd vis={vis} table="lots" k="assigned" style={tdStyle}>{l.assigned_to_name || <span style={{ color: TEXT.muted }}>Unassigned</span>}</VisTd>
                   <VisTd vis={vis} table="lots" k="age" style={{ ...tdStyle, color: late ? '#DC2626' : TEXT.body, fontWeight: late ? 700 : 400, whiteSpace: 'nowrap' }} title={`Lot date ${fmtDate(l.lot_date)}`}>

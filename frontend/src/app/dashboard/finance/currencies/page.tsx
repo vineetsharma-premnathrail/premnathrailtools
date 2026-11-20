@@ -1,5 +1,6 @@
 'use client'
 
+import { RecLink, voucherHref } from '@/components/finance/RecordLink'
 import React, { useEffect, useState } from 'react'
 import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
@@ -247,7 +248,7 @@ function RevaluationTab({ canRun, canCancel }: { canRun: boolean; canCancel: boo
         <tbody>
           {runs.length === 0 ? <EmptyRow colSpan={6} text="No revaluation posted yet." /> : runs.map((r) => (
             <tr key={r.id}>
-              <td style={tdStyle}>{r.accounting_period}</td><td style={tdStyle}>{r.journal_entry_number}</td><td style={numTd}>{inr(r.total_gain)}</td><td style={numTd}>{inr(r.total_loss)}</td>
+              <td style={tdStyle}>{r.accounting_period}</td><td style={tdStyle}>{r.journal_entry_number ? <RecLink href={voucherHref(r)}>{r.journal_entry_number}</RecLink> : null}</td><td style={numTd}>{inr(r.total_gain)}</td><td style={numTd}>{inr(r.total_loss)}</td>
               <td style={tdStyle}><StatusPill status={r.status} labels={STATUS_LABELS} colors={STATUS_HEX} />{r.reversal_reason && <div style={{ fontSize: 11, color: TEXT.muted }}>{r.reversal_reason}</div>}</td>
               <td style={tdStyle}>{canCancel && r.status === 'posted' && <button style={linkBtnStyle} onClick={() => setCancelTarget(r)}>Cancel</button>}</td>
             </tr>

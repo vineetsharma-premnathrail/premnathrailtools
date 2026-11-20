@@ -13,7 +13,7 @@ import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
 import QualityNav from '@/components/quality/QualityNav'
 import { primaryBtnStyle, RowCount } from '@/components/shared/ui'
 import {
-  Pill, PageHeader, ErrorBanner, tableWrapStyle, thStyle, tdStyle, filterInputStyle, fmtDate, fmtMoney,
+  Pill, RecordLink, PageHeader, ErrorBanner, tableWrapStyle, thStyle, tdStyle, filterInputStyle, fmtDate, fmtMoney,
   COMPLAINT_STATUS_LABELS, COMPLAINT_STATUS_HEX, SEVERITY_HEX,
 } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
@@ -121,7 +121,7 @@ export default function QualityComplaintsPage() {
                   {c.complaint_number}{c.repeat_of_number ? <span style={{ color: '#DC2626', fontWeight: 600 }}> · repeat</span> : null}
                 </td>
                 <VisTd vis={vis} table="complaints" k="customer" style={tdStyle}>{c.customer_name}</VisTd>
-                <VisTd vis={vis} table="complaints" k="item" style={tdStyle}>{c.item_name || '—'}{(c.serial_number || c.batch_number) ? ` · ${c.serial_number || c.batch_number}` : ''}</VisTd>
+                <VisTd vis={vis} table="complaints" k="item" style={tdStyle}>{c.item_name ? <RecordLink base="/dashboard/store" row={c} idKey="item_id" allowed={can('store', 'items', 'view')} title="Open the item">{c.item_name}</RecordLink> : '—'}{(c.serial_number || c.batch_number) ? ` · ${c.serial_number || c.batch_number}` : ''}</VisTd>
                 <VisTd vis={vis} table="complaints" k="severity" style={tdStyle}><Pill text={c.severity} hex={SEVERITY_HEX[c.severity]} /></VisTd>
                 <VisTd vis={vis} table="complaints" k="ncr_capa" style={tdStyle}>{[c.ncr_number, c.capa_number].filter(Boolean).join(' / ') || '—'}</VisTd>
                 <VisTd vis={vis} table="complaints" k="response" style={tdStyle}>{c.response_days != null ? `${c.response_days} days` : `${c.age_days} days open`}</VisTd>

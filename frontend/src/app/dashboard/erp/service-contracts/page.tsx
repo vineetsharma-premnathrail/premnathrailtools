@@ -12,6 +12,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import { recordPath } from '@/lib/recordRef'
 import ErpNav from '@/components/erp/ErpNav'
+import RecordLink, { CUSTOMER_PAGE } from '@/components/projects/RecordLink'
 import { CONTRACT_TYPE_LABELS, FREQUENCY_LABELS } from '@/components/erp/ServiceContractForm'
 import { inputStyle, primaryBtnStyle, RowCount, Pill } from '@/components/shared/ui'
 import { GLASS, SHADOWS } from '@/lib/theme'
@@ -81,7 +82,7 @@ export default function ServiceContractsPage() {
               <tr key={c.id} onClick={() => open(c)} style={{ cursor: 'pointer' }}>
                 <td style={{ ...td, fontWeight: 600, color: '#FF7A45', whiteSpace: 'nowrap' }}>{c.contract_number}<div style={{ fontWeight: 400, fontSize: 12, color: '#78716c' }}>{c.title || ''}</div></td>
                 <td style={td}>{CONTRACT_TYPE_LABELS[c.contract_type] || c.contract_type}</td>
-                <td style={td}>{c.customer_name}</td>
+                <td style={td}>{c.customer_name ? <RecordLink base={CUSTOMER_PAGE} row={c} idKey="customer_id" title="Open this customer">{c.customer_name}</RecordLink> : '—'}</td>
                 <td style={{ ...td, whiteSpace: 'nowrap' }}>{formatDate(c.start_date)} → {formatDate(c.end_date)}{c.days_to_expiry != null && c.days_to_expiry <= 60 ? <div style={{ fontSize: 11.5, color: '#b45309' }}>ends in {c.days_to_expiry} days</div> : null}</td>
                 <td style={td}>{c.machines.length}</td>
                 <td style={td}>{c.visits_included ? `${c.visits_used} / ${c.visits_included}` : `${c.visits_used} / ∞`}</td>

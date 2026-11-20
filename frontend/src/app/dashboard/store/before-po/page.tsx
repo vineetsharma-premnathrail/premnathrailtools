@@ -17,6 +17,7 @@ import BeforePOReceiptForm from '@/components/store/BeforePOReceiptForm'
 import BeforePOReceiptDetail from '@/components/store/BeforePOReceiptDetail'
 import { primaryBtnStyle, RowCount, Pill, StatChip, inputStyle } from '@/components/shared/ui'
 import ScopeNote from '@/components/shared/ScopeNote'
+import RecLink, { safePath } from '@/components/store/RecLink'
 
 const thStyle: React.CSSProperties = {
   position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', padding: '10px 14px', fontSize: 11.5,
@@ -111,7 +112,7 @@ export default function StoreBeforePoPage() {
             {shown.map((r) => (
               <tr key={r.id} onClick={() => setOpenId(r.id)} style={{ cursor: 'pointer' }}>
                 <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{r.receipt_number}</td>
-                <td style={tdStyle}>{r.vendor_name}</td>
+                <td style={tdStyle}>{r.vendor_id ? <RecLink href={safePath('/dashboard/p2p/vendors', r, 'vendor_id')} title="Open the vendor" style={{ color: TEXT.body, fontWeight: 400 }}>{r.vendor_name}</RecLink> : r.vendor_name}</td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatDate(r.received_date)}</td>
                 <td style={tdStyle} title={r.items.map((i) => `${i.item_name} × ${i.quantity}`).join(', ')}>
                   <strong>{r.items.length}</strong> · {r.items.slice(0, 2).map((i) => i.item_name).join(', ')}{r.items.length > 2 ? ` +${r.items.length - 2} more` : ''}
@@ -121,7 +122,7 @@ export default function StoreBeforePoPage() {
                   {r.vendor_invoice_number && <div>Invoice {r.vendor_invoice_number}</div>}
                   {!r.delivery_challan_number && !r.vendor_invoice_number && '—'}
                 </td>
-                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }} title={r.manual_po_number && !r.po_number ? 'PO typed by the store (not in the portal PO list)' : undefined}>{r.po_number || r.manual_po_number || '—'}</td>
+                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }} title={r.manual_po_number && !r.po_number ? 'PO typed by the store (not in the portal PO list)' : undefined}>{r.po_number ? <RecLink href={r.purchase_order_id ? safePath('/dashboard/p2p/purchase-orders', r, 'purchase_order_id') : null} title="Open the purchase order">{r.po_number}</RecLink> : (r.manual_po_number || '—')}</td>
                 <td style={tdStyle}>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                     <Pill label={PRE_PO_STATUS_LABEL[r.status] || r.status} hex={PRE_PO_STATUS_HEX[r.status] || '#64748b'} />

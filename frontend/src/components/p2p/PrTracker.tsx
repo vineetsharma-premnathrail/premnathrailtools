@@ -13,6 +13,8 @@ import { PrTracker as PrTrackerData, TrackerApproval, TrackerLine, TrackerPo } f
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
 import { GLASS, SHADOWS, TEXT, BORDER } from '@/lib/theme'
+import { useCan } from '@/lib/permissions'
+import RecordLink, { RECORD_BASE } from '@/components/p2p/RecordLink'
 import ReassignLineDialog from '@/components/p2p/ReassignLineDialog'
 import ApprovalStages from '@/components/shared/ApprovalStages'
 import ShortCloseLineDialog from '@/components/p2p/ShortCloseLineDialog'
@@ -112,6 +114,8 @@ function summaryText(lines: TrackerLine[]): string {
 }
 
 function PoDetail({ po }: { po: TrackerPo }) {
+  const { can } = useCan()
+  const canOpenGrn = can('store', 'grn', 'view')
   return (
     <div style={{ borderRadius: 12, border: `1px solid ${BORDER.light}`, background: 'rgba(255,255,255,.6)', padding: '10px 12px' }}>
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 6 }}>
@@ -132,7 +136,7 @@ function PoDetail({ po }: { po: TrackerPo }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {po.grns.map((g) => (
             <span key={g.grn_id} style={{ fontSize: 12.5, color: TEXT.body }}>
-              <b>{g.grn_number}</b>{g.received_date ? ` · ${formatDate(g.received_date)}` : ''} · received {qty(g.received_qty)} · accepted {qty(g.accepted_qty)}
+              <b><RecordLink base={RECORD_BASE.grn} row={g} idKey="grn_id" allowed={canOpenGrn} title={`Open ${g.grn_number}`}>{g.grn_number}</RecordLink></b>{g.received_date ? ` · ${formatDate(g.received_date)}` : ''} · received {qty(g.received_qty)} · accepted {qty(g.accepted_qty)}
               {g.rejected_qty > EPS ? ` · rejected ${qty(g.rejected_qty)}` : ''}{g.status && g.status !== 'completed' ? ` · ${g.status.replace(/_/g, ' ')}` : ''}
             </span>
           ))}
@@ -187,12 +191,14 @@ function ApprovalCell({ line }: { line: TrackerLine }) {
 }
 
 function GrnCell({ line }: { line: TrackerLine }) {
+  const { can } = useCan()
+  const canOpenGrn = can('store', 'grn', 'view')
   const grns = line.pos.flatMap((p) => p.grns)
   if (!grns.length) return <span style={muted}>—</span>
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
       {grns.map((g) => (
-        <span key={g.grn_id} style={{ whiteSpace: 'nowrap' }}><b>{g.grn_number}</b>{g.received_date ? <span style={{ ...muted, fontSize: 11.5 }}> · {formatDate(g.received_date)}</span> : null}</span>
+        <span key={g.grn_id} style={{ whiteSpace: 'nowrap' }}><b><RecordLink base={RECORD_BASE.grn} row={g} idKey="grn_id" allowed={canOpenGrn} title={`Open ${g.grn_number}`}>{g.grn_number}</RecordLink></b>{g.received_date ? <span style={{ ...muted, fontSize: 11.5 }}> · {formatDate(g.received_date)}</span> : null}</span>
       ))}
     </div>
   )

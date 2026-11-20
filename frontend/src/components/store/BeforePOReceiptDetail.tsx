@@ -13,6 +13,8 @@ import { Pill, RowCount } from '@/components/shared/ui'
 import PrePoAttachments from '@/components/store/PrePoAttachments'
 import ReasonSheet from '@/components/shared/ReasonSheet'
 import { FormSheet, SheetSection, SHEET, sheetBtn, sheetLabel } from '@/components/shared/FormSheet'
+import { safePath } from '@/components/store/RecLink'
+import { useCan } from '@/lib/permissions'
 
 const th: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: SHEET.MUTED, background: SHEET.SOFT, whiteSpace: 'nowrap' }
 const td: React.CSSProperties = { padding: '8px 10px', fontSize: 13, borderTop: `1px solid ${SHEET.LINE}` }
@@ -31,14 +33,21 @@ export default function BeforePOReceiptDetail({ receipt, canCancel, onClose, onC
   /** A file was attached or deleted: the receipt with its new file list. */
   onUpdated: (r: PrePoReceipt) => void
 }) {
+  const { can } = useCan()
+  const seeQuality = can('quality', 'inspection_lots', 'view')
   const [cancelling, setCancelling] = useState(false)
   const pending = receipt.status === 'pending_po'
   const prLink = receipt.p2p_number && receipt.p2p_request_id_ref ? recordPath('/dashboard/p2p', receipt, 'p2p_request_id') : null
+  const poLink = receipt.po_number && receipt.purchase_order_id ? safePath('/dashboard/p2p/purchase-orders', receipt, 'purchase_order_id') : null
   const posted = !!receipt.stock_posted
   const anyRate = receipt.items.some((i) => i.unit_rate !== null && i.unit_rate !== undefined)
   const heads = ['Code', 'Item', 'Quantity', ...(anyRate ? ['Rate'] : []), ...(posted ? ['Stock', 'Settled by GRN'] : []), 'Remarks']
-  const stockText = (i: PrePoReceipt['items'][number]) =>
-    i.receipt_posting === 'quality' ? `Quality${i.inspection_lot_number ? ` — ${i.inspection_lot_number}` : ''}` : i.receipt_posting === 'free' ? 'Free stock' : '—'
+  const stockText = (i: PrePoReceipt['items'][number]): React.ReactNode => {
+    if (i.receipt_posting === 'free') return 'Free stock'
+    if (i.receipt_posting !== 'quality') return '—'
+    const lotHref = seeQuality && i.inspection_lot_number && i.inspection_lot_id ? safePath('/dashboard/quality/lots', i, 'inspection_lot_id') : null
+    return <>Quality{i.inspection_lot_number ? <> — {lotHref ? <Link href={lotHref} title="Open the quality lot" style={{ color: '#2563eb', fontWeight: 600, textDecoration: 'none' }}>{i.inspection_lot_number}</Link> : i.inspection_lot_number}</> : ''}</>
+  }
   const qty = (n: number) => n.toLocaleString('en-IN', { maximumFractionDigits: 3 })
 
   return (
@@ -59,7 +68,7 @@ export default function BeforePOReceiptDetail({ receipt, canCancel, onClose, onC
           )}
           <SheetSection icon="building" title="Receipt">
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
-              <Fact label="Vendor">{receipt.vendor_name}</Fact>
+              <Fact label="Vendor">{receipt.vendor_id && safePath('/dashboard/p2p/vendors', receipt, 'vendor_id') ? <Link href={safePath('/dashboard/p2p/vendors', receipt, 'vendor_id') as string} style={{ color: '#2563eb' }}>{receipt.vendor_name}</Link> : receipt.vendor_name}</Fact>
               <Fact label="Received on">{formatDate(receipt.received_date)}</Fact>
               <Fact label="Store location">{receipt.store_location_name}</Fact>
               <Fact label="Delivery challan no.">{receipt.delivery_challan_number}</Fact>
@@ -67,7 +76,7 @@ export default function BeforePOReceiptDetail({ receipt, canCancel, onClose, onC
               <Fact label="PO no. (not in portal)">{receipt.manual_po_number ? `${receipt.manual_po_number}${receipt.manual_po_date ? ` dt. ${formatDate(receipt.manual_po_date)}` : ''}` : null}</Fact>
               <Fact label="Recorded by">{receipt.created_by_name}</Fact>
               <Fact label="Purchase request">{prLink ? <Link href={prLink} style={{ color: '#2563eb' }}>{receipt.p2p_number}</Link> : receipt.p2p_number}</Fact>
-              <Fact label="Purchase order">{receipt.po_number ? `${receipt.po_number}${receipt.po_status ? ` · ${receipt.po_status.replace(/_/g, ' ')}` : ''}` : null}</Fact>
+              <Fact label="Purchase order">{receipt.po_number ? <>{poLink ? <Link href={poLink} style={{ color: '#2563eb' }}>{receipt.po_number}</Link> : receipt.po_number}{receipt.po_status ? ` · ${receipt.po_status.replace(/_/g, ' ')}` : ''}</> : null}</Fact>
             </div>
             {receipt.remarks && <p style={{ fontSize: 13, color: SHEET.BODY, margin: '6px 0 0' }}>{receipt.remarks}</p>}
           </SheetSection>
@@ -78,7 +87,7 @@ export default function BeforePOReceiptDetail({ receipt, canCancel, onClose, onC
                 <tbody>
                   {receipt.items.map((i) => (
                     <tr key={i.id}>
-                      <td style={{ ...td, whiteSpace: 'nowrap' }}>{i.item_code || '—'}</td>
+                      <td style={{ ...td, whiteSpace: 'nowrap' }}>{i.item_code && safePath('/dashboard/store', i, 'store_item_id') ? <Link href={safePath('/dashboard/store', i, 'store_item_id') as string} title="Open the item" style={{ color: '#2563eb', fontWeight: 600, textDecoration: 'none' }}>{i.item_code}</Link> : (i.item_code || '—')}</td>
                       <td style={td}>{i.item_name}{i.invoice_item_name && <div style={{ fontSize: 12, color: SHEET.MUTED }}>On invoice: {i.invoice_item_name}</div>}</td>
                       <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>{qty(i.quantity)} {i.unit || ''}</td>
                       {anyRate && <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>{i.unit_rate !== null && i.unit_rate !== undefined ? `₹${i.unit_rate.toLocaleString('en-IN', { maximumFractionDigits: 2 })}` : '—'}</td>}

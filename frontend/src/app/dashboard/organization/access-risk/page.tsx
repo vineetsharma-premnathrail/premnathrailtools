@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireOrgTab } from '@/app/dashboard/organization/_lib/useRequireOrgTab'
 import { useCan } from '@/lib/permissions'
+import { RecordLink, useUserPath } from '@/components/crm/RecordLink'
 import OrganizationNav from '@/components/organization/OrganizationNav'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { grcApi, SodMitigationRow, SodReport, SodRule } from '@/lib/basisApi'
@@ -34,6 +35,7 @@ function Risk({ risk }: { risk: string }) {
 export default function AccessRiskPage() {
   const { isAuthorized, isLoading } = useRequireOrgTab('grc')
   const { can } = useCan()
+  const userPath = useUserPath()
   const router = useRouter()
   const [tab, setTab] = useState<(typeof TABS)[number]['key']>('users')
   const [report, setReport] = useState<SodReport | null>(null)
@@ -128,7 +130,7 @@ export default function AccessRiskPage() {
               {mitigations.length === 0 && <tr><td style={td} colSpan={6}>No SoD risk has been accepted yet.</td></tr>}
               {mitigations.map((m) => (
                 <tr key={m.id} style={{ opacity: m.active ? 1 : 0.55 }}>
-                  <td style={{ ...td, fontWeight: 600 }}>{m.user_name}</td><td style={td}><b>{m.rule_id}</b> {m.rule_title}</td>
+                  <td style={{ ...td, fontWeight: 600 }}><RecordLink href={userPath(m, 'user_id')} style={{ color: TEXT.body }} title="Open the user">{m.user_name}</RecordLink></td><td style={td}><b>{m.rule_id}</b> {m.rule_title}</td>
                   <td style={td}>{m.reason}</td><td style={td}>{m.valid_to ? new Date(m.valid_to).toLocaleDateString('en-GB') : 'No end date'}</td>
                   <td style={td}>{m.mitigated_by_name || '—'}<div style={{ fontSize: 11, color: TEXT.muted }}>{new Date(m.created_at).toLocaleDateString('en-GB')}</div></td>
                   <td style={td}>{can('organization', 'grc', 'edit') && <button type="button" onClick={() => setWithdraw(m)} style={{ fontSize: 12, fontWeight: 600, color: '#b91c1c', background: 'none', border: 'none', cursor: 'pointer' }}>Withdraw</button>}</td>

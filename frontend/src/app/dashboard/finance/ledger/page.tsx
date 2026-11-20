@@ -29,6 +29,7 @@ import {
 } from '@/components/finance/financeUi'
 import { RowCount } from '@/components/shared/ui'
 import { recordHref, useRecordId } from '@/lib/recordRef'
+import { RecLink, vendorHref, customerHref, voucherHref, useRowLink } from '@/components/finance/RecordLink'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { STATUS_LABELS, STATUS_HEX, VOUCHER_LABELS, POSTING_LABELS, VOUCHER_PATH } from '@/components/finance/voucherLabels'
@@ -336,7 +337,7 @@ function JournalVouchers({ masters, userId, canReverse }: { masters: Masters; us
                               <td style={{ ...tdStyle, padding: '6px 10px' }}>{l.cost_center_name || '—'}</td>
                               <td style={{ ...tdStyle, padding: '6px 10px' }}>{l.internal_order_name || '—'}</td>
                               <td style={{ ...tdStyle, padding: '6px 10px' }}>
-                                {l.vendor_id ? `Vendor: ${vendorName(l.vendor_id) || `#${l.vendor_id}`}` : l.customer_id ? `Customer: ${customerName(l.customer_id) || `#${l.customer_id}`}` : '—'}
+                                {l.vendor_id ? <>Vendor: <RecLink href={vendorHref(l)}>{vendorName(l.vendor_id) || `#${l.vendor_id}`}</RecLink></> : l.customer_id ? <>Customer: <RecLink href={customerHref(l)}>{customerName(l.customer_id) || `#${l.customer_id}`}</RecLink></> : '—'}
                               </td>
                               <td style={{ ...tdStyle, padding: '6px 10px', color: TEXT.secondary }}>{l.remarks || '—'}</td>
                               <td style={{ ...numTd, padding: '6px 10px' }}>{inr(l.debit_amount, { blankZero: true })}</td>
@@ -683,6 +684,7 @@ function JournalForm({ masters, onCancel, onCreated }: { masters: Masters; onCan
 // ─── Day book ─────────────────────────────────────────────────────────
 
 function DayBookTab() {
+  const go = useRowLink()
   const [from, setFrom] = useState(monthStartIso())
   const [to, setTo] = useState(todayIso())
   const [voucherType, setVoucherType] = useState('')
@@ -741,7 +743,7 @@ function DayBookTab() {
           {!loading && data && data.entries.length === 0 && <EmptyRow colSpan={6} text="No vouchers posted in this range." />}
           {!loading && data?.entries.map((e) => (
             <Fragment key={e.journal_entry_id}>
-              <tr>
+              <tr {...go(voucherHref(e), 'Open the voucher')}>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap', fontWeight: 700 }}>{dmy(e.posting_date)}</td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap', fontWeight: 700 }}>
                   <Link href={recordHref(VOUCHER_PATH, e, 'journal_entry_id', undefined, 'entry')} style={{ color: 'inherit' }}>{e.entry_number}</Link>
@@ -833,6 +835,7 @@ function LedgerStatementTab({ ledgers }: { ledgers: GLAccount[] }) {
 }
 
 function LedgerTable({ data, loading, emptyText, drLabel = 'Dr (₹)', crLabel = 'Cr (₹)' }: { data: GLLedger | null; loading: boolean; emptyText: string; drLabel?: string; crLabel?: string }) {
+  const go = useRowLink()
   return (
     <TableWrap minWidth={900} tour="fin-ledstmt-table">
       <thead>
@@ -858,7 +861,7 @@ function LedgerTable({ data, loading, emptyText, drLabel = 'Dr (₹)', crLabel =
             </tr>
             {data.rows.length === 0 && <EmptyRow colSpan={7} text={emptyText} />}
             {data.rows.map((r, i) => (
-              <tr key={`${r.journal_entry_id}-${i}`}>
+              <tr key={`${r.journal_entry_id}-${i}`} {...go(voucherHref(r), 'Open the voucher')}>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{dmy(r.posting_date)}</td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap', fontWeight: 600 }}>
                   <Link href={recordHref(VOUCHER_PATH, r, 'journal_entry_id', undefined, 'entry')} style={{ color: 'inherit' }}>{r.entry_number}</Link>

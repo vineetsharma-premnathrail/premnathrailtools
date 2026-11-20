@@ -18,6 +18,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
 import Select from '@/components/shared/Select'
 import StorePlantNote from '@/components/store/StorePlantNote'
+import RecLink, { safePath } from '@/components/store/RecLink'
 
 const STATUS_LABELS: Record<string, string> = { counting: 'Counting (stock frozen)', submitted: 'Awaiting approval', posted: 'Posted', cancelled: 'Cancelled' }
 const STATUS_HEX: Record<string, string> = { counting: '#d97706', submitted: '#2563eb', posted: '#16a34a', cancelled: '#94a3b8' }
@@ -171,7 +172,7 @@ export default function PhysicalCountListPage() {
                   <td style={tdStyle}>
                     <Pill label={STATUS_LABELS[c.status] || c.status} hex={STATUS_HEX[c.status] || '#94a3b8'} />
                   </td>
-                  <td style={tdStyle}>{c.adjustment_number || '—'}</td>
+                  <td style={tdStyle}>{c.adjustment_number ? <RecLink href={c.adjustment_id ? safePath('/dashboard/store/adjustments', c, 'adjustment_id') : null} title="Open the stock adjustment">{c.adjustment_number}</RecLink> : '—'}</td>
                 </tr>
               ))}
             </tbody>

@@ -13,6 +13,7 @@ import { RFQ, RFQLine, MyLineRow, P2PPurchaseOrder, ProcurementVendor } from '@/
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import { secondaryBtnStyle, primaryBtnStyle, smallSecondaryBtnStyle, RowCount, Pill, pillStyle, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import P2PNav from '@/components/p2p/P2PNav'
+import RecordLink, { RECORD_BASE } from '@/components/p2p/RecordLink'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath, useRecordId } from '@/lib/recordRef'
@@ -331,7 +332,9 @@ export default function RfqDetailPage() {
                   return (
                     <tr key={l.id} style={gone ? { opacity: 0.55 } : undefined}>
                       <td style={invTd}><span style={{ fontWeight: 600, color: TEXT.heading, textDecoration: gone ? 'line-through' : undefined }}>{l.item_name}</span>
-                        <div style={{ fontSize: 11.5, color: TEXT.muted }}>{l.item_code || 'No item code'}</div></td>
+                        <div style={{ fontSize: 11.5, color: TEXT.muted }}>{l.item_code
+                          ? <RecordLink base={RECORD_BASE.item} row={l} idKey="store_item_id" allowed={can('store', 'items', 'view')} title="Open the item" style={{ fontWeight: 500 }}>{l.item_code}</RecordLink>
+                          : 'No item code'}</div></td>
                       <td style={{ ...invTd, textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtQty(l.quantity)} {l.unit || ''}</td>
                       <td style={{ ...invTd, textAlign: 'right', whiteSpace: 'nowrap' }}>{gone ? '—' : fmtQty(l.open_qty)}</td>
                       <td style={invTd}>{gone ? <span title={l.withdrawn_reason || undefined}>Taken off {formatDate(l.withdrawn_at)}{l.withdrawn_reason ? `: ${l.withdrawn_reason}` : ''}</span> : <span style={{ color: '#166534' }}>On this RFQ</span>}</td>
@@ -432,12 +435,12 @@ export default function RfqDetailPage() {
                   {rfqPos.map((po) => {
                     const st = PO_STATUS[po.status] || { label: po.status, hex: '#64748b' }
                     return (
-                      <tr key={po.id}>
-                        <td style={{ ...invTd, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{po.po_number}</td>
-                        <td style={invTd}>{po.vendor_name || '—'}</td>
+                      <tr key={po.id} onClick={() => router.push(recordPath('/dashboard/p2p/purchase-orders', po))} style={{ cursor: 'pointer' }}>
+                        <td style={{ ...invTd, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}><RecordLink base={RECORD_BASE.po} row={po} title={`Open ${po.po_number}`} style={{ color: TEXT.heading }}>{po.po_number}</RecordLink></td>
+                        <td style={invTd}>{po.vendor_name ? <RecordLink base={RECORD_BASE.vendor} row={po} idKey="vendor_id" allowed={can('p2p', 'vendors', 'view')} title="Open the vendor" style={{ fontWeight: 500 }}>{po.vendor_name}</RecordLink> : '—'}</td>
                         <td style={invTd}><Pill label={st.label} hex={st.hex} /></td>
                         {seePoPrices && <td style={{ ...invTd, textAlign: 'right', whiteSpace: 'nowrap' }}>{po.total_value != null ? `₹${po.total_value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}</td>}
-                        <td style={{ ...invTd, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        <td style={{ ...invTd, textAlign: 'right', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
                           <div style={{ display: 'inline-flex', gap: 12, alignItems: 'center' }}>
                             <button type="button" onClick={() => router.push(recordPath('/dashboard/p2p/purchase-orders', po))} style={linkBtn}>Open</button>
                             {po.status === 'draft' && canDiscardDraft && (
@@ -541,8 +544,9 @@ function InvitedVendorsSection({ invites, canEdit, canOpenComparison, busy, noti
   onRecordQuote: (inv: RfqInvite) => void
   onViewQuote: (inv: RfqInvite) => void
 }) {
+  const { can } = useCan()
   const list = invites.invites
-  const quoted = list.filter((i) => i.quote_status === 'quoted').length
+  const quoted =list.filter((i) => i.quote_status === 'quoted').length
   const due = invites.quote_due_date
   const duePassed = !!due && due.slice(0, 10) < todayIso()
   const anyUnsent = list.some((i) => i.email_status !== 'sent')
@@ -600,7 +604,7 @@ function InvitedVendorsSection({ invites, canEdit, canOpenComparison, busy, noti
               const needsResend = inv.email_status !== 'sent'
               return (
                 <tr key={inv.id}>
-                  <td style={{ ...invTd, fontWeight: 600, color: TEXT.heading }}>{inv.vendor_name}</td>
+                  <td style={{ ...invTd, fontWeight: 600, color: TEXT.heading }}><RecordLink base={RECORD_BASE.vendor} row={inv} idKey="vendor_id" allowed={can('p2p', 'vendors', 'view')} title="Open the vendor" style={{ color: TEXT.heading }}>{inv.vendor_name}</RecordLink></td>
                   <td style={invTd}>{inv.email || <span style={{ color: '#b91c1c' }}>no email in vendor master</span>}</td>
                   <td style={invTd}>
                     {inv.email_status === 'sent' && <span style={{ color: emailHex }}>Sent {fmtStamp(inv.sent_at)}</span>}

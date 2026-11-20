@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useRequireOrgTab } from '@/app/dashboard/organization/_lib/useRequireOrgTab'
 import { useCan } from '@/lib/permissions'
+import { RecordLink, useUserPath } from '@/components/crm/RecordLink'
 import { securityApi } from '@/lib/api'
 import { SecuritySettings, SignInEvent, UserSessionInfo } from '@/types'
 import { BORDER, GLASS, SHADOWS, TEXT } from '@/lib/theme'
@@ -42,6 +43,7 @@ function device(ua?: string | null) {
 export default function SecurityPage() {
   const { isAuthorized, isLoading } = useRequireOrgTab('security')
   const { can } = useCan()
+  const userPath = useUserPath()
   const [values, setValues] = useState<SecuritySettings | null>(null)
   const [defaults, setDefaults] = useState<SecuritySettings | null>(null)
   const [savedValues, setSavedValues] = useState<SecuritySettings | null>(null)
@@ -197,7 +199,7 @@ export default function SecurityPage() {
             {sessions.length === 0 && <tr><td colSpan={7} style={{ ...td, textAlign: 'center', color: '#57534e' }}>No live sessions.</td></tr>}
             {sessions.map((s) => (
               <tr key={s.id}>
-                <td style={td}><b>{s.user_name}</b><div style={{ color: '#57534e', fontSize: 12 }}>{s.user_email}</div></td>
+                <td style={td}><b><RecordLink href={userPath(s, 'user_id')} style={{ color: 'inherit' }} title="Open the user">{s.user_name}</RecordLink></b><div style={{ color: '#57534e', fontSize: 12 }}>{s.user_email}</div></td>
                 <td style={td} title={s.user_agent || ''}>{device(s.user_agent)}</td>
                 <td style={td}>{s.ip_address || '—'}</td>
                 <td style={td}>{fmt(s.created_at)}</td>

@@ -19,6 +19,7 @@ import { RowCount, smallSecondaryBtnStyle, Pill } from '@/components/shared/ui'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
 import ManagedDocumentPanel from '@/components/shared/ManagedDocumentPanel'
 import { StageBadge, TrackRow, money } from '@/components/p2p/POTrackingShared'
+import RecordLink, { RECORD_BASE } from '@/components/p2p/RecordLink'
 
 type Tab = 'items' | 'receipts' | 'approval' | 'documents' | 'timeline'
 type HistoryEvent = { type: string; label: string; document_number: string; date: string | null; status?: string | null; quantity?: number }
@@ -40,7 +41,7 @@ const msg = (err: unknown, fallback: string) => extractErrorMessages(err, fallba
 
 export default function POTrackingDetail({ row, narrow, onClose }: { row: TrackRow; narrow: boolean; onClose: () => void }) {
   const router = useRouter()
-  const { canFeature } = useCan()
+  const { can, canFeature } = useCan()
   const [tab, setTab] = useState<Tab>('items')
   const [po, setPo] = useState<P2PPurchaseOrder | null>(null)
   const [poError, setPoError] = useState('')
@@ -54,6 +55,7 @@ export default function POTrackingDetail({ row, narrow, onClose }: { row: TrackR
   const [events, setEvents] = useState<Ev[] | null>(null)
   const [eventsNote, setEventsNote] = useState('')
   const seeDocument = canFeature('p2p', 'purchase_orders', 'po_document', 'view')
+  const canOpenGrn = can('store', 'grn', 'view')
 
   // The parent mounts this per PO (key = po_id), so every opened row starts clean.
   useEffect(() => {
@@ -182,7 +184,7 @@ export default function POTrackingDetail({ row, narrow, onClose }: { row: TrackR
                       const s = summaryByItem.get(it.id)
                       return (
                         <tr key={it.id}>
-                          <td style={{ ...td, color: TEXT.body }}>{it.item_code ? <strong style={{ color: TEXT.heading }}>{it.item_code} — </strong> : null}{it.item_name}</td>
+                          <td style={{ ...td, color: TEXT.body }}>{it.item_code ? <strong style={{ color: TEXT.heading }}><RecordLink base={RECORD_BASE.item} row={it} idKey="store_item_id" allowed={can('store', 'items', 'view')} title="Open the item" style={{ color: TEXT.heading, fontWeight: 700 }}>{it.item_code}</RecordLink> — </strong> : null}{it.item_name}</td>
                           <td style={num}>{it.quantity.toLocaleString('en-IN')} {it.unit || ''}</td>
                           {history && <td style={num}>{s ? s.delivered_qty.toLocaleString('en-IN') : '—'}</td>}
                           {history && <td style={{ ...num, fontWeight: 700, color: s && s.open_qty > 0 && row.stage !== 'short_closed' ? '#d97706' : '#16a34a' }}>{s ? (row.stage === 'short_closed' ? `${s.open_qty} written off` : s.open_qty) : '—'}</td>}
@@ -213,8 +215,10 @@ export default function POTrackingDetail({ row, narrow, onClose }: { row: TrackR
                   <thead><tr>{['Goods receipt', 'Date', 'Status', 'Received', 'Accepted', 'Vendor invoice'].map((h, i) => <th key={h} style={thFor(h)}>{h}{i === 0 && <RowCount count={grns.length} />}</th>)}</tr></thead>
                   <tbody>
                     {grns.map((g) => (
-                      <tr key={g.id}>
-                        <td style={{ ...td, fontWeight: 600, color: TEXT.body, whiteSpace: 'nowrap' }}>{g.grn_number}</td>
+                      <tr key={g.id} onClick={canOpenGrn ? () => router.push(recordPath(RECORD_BASE.grn, g)) : undefined} style={canOpenGrn ? { cursor: 'pointer' } : undefined}>
+                        <td style={{ ...td, fontWeight: 600, color: TEXT.body, whiteSpace: 'nowrap' }}>
+                          <RecordLink base={RECORD_BASE.grn} row={g} allowed={canOpenGrn} title={`Open ${g.grn_number}`}>{g.grn_number}</RecordLink>
+                        </td>
                         <td style={{ ...td, whiteSpace: 'nowrap' }}>{formatDate(g.received_date)}</td>
                         <td style={td}><Pill label={GRN_LABEL[g.status] || g.status} hex={GRN_HEX[g.status] || '#64748b'} /></td>
                         <td style={num}>{g.items.reduce((a, i) => a + (i.received_quantity || 0), 0).toLocaleString('en-IN')}</td>

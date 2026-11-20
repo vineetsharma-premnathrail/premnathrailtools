@@ -11,7 +11,7 @@ import { TEXT } from '@/lib/theme'
 import QualityNav from '@/components/quality/QualityNav'
 import { primaryBtnStyle, RowCount } from '@/components/shared/ui'
 import {
-  Pill, PageHeader, ErrorBanner, tableWrapStyle, thStyle, tdStyle, filterInputStyle, fmtDate, INSPECTION_TYPE_LABELS, PLAN_STATUS_HEX, PLAN_STATUS_LABELS,
+  Pill, RecordLink, PageHeader, ErrorBanner, tableWrapStyle, thStyle, tdStyle, filterInputStyle, fmtDate, INSPECTION_TYPE_LABELS, PLAN_STATUS_HEX, PLAN_STATUS_LABELS,
 } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
 import Select from '@/components/shared/Select'
@@ -81,7 +81,7 @@ export default function InspectionPlansPage() {
             ) : plans.map((p) => (
               <tr key={p.id} onClick={() => router.push(recordPath('/dashboard/quality/inspection-plans', p))} style={{ cursor: 'pointer' }}>
                 <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading }}>{p.plan_number}</td>
-                <td style={tdStyle}>{p.item_code ? `${p.item_code} — ` : ''}{p.item_name}{!p.item_id && <span style={{ color: '#b45309' }}> (legacy — no item link)</span>}</td>
+                <td style={tdStyle}><RecordLink base="/dashboard/store" row={p} idKey="item_id" allowed={can('store', 'items', 'view')} title="Open the item">{p.item_code ? `${p.item_code} — ` : ''}{p.item_name}</RecordLink>{!p.item_id && <span style={{ color: '#b45309' }}> (legacy — no item link)</span>}</td>
                 <td style={tdStyle}>{INSPECTION_TYPE_LABELS[p.inspection_type] || p.inspection_type}</td>
                 <td style={tdStyle}>{p.revision}</td>
                 <td style={tdStyle}>{SAMPLING_LABEL[p.sampling_type] || p.sampling_type}{p.sampling_type === 'aql' && p.aql != null ? ` ${p.aql} / ${p.inspection_level}` : ''}</td>

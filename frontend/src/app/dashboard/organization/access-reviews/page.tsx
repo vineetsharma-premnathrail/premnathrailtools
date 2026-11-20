@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
+import { RecordLink, useUserPath } from '@/components/crm/RecordLink'
 import OrganizationNav from '@/components/organization/OrganizationNav'
 import DateField from '@/components/erp/DateField'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
@@ -34,6 +35,7 @@ function Pill({ status }: { status: string }) {
 }
 
 function LinesTable({ lines, onKeep, onRevoke, showReviewer, canDecide }: { lines: AccessReviewLineRow[]; onKeep: (l: AccessReviewLineRow) => void; onRevoke: (l: AccessReviewLineRow) => void; showReviewer?: boolean; canDecide: (l: AccessReviewLineRow) => boolean }) {
+  const userPath = useUserPath()
   return (
     <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
@@ -45,9 +47,9 @@ function LinesTable({ lines, onKeep, onRevoke, showReviewer, canDecide }: { line
           {lines.length === 0 && <tr><td style={td} colSpan={showReviewer ? 6 : 5}>Nothing to review.</td></tr>}
           {lines.map((l) => (
             <tr key={l.id}>
-              <td style={{ ...td, fontWeight: 600 }}>{l.user_name}{l.period && <div style={{ fontSize: 11, color: TEXT.muted, fontWeight: 400 }}>{l.period}</div>}</td>
+              <td style={{ ...td, fontWeight: 600 }}><RecordLink href={userPath(l, 'user_id')} style={{ color: TEXT.body }} title="Open the user">{l.user_name}</RecordLink>{l.period && <div style={{ fontSize: 11, color: TEXT.muted, fontWeight: 400 }}>{l.period}</div>}</td>
               <td style={td}>{l.label}</td>
-              {showReviewer && <td style={td}>{l.reviewer_name || <span style={{ color: '#b45309' }}>Unassigned (no manager)</span>}</td>}
+              {showReviewer && <td style={td}>{l.reviewer_name ? <RecordLink href={userPath(l, 'reviewer_id')} style={{ color: TEXT.body, fontWeight: 400 }} title="Open the user">{l.reviewer_name}</RecordLink> : <span style={{ color: '#b45309' }}>Unassigned (no manager)</span>}</td>}
               <td style={td}><Pill status={l.decision || 'pending'} />{l.decided_by_name && <div style={{ fontSize: 11, color: TEXT.muted, marginTop: 3 }}>by {l.decided_by_name}</div>}</td>
               <td style={td}>{l.comment || '—'}</td>
               <td style={{ ...td, whiteSpace: 'nowrap' }}>

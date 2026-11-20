@@ -6,17 +6,23 @@
 
 import { formatDateTime } from '@/lib/format'
 import { Pill, primaryBtnStyle } from '@/components/shared/ui'
+import { RecordLink, useGatedPath } from '@/components/crm/RecordLink'
 import { REVISION_STATUS_HEX, REVISION_STATUS_LABEL, type CrmRndRequirement } from '@/types/rndIntake'
 
-export default function RndIntakeCard({ rnd, canResend, sending, onResend, tourId }: {
+export default function RndIntakeCard({ rnd, source, record, canResend, sending, onResend, tourId }: {
   rnd: CrmRndRequirement | null
+  /** The inquiry / tender this card sits on — the R&D ID opens that record's requirement page in R&D. */
+  source?: 'inquiry' | 'tender'
+  record?: object | null
   /** The user may send to R&D (Send Technical Requirement (TOR) to R&D › Create). */
   canResend: boolean
   sending: boolean
   onResend: () => void
   tourId: string
 }) {
+  const rndPath = useGatedPath('rnd', 'requirements')
   if (!rnd) return null
+  const rndHref = source && record ? rndPath(`/dashboard/rnd/requirements/${source}`, record) : null
   const hex = REVISION_STATUS_HEX[rnd.status]
   const returned = rnd.status === 'returned'
   return (
@@ -27,7 +33,7 @@ export default function RndIntakeCard({ rnd, canResend, sending, onResend, tourI
     }}>
       <div style={{ minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: '#1f1108' }}>R&amp;D ID {rnd.rd_number}</span>
+          <span style={{ fontSize: 13, fontWeight: 700, color: '#1f1108' }}>R&amp;D ID <RecordLink href={rndHref} style={{ color: '#1f1108', fontWeight: 700 }} title="Open this requirement in R&D">{rnd.rd_number}</RecordLink></span>
           <span style={{ fontSize: 12, fontWeight: 600, color: '#78716c' }}>Revision {rnd.revision_code}</span>
           <Pill label={REVISION_STATUS_LABEL[rnd.status]} hex={hex} />
         </div>

@@ -21,6 +21,7 @@ import { secondaryBtnStyle, dangerBtnStyle, smallSecondaryBtnStyle, smallDangerB
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import RecordLink, { CUSTOMER_PAGE } from '@/components/projects/RecordLink'
 import ContractChip from '@/components/erp/ContractChip'
 import Select from '@/components/shared/Select'
 import { LIFECYCLE_HEX, LIFECYCLE_LABELS, LIFECYCLE_ORDER, inputStyle } from '@/components/projects/work/pmUi'
@@ -325,7 +326,7 @@ function OverviewTab({ project, showContacts, showWarranty }: { project: Project
 
       {showContacts && <>
         <DetailGroup title="Customer">
-          <DetailRow label="CRM customer">{project.customer_name || <span style={{ color: '#b45309' }}>Not linked — edit the machine and pick the Customer (needed for service invoices)</span>}</DetailRow>
+          <DetailRow label="CRM customer">{project.customer_name ? <RecordLink base={CUSTOMER_PAGE} row={project} idKey="customer_id" title="Open this customer">{project.customer_name}</RecordLink> : <span style={{ color: '#b45309' }}>Not linked — edit the machine and pick the Customer (needed for service invoices)</span>}</DetailRow>
           <DetailRow label="Client company">{project.client_company}</DetailRow>
           <DetailRow label="Client GST">{project.client_gst}</DetailRow>
           <DetailRow label="Contact person">{[project.client_name, project.client_designation].filter(Boolean).join(', ')}</DetailRow>
@@ -377,6 +378,7 @@ function TechnicalSpecsTab({ project }: { project: Project }) {
 }
 
 function MaintenanceHistoryTab({ projectId }: { projectId: number }) {
+  const router = useRouter()
   const [srs, setSrs] = useState<ServiceRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -405,9 +407,9 @@ function MaintenanceHistoryTab({ projectId }: { projectId: number }) {
         </thead>
         <tbody>
           {srs.map((sr) => (
-            <tr key={sr.id} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
+            <tr key={sr.id} onClick={() => router.push(recordPath('/dashboard/erp/service-requests', sr))} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
               <td style={{ padding: '10px 14px' }}>
-                <Link href={recordPath('/dashboard/erp/service-requests', sr)} style={{ fontSize: 13, fontWeight: 600, color: '#FF7A45', textDecoration: 'none' }}>
+                <Link href={recordPath('/dashboard/erp/service-requests', sr)} onClick={(e) => e.stopPropagation()} style={{ fontSize: 13, fontWeight: 600, color: '#FF7A45', textDecoration: 'none' }}>
                   {sr.request_number}
                 </Link>
               </td>

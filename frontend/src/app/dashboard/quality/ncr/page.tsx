@@ -13,7 +13,7 @@ import { TEXT } from '@/lib/theme'
 import QualityNav from '@/components/quality/QualityNav'
 import { primaryBtnStyle, RowCount } from '@/components/shared/ui'
 import {
-  Pill, PageHeader, ErrorBanner, tableWrapStyle, thStyle, tdStyle, filterInputStyle, fmtQty, fmtDate,
+  Pill, RecordLink, PageHeader, ErrorBanner, tableWrapStyle, thStyle, tdStyle, filterInputStyle, fmtQty, fmtDate,
   NCR_STATUS_LABELS, NCR_STATUS_HEX, SEVERITY_HEX, DISPOSITION_TYPE_LABELS,
 } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
@@ -99,7 +99,7 @@ export default function QualityNcrListPage() {
             ) : ncrs.map((n) => (
               <tr key={n.id} onClick={vis.preview ? undefined : () => router.push(recordPath('/dashboard/quality/ncr', n))} style={{ cursor: vis.preview ? 'default' : 'pointer' }}>
                 <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{n.ncr_number}{n.auto_raised ? <span style={{ color: TEXT.muted, fontWeight: 400 }}> · auto</span> : null}</td>
-                <VisTd vis={vis} table="ncrs" k="item" style={tdStyle}>{n.item_code ? `${n.item_code} — ` : ''}{n.item_name}</VisTd>
+                <VisTd vis={vis} table="ncrs" k="item" style={tdStyle}><RecordLink base="/dashboard/store" row={n} idKey="item_id" allowed={can('store', 'items', 'view')} title="Open the item">{n.item_code ? `${n.item_code} — ` : ''}{n.item_name}</RecordLink></VisTd>
                 <VisTd vis={vis} table="ncrs" k="qty" style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{fmtQty(n.quantity, n.uom)}</VisTd>
                 <VisTd vis={vis} table="ncrs" k="severity" style={tdStyle}><Pill text={n.severity} hex={SEVERITY_HEX[n.severity]} /></VisTd>
                 <VisTd vis={vis} table="ncrs" k="source" style={tdStyle}>{n.source.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())}</VisTd>

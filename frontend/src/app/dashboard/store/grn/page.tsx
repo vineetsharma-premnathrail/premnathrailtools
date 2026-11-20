@@ -17,6 +17,7 @@ import { useVisibility } from '@/lib/visibility'
 import { VisTd, VisTh } from '@/lib/visibilityComponents'
 import { sampleGrns, sampleReceivablePos } from '@/lib/storePreviewSamples'
 import ScopeNote from '@/components/shared/ScopeNote'
+import RecLink, { safePath } from '@/components/store/RecLink'
 
 // Columns a role may hide (Store › GRN & Inspection › Visibility); GRN / PO number and Status are always shown.
 const RECEIPT_HIDEABLE: Record<string, string> = { 'PO Number': 'purchase_order', 'PO Date': 'po_date', Vendor: 'vendor', 'Received Date': 'received_date' }
@@ -146,8 +147,8 @@ export default function StoreGrnPage() {
                 <tr><td colSpan={upHeaders.length} style={{ padding: 24, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>{active.emptyLabel}</td></tr>
               ) : (
                 upcoming.map((po) => (
-                  <tr key={po.id}>
-                    <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading }}>{po.po_number}</td>
+                  <tr key={po.id} onClick={() => { if (!vis.preview) router.push(recordPath('/dashboard/p2p/purchase-orders', po)) }} title={`Open purchase order ${po.po_number}`} style={{ cursor: 'pointer' }}>
+                    <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading }}>{vis.preview ? po.po_number : <RecLink href={safePath('/dashboard/p2p/purchase-orders', po)} style={{ color: TEXT.heading }}>{po.po_number}</RecLink>}</td>
                     <VisTd vis={vis} table="upcoming" k="requisition" style={tdStyle}>{po.p2p_number || '—'}</VisTd>
                     <VisTd vis={vis} table="upcoming" k="po_date" style={tdStyle}>{po.po_date ? formatDate(po.po_date) : '—'}</VisTd>
                     <VisTd vis={vis} table="upcoming" k="vendor" style={tdStyle}>{po.vendor_name || '—'}</VisTd>
@@ -163,7 +164,7 @@ export default function StoreGrnPage() {
                       <Pill label={PO_STATUS_LABELS[po.status] || po.status} hex={PO_STATUS_HEX[po.status] || '#64748b'} />
                     </td>
                     <td style={tdStyle}>
-                      <button type="button" disabled={vis.preview} onClick={() => router.push(recordHref('/dashboard/store/grn/new', po, 'id', undefined, 'po_id'))} style={smallSecondaryBtnStyle}>
+                      <button type="button" disabled={vis.preview} onClick={(e) => { e.stopPropagation(); router.push(recordHref('/dashboard/store/grn/new', po, 'id', undefined, 'po_id')) }} style={smallSecondaryBtnStyle}>
                         Receive →
                       </button>
                     </td>
@@ -190,7 +191,7 @@ export default function StoreGrnPage() {
                 rows.map((g) => (
                   <tr key={g.id} onClick={() => { if (!vis.preview) router.push(recordPath('/dashboard/store/grn', g)) }} style={{ cursor: 'pointer' }}>
                     <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading }}>{g.grn_number}</td>
-                    <VisTd vis={vis} table="receipts" k="purchase_order" style={tdStyle}>{g.po_number || '—'}</VisTd>
+                    <VisTd vis={vis} table="receipts" k="purchase_order" style={tdStyle}>{g.po_number ? (vis.preview ? g.po_number : <RecLink href={safePath('/dashboard/p2p/purchase-orders', g, 'purchase_order_id')} title="Open the purchase order">{g.po_number}</RecLink>) : '—'}</VisTd>
                     <VisTd vis={vis} table="receipts" k="po_date" style={tdStyle}>{g.po_date ? formatDate(g.po_date) : '—'}</VisTd>
                     <VisTd vis={vis} table="receipts" k="vendor" style={tdStyle}>{g.vendor_name || '—'}</VisTd>
                     <VisTd vis={vis} table="receipts" k="received_date" style={tdStyle}>{formatDate(g.received_date)}</VisTd>

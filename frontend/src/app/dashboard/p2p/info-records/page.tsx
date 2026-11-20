@@ -18,6 +18,7 @@ import { primaryBtnStyle, secondaryBtnStyle, smallSecondaryBtnStyle, RowCount, S
 import { formatDate } from '@/lib/format'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import P2PNav from '@/components/p2p/P2PNav'
+import RecordLink, { RECORD_BASE } from '@/components/p2p/RecordLink'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
@@ -60,6 +61,8 @@ export default function ItemRatesPage() {
   // Vendors › Item Rates tab › View decides the page (2026-11-14, not the Purchase desk).
   const seeInfoRecords = canFeature('p2p', 'vendors', 'info_records', 'view')
   const isAuthorized = inP2p && seeInfoRecords
+  const canOpenPo = can('p2p', 'purchase_orders', 'view')
+  const canOpenRfq = can('p2p', 'rfq', 'view')
   const canEdit = can('p2p', 'vendors', 'edit') && canFeature('p2p', 'vendors', 'info_records', 'edit')
   const [items, setItems] = useState<StoreItem[]>([])
   const [vendors, setVendors] = useState<Opt[]>([])
@@ -235,7 +238,7 @@ export default function ItemRatesPage() {
                     return (
                       <tr key={`${v.vendor_id}-${v.vendor_name}`} style={{ opacity: blocked ? 0.55 : 1 }}>
                         <td style={{ ...td, fontWeight: 600, color: TEXT.body }}>
-                          <span title={`${v.vendor_name || ''}${v.po_count > 0 ? ` — ${v.po_count} approved PO${v.po_count > 1 ? 's' : ''}` : ''}`}>{clip(v.vendor_name)}</span>
+                          <span title={`${v.vendor_name || ''}${v.po_count > 0 ? ` — ${v.po_count} approved PO${v.po_count > 1 ? 's' : ''}` : ''}`}><RecordLink base={RECORD_BASE.vendor} row={v} idKey="vendor_id" style={{ color: TEXT.body }}>{clip(v.vendor_name)}</RecordLink></span>
                           {v.source?.is_fixed && <Pill text="Preferred" hex={GREEN} />}
                           {v.source && !v.source.is_fixed && !blocked && <Pill text="Approved" hex="#0891b2" />}
                           {blocked && <Pill text="Blocked" hex="#b91c1c" />}
@@ -249,7 +252,7 @@ export default function ItemRatesPage() {
                           {v.last_po ? (
                             <>
                               <span style={{ fontWeight: 600, color: v.last_po.unit_price === lowest.po ? GREEN : TEXT.body }}>{money(v.last_po.unit_price)}</span>
-                              <span style={mutedInline}>{ddmmyyyy(v.last_po.po_date)} · {v.last_po.po_number} · {qty(v.last_po.quantity)} {v.last_po.unit || ''}</span>
+                              <span style={mutedInline}>{ddmmyyyy(v.last_po.po_date)} · <RecordLink base={RECORD_BASE.po} row={v.last_po} idKey="po_id" allowed={canOpenPo} style={{ fontWeight: 500 }}>{v.last_po.po_number}</RecordLink> · {qty(v.last_po.quantity)} {v.last_po.unit || ''}</span>
                             </>
                           ) : <span style={{ color: TEXT.muted }}>Never bought</span>}
                         </td>
@@ -259,7 +262,7 @@ export default function ItemRatesPage() {
                               <span title={v.last_quote.discount_pct ? `${money(v.last_quote.unit_price)} − ${v.last_quote.discount_pct}%` : undefined} style={{ fontWeight: 600, color: v.last_quote.valid_today && v.last_quote.net_price === lowest.quote ? GREEN : TEXT.body }}>{money(v.last_quote.net_price)}</span>
                               {v.last_quote.is_awarded && <Pill text="Awarded" hex={GREEN} />}
                               <span style={mutedInline}>
-                                {v.last_quote.rfq_number}{v.last_quote.quote_date ? ` · ${ddmmyyyy(v.last_quote.quote_date)}` : ''}
+                                <RecordLink base={RECORD_BASE.rfq} row={v.last_quote} idKey="rfq_id" allowed={canOpenRfq} style={{ fontWeight: 500 }}>{v.last_quote.rfq_number}</RecordLink>{v.last_quote.quote_date ? ` · ${ddmmyyyy(v.last_quote.quote_date)}` : ''}
                                 {!v.last_quote.valid_today && <span style={{ color: '#b45309' }}> · expired {ddmmyyyy(v.last_quote.valid_until)}</span>}
                               </span>
                             </>
@@ -308,12 +311,12 @@ export default function ItemRatesPage() {
                     {ov.history.map((r, i) => (
                       <tr key={`${r.po_id}-${i}`}>
                         <td style={{ ...td, whiteSpace: 'nowrap' }}>{ddmmyyyy(r.po_date) || '—'}</td>
-                        <td style={td}>{r.po_number}{r.amendment_no ? ` (A${r.amendment_no})` : ''}</td>
+                        <td style={td}><RecordLink base={RECORD_BASE.po} row={r} idKey="po_id" allowed={canOpenPo} title={`Open ${r.po_number}`}>{r.po_number}</RecordLink>{r.amendment_no ? ` (A${r.amendment_no})` : ''}</td>
                         <td style={td}><span title={r.vendor_name ?? undefined}>{clip(r.vendor_name)}</span></td>
                         <td style={numTd}>{qty(r.quantity)} {r.unit || ''}</td>
                         <td style={{ ...numTd, fontWeight: 600 }}>{money(r.unit_price)}</td>
                         <td style={numTd}>{r.tax_rate ?? '—'}</td>
-                        <td style={td}>{r.p2p_number || '—'}</td>
+                        <td style={td}>{r.p2p_number ? <RecordLink base={RECORD_BASE.po} row={r} idKey="po_id" allowed={canOpenPo} title={`Open ${r.p2p_number}`}>{r.p2p_number}</RecordLink> : '—'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -411,7 +414,7 @@ export default function ItemRatesPage() {
                     {sources.length === 0 && <tr><td colSpan={5} style={{ ...td, color: TEXT.muted }}>No list — any vendor can be ordered from.</td></tr>}
                     {sources.map((v) => v.source && (
                       <tr key={v.source.id}>
-                        <td style={td}>{v.vendor_name}{!v.source.valid_today && !v.source.is_blocked && <Pill text="Not valid today" hex="#b45309" />}</td>
+                        <td style={td}><RecordLink base={RECORD_BASE.vendor} row={v} idKey="vendor_id" style={{ color: TEXT.body }}>{v.vendor_name}</RecordLink>{!v.source.valid_today && !v.source.is_blocked && <Pill text="Not valid today" hex="#b45309" />}</td>
                         <td style={{ ...td, whiteSpace: 'nowrap' }}>{v.source.valid_from || v.source.valid_to ? `${ddmmyyyy(v.source.valid_from) || '…'} to ${ddmmyyyy(v.source.valid_to) || '…'}` : 'No end date'}</td>
                         <td style={td}><input type="checkbox" checked={v.source.is_fixed} disabled={busy} onChange={(ev) => run(() => infoRecordsApi.updateSource(v.source!.id, { is_fixed: ev.target.checked }), 'Could not update the vendor.')} /></td>
                         <td style={td}><input type="checkbox" checked={v.source.is_blocked} disabled={busy} onChange={(ev) => run(() => infoRecordsApi.updateSource(v.source!.id, { is_blocked: ev.target.checked }), 'Could not update the vendor.')} /></td>

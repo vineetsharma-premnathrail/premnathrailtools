@@ -14,8 +14,10 @@ import TaskActivity from './TaskActivity'
 import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
 import MilestoneDetail, { milestonePercent, topTasks } from './MilestoneDetail'
 import {
-  ErrorBanner, FlagPill, Pill, ProgressBar, TASK_HEX, TASK_LABELS, linkBtn, sectionStyle, tdStyle, thStyle, todayIso, usePmFeature,
+  ErrorBanner, FlagPill, Pill, ProgressBar, TASK_HEX, TASK_LABELS, canOpenProjectPage, linkBtn, sectionStyle, tdStyle, thStyle, todayIso, usePmFeature,
 } from './pmUi'
+import RecordLink from '../RecordLink'
+import { useAuth } from '@/hooks/useAuth'
 import { FileDropZone, FormSheet, Optional, Req, SHEET, SheetIcon, SheetSection, sheetBtn, sheetHint, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import { RowCount } from '@/components/shared/ui'
 import { useFormDraft } from '@/lib/formDraft'
@@ -112,6 +114,8 @@ export function DeptTaskTable({ tasks, onChanged, mode, onEdit, onDelete, layout
 }) {
   // Milestone actions: record rules (can_*) AND the role's features (core/features/projects.py).
   const pmf = usePmFeature()
+  const { user } = useAuth()
+  const canOpenProject = canOpenProjectPage(user)
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
   const [openSubs, setOpenSubs] = useState<Set<number>>(new Set())
   const [busy, setBusy] = useState<number | null>(null)
@@ -392,7 +396,9 @@ export function DeptTaskTable({ tasks, onChanged, mode, onEdit, onDelete, layout
                     </td>
                     {showProject && (
                       <td style={tdStyle}>
-                        <span style={{ fontSize: 11.5, fontWeight: 700, color: TEXT.muted, letterSpacing: '.04em' }}>{t.project_code}</span>
+                        <span style={{ fontSize: 11.5, fontWeight: 700, color: TEXT.muted, letterSpacing: '.04em' }}>
+                          {canOpenProject ? <RecordLink base="/dashboard/projects" row={t} idKey="project_id" title="Open this project">{t.project_code}</RecordLink> : t.project_code}
+                        </span>
                         <div style={{ fontSize: 12.5, color: TEXT.body }}>{t.project_name}</div>
                       </td>
                     )}

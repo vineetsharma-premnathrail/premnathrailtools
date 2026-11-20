@@ -12,6 +12,7 @@ import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import MessageDialog from '@/components/erp/MessageDialog'
 import PromptDialog from '@/components/erp/PromptDialog'
 import { recordPath, useRecordId } from '@/lib/recordRef'
+import RecLink, { safePath } from '@/components/store/RecLink'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 
@@ -20,7 +21,7 @@ import { useCan } from '@/lib/permissions'
 // and NCRs, plus job-work genealogy (made from / made into).
 
 interface Trace {
-  id: number; item_code?: string | null; item_name?: string | null; uom?: string | null; batch_number: string; heat_number?: string | null
+  id: number; item_id?: number; vendor_id?: number | null; item_code?: string | null; item_name?: string | null; uom?: string | null; batch_number: string; heat_number?: string | null
   vendor_name?: string | null; grn_id?: number | null; grn_number?: string | null; received_qty: number; accepted_qty?: number | null
   received_date?: string | null; mfg_date?: string | null; expiry_date?: string | null; tc_number?: string | null; tc_file_name?: string | null
   has_tc_document: boolean; status: string; remarks?: string | null
@@ -112,7 +113,7 @@ export default function StoreBatchTracePage() {
         <>
           <DetailCard>
             <DetailSummary
-              title={<>{t.item_name || '—'}{t.item_code && <span style={{ fontSize: 14, fontWeight: 600, color: TEXT.muted, marginLeft: 8 }}>{t.item_code}</span>}</>}
+              title={<><RecLink href={t.item_id ? safePath('/dashboard/store', t, 'item_id') : null} title="Open the item" style={{ color: 'inherit', fontWeight: 'inherit' }}>{t.item_name || '—'}</RecLink>{t.item_code && <span style={{ fontSize: 14, fontWeight: 600, color: TEXT.muted, marginLeft: 8 }}>{t.item_code}</span>}</>}
               text={`Batch received from ${t.vendor_name || 'an unknown vendor'}${t.grn_number ? ` on GRN ${t.grn_number}` : ''}. Below: where it went, what is left and every movement.`}
               meta={<>
                 <Pill label={t.status === 'blocked' ? 'Blocked' : 'Active'} hex={t.status === 'blocked' ? '#dc2626' : '#16a34a'} />
@@ -133,8 +134,8 @@ export default function StoreBatchTracePage() {
               </>}
             />
             <DetailGroup title="Receipt">
-              <DetailRow label="Vendor">{t.vendor_name}</DetailRow>
-              <DetailRow label="GRN">{t.grn_number}</DetailRow>
+              <DetailRow label="Vendor">{t.vendor_name ? <RecLink href={t.vendor_id ? safePath('/dashboard/p2p/vendors', t, 'vendor_id') : null} title="Open the vendor">{t.vendor_name}</RecLink> : null}</DetailRow>
+              <DetailRow label="GRN">{t.grn_number ? <RecLink href={t.grn_id ? safePath('/dashboard/store/grn', t, 'grn_id') : null} title="Open the goods receipt">{t.grn_number}</RecLink> : null}</DetailRow>
               <DetailRow label="Heat no.">{t.heat_number}</DetailRow>
               <DetailRow label="Received">{`${fmtQty(t.received_qty)} ${t.uom || ''} on ${fmtDate(t.received_date)}`}</DetailRow>
               {t.accepted_qty != null && <DetailRow label="Accepted">{`${fmtQty(t.accepted_qty)} ${t.uom || ''}`}</DetailRow>}

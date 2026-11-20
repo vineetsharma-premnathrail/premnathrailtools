@@ -37,6 +37,8 @@ class StoreStockTransactionResponse(BaseModel):
     batch_number: str | None = None
     reference_type: str | None = None
     reference_number: str | None = None
+    # Id of the source document (GRN, issue, return, ...) found by its number, so the list can open it.
+    reference_id: int | None = None
     vendor_name: str | None = None
     transaction_date: date
     remarks: str | None = None

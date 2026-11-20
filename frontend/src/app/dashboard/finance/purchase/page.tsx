@@ -27,6 +27,7 @@ import {
 } from '@/components/finance/financeUi'
 import { RowCount, pillStyle, DetailGroup, DetailRow } from '@/components/shared/ui'
 import { recordHref } from '@/lib/recordRef'
+import { RecLink, rowOpen, stopRow, vendorHref, poHref, voucherHref } from '@/components/finance/RecordLink'
 import { useDocCurrency } from '@/components/finance/DocCurrencyFields'
 import FinanceAttachments, { ProofPicker, PickedProof, uploadPickedProof, useProofCounts, ProofClip, useProofRules } from '@/components/finance/FinanceAttachments'
 import Select from '@/components/shared/Select'
@@ -303,14 +304,14 @@ function InvoicesTab(ctx: Ctx) {
             const isMaker = userId != null && inv.created_by_id === userId
             return (
               <Fragment key={inv.id}>
-                <tr>
+                <tr {...rowOpen(() => toggle(inv.id), 'Show the bill details')}>
                   <td style={tdStyle}>
-                    <button type="button" style={{ ...linkBtnStyle, fontSize: 12.5 }} onClick={() => toggle(inv.id)}>{expanded === inv.id ? '▾' : '▸'} {inv.invoice_number}</button>
-                    <ProofClip count={proofCounts[inv.id]} />
+                    <button type="button" style={{ ...linkBtnStyle, fontSize: 12.5 }} onClick={(e) => { e.stopPropagation(); toggle(inv.id) }}>{expanded === inv.id ? '▾' : '▸'} {inv.invoice_number}</button>
+                    <span {...stopRow}><ProofClip count={proofCounts[inv.id]} /></span>
                   </td>
                   <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{dmy(inv.invoice_date)}</td>
                   <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{dmy(inv.due_date)}</td>
-                  <td style={tdStyle}>{inv.vendor_name || '—'}{inv.po_number && <div style={{ fontSize: 11, color: TEXT.muted }}>PO {inv.po_number}</div>}</td>
+                  <td style={tdStyle}><RecLink href={vendorHref(inv)}>{inv.vendor_name || '—'}</RecLink>{inv.po_number && <div style={{ fontSize: 11, color: TEXT.muted }}>PO <RecLink href={poHref(inv)}>{inv.po_number}</RecLink></div>}</td>
                   <td style={tdStyle}>{TYPE_LABELS[inv.invoice_type] || inv.invoice_type}</td>
                   <td style={numTd}>{inr(inv.invoice_amount)}</td>
                   <td style={numTd}>
@@ -330,8 +331,8 @@ function InvoicesTab(ctx: Ctx) {
                       {inv.status === 'posted' && <StatusPill status={inv.payment_status} labels={PAY_LABELS} colors={PAY_HEX} />}
                     </div>
                   </td>
-                  <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{inv.journal_entry_number || '—'}</td>
-                  <td style={tdStyle}>
+                  <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{inv.journal_entry_number ? <RecLink href={voucherHref(inv)}>{inv.journal_entry_number}</RecLink> : '—'}</td>
+                  <td style={tdStyle} {...stopRow}>
                     <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                       {inv.status === 'pending' && inv.matching_status === 'variance' && canApproveVariance && !isMaker && (
                         <button type="button" disabled={busy} style={linkBtnStyle} onClick={() => setVarianceId(inv.id)}>Approve variance</button>
@@ -784,15 +785,15 @@ function DebitNotesTab(ctx: Ctx) {
             const isMaker = userId != null && n.created_by_id === userId
             return (
               <Fragment key={n.id}>
-                <tr>
+                <tr {...rowOpen(() => setExpanded(expanded === n.id ? null : n.id), 'Show the debit note details')}>
                   <td style={tdStyle}>
-                    <button type="button" style={{ ...linkBtnStyle, fontSize: 12.5 }} onClick={() => setExpanded(expanded === n.id ? null : n.id)}>
+                    <button type="button" style={{ ...linkBtnStyle, fontSize: 12.5 }} onClick={(e) => { e.stopPropagation(); setExpanded(expanded === n.id ? null : n.id) }}>
                       {expanded === n.id ? '▾' : '▸'} {isDraftNumber(n.note_number) ? 'Draft' : n.note_number}
                     </button>
-                    <ProofClip count={proofCounts[n.id]} />
+                    <span {...stopRow}><ProofClip count={proofCounts[n.id]} /></span>
                   </td>
                   <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{dmy(n.note_date)}</td>
-                  <td style={tdStyle}>{n.party_name || '—'}</td>
+                  <td style={tdStyle}><RecLink href={vendorHref(n)}>{n.party_name || '—'}</RecLink></td>
                   <td style={tdStyle}>{n.original_invoice_number || '—'}</td>
                   <td style={tdStyle}>{REASON_LABELS[n.reason] || n.reason}</td>
                   <td style={numTd}>{inr(n.taxable_amount)}</td>
@@ -805,7 +806,7 @@ function DebitNotesTab(ctx: Ctx) {
                       {n.status === 'pending' && <ApprovalBadge status={n.approval_status} stage={n.approval_stage} />}
                     </div>
                   </td>
-                  <td style={tdStyle}>
+                  <td style={tdStyle} {...stopRow}>
                     {n.status === 'pending' && (
                       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                         {n.approval_status !== 'pending' && can('accounts', 'debit_notes', 'submit') && (

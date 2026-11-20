@@ -17,6 +17,7 @@ import { P2PRequest, RFQ } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import { primaryBtnStyle, secondaryBtnStyle, smallSecondaryBtnStyle, RowCount } from '@/components/shared/ui'
 import P2PNav from '@/components/p2p/P2PNav'
+import RecordLink, { RECORD_BASE } from '@/components/p2p/RecordLink'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import { extractErrorMessages } from '@/lib/validation'
@@ -279,7 +280,7 @@ export default function QuotationComparisonPage() {
                     <th style={th}>Item <RowCount count={cmp.lines.length} /></th><th style={{ ...th, textAlign: 'right' }}>To buy</th><th style={{ ...th, textAlign: 'right' }}>Last PO</th>
                     {cmp.vendors.map((v) => (
                       <th key={v.vendor_quotation_id} style={{ ...th, textAlign: 'right' }}>
-                        {v.vendor_name}{v.overall_rank ? ` (${v.overall_rank})` : ''}
+                        <RecordLink base={RECORD_BASE.vendor} row={v} idKey="vendor_id" allowed={can('p2p', 'vendors', 'view')} title="Open the vendor">{v.vendor_name}</RecordLink>{v.overall_rank ? ` (${v.overall_rank})` : ''}
                         {!v.eligible && <div style={{ color: '#b91c1c', textTransform: 'none' }}>{v.ineligible_reason}</div>}
                       </th>
                     ))}
@@ -295,7 +296,7 @@ export default function QuotationComparisonPage() {
                     const needReason = cellsOf(l).filter((c) => wantQty(c) > EPS && c.vendor_quotation_item_id !== l.l1_vendor_quotation_item_id)
                     return (
                       <tr key={l.pr_item_id}>
-                        <td style={td}>{l.item_code ? `${l.item_code} · ` : ''}{l.item_name}</td>
+                        <td style={td}>{l.item_code ? <><RecordLink base={RECORD_BASE.item} row={l} idKey="store_item_id" allowed={can('store', 'items', 'view')} title="Open the item">{l.item_code}</RecordLink> · </> : ''}{l.item_name}</td>
                         <td style={{ ...td, whiteSpace: 'nowrap', textAlign: 'right' }}>
                           {fmtQty(l.quantity)} {l.unit || ''}
                           {l.open_qty != null && l.open_qty + EPS < l.quantity && <div style={{ fontSize: 11, color: TEXT.muted }}>{fmtQty(l.open_qty)} not yet ordered</div>}

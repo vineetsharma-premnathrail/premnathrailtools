@@ -13,6 +13,7 @@ import ManagedDocumentPanel from '@/components/shared/ManagedDocumentPanel'
 import { useCan } from '@/lib/permissions'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { recordPath, useRecordId } from '@/lib/recordRef'
+import RecLink, { safePath } from '@/components/store/RecLink'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { OrderProjectChip } from '@/components/sales/ProjectUnitPicker'
@@ -159,7 +160,7 @@ export default function StoreMaterialIssueDetailPage() {
                     <tr><td colSpan={showLineElement ? 5 : 4} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No item lines on this issue.</td></tr>
                   ) : issue.items.map((line) => (
                     <tr key={line.id}>
-                      <td style={{ ...tdStyle, fontWeight: 600 }}>{line.item_code} — {line.item_name}{line.dc_name && <div style={{ fontWeight: 400, fontSize: 12, color: TEXT.secondary, marginTop: 2 }} title="Name printed on the delivery challan (as on the vendor’s bill)">On DC: {line.dc_name}</div>}</td>
+                      <td style={{ ...tdStyle, fontWeight: 600 }}><RecLink href={safePath('/dashboard/store', line, 'item_id')} title="Open the item" style={{ color: 'inherit' }}>{line.item_code} — {line.item_name}</RecLink>{line.dc_name && <div style={{ fontWeight: 400, fontSize: 12, color: TEXT.secondary, marginTop: 2 }} title="Name printed on the delivery challan (as on the vendor’s bill)">On DC: {line.dc_name}</div>}</td>
                       <td style={numTdStyle}>{line.quantity.toLocaleString('en-IN', { maximumFractionDigits: 3 })} {line.uom}</td>
                       <td style={tdStyle}>{line.batch_number || '—'}</td>
                       {showLineElement && <td style={tdStyle}>{line.element_display || '—'}</td>}

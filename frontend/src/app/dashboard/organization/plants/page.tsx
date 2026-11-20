@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { useRequireOrgTab } from '@/app/dashboard/organization/_lib/useRequireOrgTab'
 import { organizationApi } from '@/lib/api'
 import { useCan } from '@/lib/permissions'
+import { RecordLink, useUserPath } from '@/components/crm/RecordLink'
 import { Branch } from '@/types'
 import { TEXT, GLASS, SHADOWS, BRAND, BORDER } from '@/lib/theme'
 import OrganizationNav from '@/components/organization/OrganizationNav'
@@ -20,6 +21,7 @@ import { formatDate } from '@/lib/format'
 export default function OrganizationPlantsPage() {
   const { isAuthorized, isLoading } = useRequireOrgTab('branches')
   const { can, canDelete } = useCan()
+  const userPath = useUserPath()
   const canEdit = can('organization', 'branches', 'edit')
   const router = useRouter()
   const [plants, setPlants] = useState<Branch[]>([])
@@ -168,7 +170,7 @@ export default function OrganizationPlantsPage() {
                   <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.body }}>{p.name}</td>
                   <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{p.company_name || '—'}</td>
                   <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{p.plant_type || '—'}</td>
-                  <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{p.manager_user_name || '—'}</td>
+                  <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{p.manager_user_name ? <RecordLink href={userPath(p, 'manager_user_id')} style={{ color: TEXT.secondary, fontWeight: 400 }} title="Open the user">{p.manager_user_name}</RecordLink> : '—'}</td>
                   <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{p.industry_function || '—'}</td>
                   <td style={{ padding: '12px 16px', fontSize: 13 }}>
                     <span data-tour={idx === 0 ? 'org-plants-status-badge' : undefined} style={pillStyle(PLANT_STATUS_HEX[p.status] || '#78716c')}>

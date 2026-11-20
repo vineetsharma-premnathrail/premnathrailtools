@@ -2,6 +2,7 @@
 
 import FilterMenu from '@/components/shared/FilterMenu'
 import { primaryBtnStyle, Pill, pillStyle } from '@/components/shared/ui'
+import { RecordLink, useUserPath } from '@/components/crm/RecordLink'
 import { useEffect, useState } from 'react'
 import { useRequireOrgTab } from '@/app/dashboard/organization/_lib/useRequireOrgTab'
 import { organizationApi } from '@/lib/api'
@@ -110,6 +111,7 @@ function MetaField({ label, value }: { label: string; value?: string | null }) {
 
 export default function AuditLogsPage() {
   const { isAuthorized, isLoading } = useRequireOrgTab('audit_logs')
+  const userPath = useUserPath()
   const [dashboard, setDashboard] = useState<AuditDashboard | null>(null)
   const [logs, setLogs] = useState<AuditLogEntry[]>([])
   const [loading, setLoading] = useState(true)
@@ -229,7 +231,7 @@ export default function AuditLogsPage() {
                   <span style={{ fontSize: 11.5, color: TEXT.muted, whiteSpace: 'nowrap' }}>{formatDateTime(log.performed_at)}</span>
                 </div>
                 <p style={{ fontSize: 12.5, color: TEXT.secondary, margin: 0 }}>
-                  {log.summary || '—'}{log.performed_by_name ? ` · by ${log.performed_by_name}` : ''}
+                  {log.summary || '—'}{log.performed_by_name && <> · by <RecordLink href={userPath(log, 'performed_by_id')} style={{ color: 'inherit', fontWeight: 400 }} title="Open the user">{log.performed_by_name}</RecordLink></>}
                 </p>
                 <ChangeDetails log={log} />
                 <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 2 }}>

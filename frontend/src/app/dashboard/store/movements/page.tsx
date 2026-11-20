@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { recordPath } from '@/lib/recordRef'
 import { useRequireApp } from '@/hooks/useAuth'
 import { storeApi, storeMaterialDocsApi } from '@/lib/api'
 import { StoreItem, StoreLocation, StoreStockTransaction } from '@/types'
@@ -47,6 +49,18 @@ const TXN_TYPE_LABELS: Record<string, string> = {
 }
 const PAGE_SIZE = 200
 
+// Where each kind of source document opens (signed link from reference_id). Kinds without a page of
+// their own (quarantine, rate corrections, Before-PO receipts) stay plain text.
+const REF_PAGES: Record<string, string> = {
+  grn: '/dashboard/store/grn', material_issue: '/dashboard/store/issues', material_return: '/dashboard/store/returns',
+  stock_transfer: '/dashboard/store/transfers', stock_adjustment: '/dashboard/store/adjustments',
+  p2p_request: '/dashboard/p2p', maintenance_work_order: '/dashboard/maintenance/work-orders',
+}
+const safePath = (base: string, row: object, key: string): string | null => {
+  try { return recordPath(base, row, key) } catch { return null }
+}
+const linkStyle: React.CSSProperties = { color: '#2563eb', fontWeight: 600, textDecoration: 'none', cursor: 'pointer' }
+
 // Tells the reader what kind of document the reference number is.
 const REF_TYPE_LABELS: Record<string, string> = {
   p2p_request: 'PR', grn: 'GRN', material_issue: 'Issue', material_return: 'Return', quarantine: 'Quarantine',
@@ -67,6 +81,7 @@ const TABS: { key: string; label: string; types: string[] | null }[] = [
 
 export default function StoreMovementsPage() {
   const { isAuthorized, isLoading } = useRequireApp('store')
+  const router = useRouter()
   const [transactions, setTransactions] = useState<StoreStockTransaction[]>([])
   const [items, setItems] = useState<StoreItem[]>([])
   const [locations, setLocations] = useState<StoreLocation[]>([])
@@ -261,10 +276,16 @@ export default function StoreMovementsPage() {
             )}
             {!loading && rows.map((t) => {
               const sign = INBOUND.has(t.transaction_type) ? '+' : OUTBOUND.has(t.transaction_type) ? '−' : ''
+              const docHref = t.reference_type && REF_PAGES[t.reference_type] && t.reference_id ? safePath(REF_PAGES[t.reference_type], t, 'reference_id') : null
+              const itemHref = t.item_id ? safePath('/dashboard/store', t, 'item_id') : null
+              const go = (href: string | null) => (e: React.MouseEvent) => { e.stopPropagation(); if (href && !e.ctrlKey && !e.metaKey) { e.preventDefault(); router.push(href) } }
               return (
-                <tr key={t.id} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
+                <tr key={t.id} onClick={docHref ? () => router.push(docHref) : undefined} title={docHref ? `Open ${t.reference_number}` : undefined}
+                  style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: docHref ? 'pointer' : undefined }}>
                   <td style={{ ...td, whiteSpace: 'nowrap' }}>{formatDate(t.transaction_date)}</td>
-                  <td style={{ ...td, fontWeight: 600, color: TEXT.body, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`${t.item_code || ''} — ${t.item_name || ''}`}>{t.item_code || '—'} — {t.item_name || '—'}</td>
+                  <td style={{ ...td, fontWeight: 600, color: TEXT.body, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`${t.item_code || ''} — ${t.item_name || ''}`}>
+                    {itemHref ? <a href={itemHref} onClick={go(itemHref)} style={{ ...linkStyle, color: TEXT.body }} title="Open the item">{t.item_code || '—'} — {t.item_name || '—'}</a> : <>{t.item_code || '—'} — {t.item_name || '—'}</>}
+                  </td>
                   <td style={td}>{t.location_name || '—'}</td>
                   <td style={td}>{t.bin_code || '—'}</td>
                   <td style={{ padding: '12px 16px' }}>
@@ -281,9 +302,9 @@ export default function StoreMovementsPage() {
                           <span style={{ ...pillStyle('#2563eb'), fontSize: 10.5, padding: '1px 7px', marginRight: 6 }}>{REF_TYPE_LABELS[t.reference_type]}</span>
                         )}
                         {t.reference_type === 'stock_entry' ? (
-                          <span title="Open the entry and its documents" onClick={() => setOpenEntry(t.reference_number || null)}
+                          <span title="Open the entry and its documents" onClick={(e) => { e.stopPropagation(); setOpenEntry(t.reference_number || null) }}
                             style={{ color: BRAND.primaryActive, fontWeight: 600, cursor: 'pointer', textDecoration: 'underline' }}>{t.reference_number} 📎</span>
-                        ) : t.reference_number}
+                        ) : docHref ? <a href={docHref} onClick={go(docHref)} style={linkStyle}>{t.reference_number}</a> : t.reference_number}
                       </span>
                     ) : '—'}
                   </td>

@@ -18,6 +18,7 @@ import { useVisibility } from '@/lib/visibility'
 import { VisTd, VisTh } from '@/lib/visibilityComponents'
 import { sampleIssues } from '@/lib/storePreviewSamples'
 import ScopeNote from '@/components/shared/ScopeNote'
+import RecLink, { safePath } from '@/components/store/RecLink'
 
 // Columns a role may hide (Store › Issues › Visibility); Issue # is always shown.
 const HIDEABLE: Record<string, string> = {
@@ -101,8 +102,8 @@ export default function StoreMaterialIssuesPage() {
             {issues.map((i) => (
               <tr key={i.id} onClick={() => router.push(recordPath('/dashboard/store/issues', i))} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
                 <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body, whiteSpace: 'nowrap' }}>{i.issue_number}</td>
-                <VisTd vis={vis} table="issues" k="requisition" style={{ padding: '12px 16px', fontSize: 13 }} onClick={(e) => { if (i.p2p_request_id) { e.stopPropagation(); router.push(recordPath('/dashboard/p2p', i, 'p2p_request_id')) } }}>
-                  {i.p2p_number ? <span style={{ color: '#2563eb', fontWeight: 600, cursor: 'pointer' }}>{i.p2p_number}</span> : <span style={{ color: TEXT.muted }}>—</span>}
+                <VisTd vis={vis} table="issues" k="requisition" style={{ padding: '12px 16px', fontSize: 13 }}>
+                  {i.p2p_number ? <RecLink href={vis.preview ? null : safePath('/dashboard/p2p', i, 'p2p_request_id')} title="Open the purchase request">{i.p2p_number}</RecLink> : <span style={{ color: TEXT.muted }}>—</span>}
                 </VisTd>
                 <VisTd vis={vis} table="issues" k="store" style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{i.location_name || '—'}</VisTd>
                 <VisTd vis={vis} table="issues" k="issue_type" style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{i.issue_type_label || '—'}</VisTd>

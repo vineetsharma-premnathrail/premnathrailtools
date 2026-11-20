@@ -47,7 +47,7 @@ const config: TourConfig = {
     {
       target: 'lib-table',
       title: 'Documents',
-      purpose: 'Each document with its type, what it is linked to, version, expiry and last update. A red Expired badge means the date has passed (outdated price lists). The star adds it to your favourites. Click a row to open it.',
+      purpose: 'Each document with its type, what it is linked to, version, expiry and last update. A red Expired badge means the date has passed (outdated price lists). The star adds it to your favourites. Click a row to open it; the product, project or customer chips under "Linked to" open that record.',
       after: 'The panel on the right shows a preview, details, links and all versions, and lets you download, share, edit, upload a new version or delete.',
     },
   ],

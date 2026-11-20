@@ -29,6 +29,7 @@ import {
   inputStyle, primaryBtnStyle, secondaryBtnStyle, linkBtnStyle, dangerLinkStyle, thStyle, tdStyle, numTd, numTh,
   inr, dmy, todayIso, ErrorBanner, StatusPill, PageHeader, TableWrap, EmptyRow,
 } from '@/components/finance/financeUi'
+import { RecLink, vendorHref } from '@/components/finance/RecordLink'
 import { RowCount } from '@/components/shared/ui'
 
 const STATUS_LABELS: Record<string, string> = {
@@ -291,7 +292,7 @@ export default function PaymentRunsPage() {
                           <tbody>
                             {r.lines.map((l) => (
                               <tr key={l.id} style={{ opacity: l.excluded ? 0.55 : 1 }}>
-                                <td style={tdStyle}>{l.vendor_name}</td>
+                                <td style={tdStyle}><RecLink href={vendorHref(l)}>{l.vendor_name}</RecLink></td>
                                 <td style={tdStyle}>{l.invoice_number}</td>
                                 <td style={tdStyle}>{dmy(l.due_date)}</td>
                                 <td style={numTd}>{inr(l.amount_due)}</td>

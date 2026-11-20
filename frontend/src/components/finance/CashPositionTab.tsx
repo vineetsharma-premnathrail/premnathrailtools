@@ -4,6 +4,7 @@
  *  cash book balances plus expected receipts and payments, laid out week by
  *  week. Read-only — nothing here posts to the ledger. Planned items
  *  (salaries, GST, EMIs) are the only input kept here. */
+import { rowOpen } from '@/components/finance/RecordLink'
 import { useEffect, useState } from 'react'
 import { useCan } from '@/lib/permissions'
 import { CashForecastItem, CashPosition, financeTreasuryApi } from '@/lib/financeTreasuryApi'
@@ -283,7 +284,7 @@ function PlannedItems({ items, cats, canCreate, canEdit, canDelete, onChanged }:
         <tbody>
           {items.length === 0 && <EmptyRow colSpan={7} text="No planned items yet." />}
           {items.map((i) => (
-            <tr key={i.id}>
+            <tr key={i.id} {...rowOpen(canEdit ? () => startEdit(i) : null, 'Open this planned item')}>
               <td style={tdStyle}>{i.category_label || i.category}</td>
               <td style={{ ...tdStyle, fontWeight: 600 }}>{i.description}</td>
               <td style={{ ...tdStyle, color: i.direction === 'inflow' ? '#15803d' : '#b91c1c' }}>{i.direction === 'inflow' ? 'Inflow' : 'Outflow'}</td>

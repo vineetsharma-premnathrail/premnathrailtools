@@ -8,6 +8,7 @@ import { BORDER, GLASS, SHADOWS, TEXT } from '@/lib/theme'
 import { FormSheet, SheetSection, SheetIcon, Optional, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import { usePermissionWords } from '@/lib/permissionWords'
 import { RowCount, Pill } from '@/components/shared/ui'
+import { RecordLink, useRolePath } from '@/components/crm/RecordLink'
 
 // Users › one user: validity dates (PFUD) on each role / extra grant, and the
 // denied-access trace (SU53) — what this user was refused, and which roles
@@ -51,6 +52,7 @@ export default function AccessGovernancePanel({ userId, roles, extras, canEdit, 
   const [error, setError] = useState('')
   const [saved, setSaved] = useState('')
   const { permLabel } = usePermissionWords()
+  const rolePath = useRolePath()
 
   const load = useCallback(() => {
     grcApi.validity(userId).then(setRows).catch((e) => setError(extractErrorMessages(e, 'Could not load validity dates.').join(' ')))
@@ -110,7 +112,7 @@ export default function AccessGovernancePanel({ userId, roles, extras, canEdit, 
                   const r = rowOf(i)
                   return (
                     <tr key={keyOf(i)}>
-                      <td style={{ ...td, fontWeight: 600 }}>{i.label}</td>
+                      <td style={{ ...td, fontWeight: 600 }}>{i.kind === 'role' ? <RecordLink href={rolePath(roles.find((r) => r.id === i.role_id))} style={{ color: TEXT.body }} title="Open the role">{i.label}</RecordLink> : i.label}</td>
                       <td style={{ ...td, whiteSpace: 'nowrap' }}>{fmtDate(v.from)}</td>
                       <td style={{ ...td, whiteSpace: 'nowrap' }}>{fmtDate(v.to)}</td>
                       <td style={{ ...td, minWidth: 180 }}>{v.reason || '—'}</td>
@@ -177,7 +179,7 @@ export default function AccessGovernancePanel({ userId, roles, extras, canEdit, 
                       <td style={td}><b>{d.permission_key ? permLabel(d.permission_key) : (d.permission_label || 'Record-level rule')}</b>{!d.permission_key && d.detail && <div style={{ fontSize: 11, color: TEXT.muted }}>{d.detail.slice(0, 140)}</div>}</td>
                       <td style={{ ...td, fontFamily: 'monospace', fontSize: 11.5 }}>{d.method} {d.path}</td>
                       <td style={td}>{d.repeat_count}</td>
-                      <td style={td}>{d.granted_by_roles.length ? d.granted_by_roles.map((r) => r.name).join(', ') : '—'}</td>
+                      <td style={td}>{d.granted_by_roles.length ? d.granted_by_roles.map((r, ri) => <span key={r.id}>{ri > 0 && ', '}<RecordLink href={rolePath(r)} style={{ color: TEXT.body, fontWeight: 400 }} title="Open the role">{r.name}</RecordLink></span>) : '—'}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -25,6 +25,7 @@ import {
   numTd, numTh, ErrorBanner, InfoBanner, StatusPill, TableWrap, EmptyRow, StatCard,
 } from '@/components/finance/financeUi'
 import { RowCount } from '@/components/shared/ui'
+import { RecLink, itemHref } from '@/components/finance/RecordLink'
 
 const EST_LABELS: Record<string, string> = { draft: 'Draft', marked: 'Marked', released: 'Released', superseded: 'Superseded', cancelled: 'Cancelled' }
 const EST_HEX: Record<string, string> = { draft: '#64748b', marked: '#b45309', released: '#16a34a', superseded: '#0369a1', cancelled: '#64748b' }
@@ -204,7 +205,7 @@ export function CostEstimatesTab() {
           {loading ? <EmptyRow colSpan={12} text="Loading…" /> : rows.length === 0 ? <EmptyRow colSpan={12} text="No cost estimates yet — use + Run cost estimate." /> : rows.map((r) => (
             <tr key={r.id} onClick={() => open(r.id)} style={{ cursor: 'pointer', background: selected?.id === r.id ? 'rgba(15,118,110,.06)' : undefined }}>
               <td style={{ ...tdStyle, fontWeight: 600 }}>{r.estimate_number}</td>
-              <td style={tdStyle}>{r.item_code} — {r.item_name}</td>
+              <td style={tdStyle}><RecLink href={itemHref(r)}>{r.item_code} — {r.item_name}</RecLink></td>
               <td style={tdStyle}>{r.bom_number} v{r.bom_version}</td>
               <td style={tdStyle}>{dmy(r.costing_date)}</td>
               <td style={numTd}>{r.lot_size}</td>
@@ -455,7 +456,7 @@ function OrderVarianceDetail({ v, onClose }: { v: OrderVariance; onClose: () => 
         </tr></thead>
         <tbody>{v.materials.length === 0 ? <EmptyRow colSpan={9} text="No material planned or issued." /> : v.materials.map((m) => (
           <tr key={m.item_id}>
-            <td style={tdStyle}>{m.item_code} — {m.item_name}{!m.planned && <span style={{ color: RED, fontSize: 11 }}> (not on plan)</span>}</td>
+            <td style={tdStyle}><RecLink href={itemHref(m)}>{m.item_code} — {m.item_name}</RecLink>{!m.planned && <span style={{ color: RED, fontSize: 11 }}> (not on plan)</span>}</td>
             <td style={numTd}>{m.target_qty}</td><td style={numTd}>{m.actual_qty}</td><td style={numTd}>{inr(m.plan_rate)}</td>
             <td style={numTd}>{inr(m.target_amount)}</td><td style={numTd}>{inr(m.actual_amount)}</td>
             <td style={{ ...numTd, color: varColor(m.quantity_variance) }}>{inr(m.quantity_variance)}</td>

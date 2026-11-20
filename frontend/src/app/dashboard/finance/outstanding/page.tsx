@@ -20,6 +20,7 @@ import {
 } from '@/components/finance/financeUi'
 import { RowCount, DetailSummary } from '@/components/shared/ui'
 import { recordHref } from '@/lib/recordRef'
+import { RecLink, vendorHref, customerHref, voucherHref, useRowLink } from '@/components/finance/RecordLink'
 
 const TABS = ['Receivables (customers)', 'Payables (vendors)'] as const
 type Tab = typeof TABS[number]
@@ -139,7 +140,7 @@ export default function OutstandingPage() {
                   return (
                     <tr key={r.party_id} onClick={() => setSelected(active ? null : r)}
                       style={{ cursor: 'pointer', background: active ? `${BRAND.primary}14` : undefined }}>
-                      <td style={{ ...tdStyle, fontWeight: 600 }}>{r.party_name}</td>
+                      <td style={{ ...tdStyle, fontWeight: 600 }}><RecLink href={partyType === 'vendor' ? vendorHref(r, 'party_id') : customerHref(r, 'party_id')}>{r.party_name}</RecLink></td>
                       <td style={numTd}>{r.open_bills}</td>
                       <td style={numTd}>{inr(r.outstanding)}</td>
                       {BUCKETS.map((b) => <td key={b} style={{ ...numTd, color: b !== 'not_due' && r[b] > 0 ? BUCKET_HEX[b] : TEXT.body }}>{inr(r[b], { blankZero: true })}</td>)}
@@ -173,6 +174,7 @@ export default function OutstandingPage() {
 }
 
 function PartyDetail({ partyType, party, asOf, onClose }: { partyType: PartyType; party: PartyOutstandingRow; asOf?: string; onClose: () => void }) {
+  const go = useRowLink()
   const [docs, setDocs] = useState<OpenDocument[]>([])
   const [credits, setCredits] = useState<OpenCredit[]>([])
   const [billsLoading, setBillsLoading] = useState(true) // component is keyed per party, so this starts true once
@@ -271,7 +273,7 @@ function PartyDetail({ partyType, party, asOf, onClose }: { partyType: PartyType
             <tbody>
               {credits.map((c) => (
                 <tr key={`${c.source_type}-${c.id}`}>
-                  <td style={{ ...tdStyle, fontWeight: 600 }}>{c.doc_number}</td>
+                  <td style={{ ...tdStyle, fontWeight: 600 }}><RecLink href={voucherHref(c)}>{c.doc_number}</RecLink></td>
                   <td style={tdStyle}>{c.source_type === 'payment' ? 'On-account voucher' : c.source_type === 'advance' ? 'Advance (down payment)' : c.source_type === 'journal' ? 'Journal (JV) credit' : partyType === 'vendor' ? 'Debit note' : 'Credit note'}</td>
                   <td style={tdStyle}>{dmy(c.doc_date)}</td>
                   <td style={numTd}>{inr(c.amount)}</td>
@@ -324,9 +326,9 @@ function PartyDetail({ partyType, party, asOf, onClose }: { partyType: PartyType
               </tr>
               {statement.rows.length === 0 && <EmptyRow colSpan={7} text="No entries in this period." />}
               {statement.rows.map((r, i) => (
-                <tr key={`${r.journal_entry_id}-${i}`}>
+                <tr key={`${r.journal_entry_id}-${i}`} {...go(voucherHref(r), 'Open the voucher')}>
                   <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{dmy(r.posting_date)}</td>
-                  <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{r.voucher_number}</td>
+                  <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}><RecLink href={voucherHref(r)}>{r.voucher_number}</RecLink></td>
                   <td style={tdStyle}>{VOUCHER_LABELS[r.voucher_type] || r.voucher_type.replace(/_/g, ' ')}</td>
                   <td style={tdStyle}>{r.description || '—'}</td>
                   <td style={numTd}>{inr(r.debit, { blankZero: true })}</td>

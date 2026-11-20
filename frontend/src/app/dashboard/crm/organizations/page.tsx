@@ -27,6 +27,7 @@ import FilterMenu from '@/components/shared/FilterMenu'
 import { useVisibility, type VisibilityApi } from '@/lib/visibility'
 import { VisTd, VisTh } from '@/lib/visibilityComponents'
 import { sampleOrganizations } from '@/lib/crmPreviewSamples'
+import { RecordLink, useUserPath } from '@/components/crm/RecordLink'
 
 const PINNED_ORGS_KEY = 'crm_pinned_org_ids'
 
@@ -64,6 +65,7 @@ export default function OrganizationsPage() {
   const vis = useVisibility('crm:organizations')
   const showCol = (key: string) => key === 'name' || vis.showColumn('organizations', key)
   const { can } = useCan()
+  const userPath = useUserPath()
   const router = useRouter()
   const searchParams = useSearchParams()
   const [orgs, setOrgs] = useState<Organization[]>(vis.preview ? sampleOrganizations : [])
@@ -422,7 +424,9 @@ export default function OrganizationsPage() {
                 <VisTd vis={vis} table="organizations" k="railway_zone" style={{ padding: '7px 16px', fontSize: 13, color: '#57534e', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={o.railway_zone || undefined}>{o.railway_zone || '—'}</VisTd>
                 <VisTd vis={vis} table="organizations" k="city" style={{ padding: '7px 16px', fontSize: 13, color: '#57534e', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={o.city || undefined}>{o.city || '—'}</VisTd>
                 <VisTd vis={vis} table="organizations" k="created_at" style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{formatDate(o.created_at)}</VisTd>
-                <VisTd vis={vis} table="organizations" k="created_by_name" style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{o.created_by_name || '—'}</VisTd>
+                <VisTd vis={vis} table="organizations" k="created_by_name" style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>
+                  {o.created_by_name ? <RecordLink href={userPath(o, 'created_by_id')} style={{ color: '#78716c', fontWeight: 400 }} title="Open the user">{o.created_by_name}</RecordLink> : '—'}
+                </VisTd>
               </tr>
               )
             })}

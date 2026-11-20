@@ -263,7 +263,7 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
         </div>
       )}</VisSection>
 
-      {!editing && <VisSection vis={vis} k="tnd_detail_rnd"><RndIntakeCard rnd={rnd} tourId="tender-rnd-status" canResend={canFeature('crm', 'inquiries_tenders', 'send_tor', 'create') && !vis.preview} sending={sendingTOR} onResend={openTorPicker} /></VisSection>}
+      {!editing && <VisSection vis={vis} k="tnd_detail_rnd"><RndIntakeCard rnd={rnd} source="tender" record={tender} tourId="tender-rnd-status" canResend={canFeature('crm', 'inquiries_tenders', 'send_tor', 'create') && !vis.preview} sending={sendingTOR} onResend={openTorPicker} /></VisSection>}
       {!editing && !vis.preview && bdQuestion && latestRequest && (
         <VisSection vis={vis} k="tnd_detail_rnd"><RndWaitingBanner question={bdQuestion} canReply={canSendTor} onReply={() => setShowReply(true)} tourId="tender-rnd-waiting" /></VisSection>
       )}

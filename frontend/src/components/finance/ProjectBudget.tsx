@@ -1,5 +1,6 @@
 'use client'
 
+import { RecLink, poHref, voucherHref } from '@/components/finance/RecordLink'
 import { useEffect, useState } from 'react'
 import { ProjectBudgetOption, ProjectBudgetSpend } from '@/types'
 import SearchableSelect from '@/components/erp/SearchableSelect'
@@ -114,7 +115,7 @@ export function ProjectBudgetCard({ load, emptyText, tour }: {
               <tbody>
                 {data.commitments.map((c) => (
                   <tr key={c.purchase_order_id}>
-                    <td style={tdStyle}>{c.po_number}</td><td style={tdStyle}>{formatDate(c.po_date)}</td><td style={tdStyle}>{c.vendor_name || '—'}</td>
+                    <td style={tdStyle}><RecLink href={poHref(c)}>{c.po_number}</RecLink></td><td style={tdStyle}>{formatDate(c.po_date)}</td><td style={tdStyle}>{c.vendor_name || '—'}</td>
                     <td style={numTdStyle}>{inr(c.po_value)}</td><td style={numTdStyle}>{inr(c.invoiced_value)}</td><td style={numTdStyle}>{inr(c.open_value)}</td>
                   </tr>
                 ))}
@@ -138,7 +139,7 @@ export function ProjectBudgetCard({ load, emptyText, tour }: {
               <tbody>
                 {data.recent_lines.map((l, i) => (
                   <tr key={`${l.journal_entry_id}-${i}`}>
-                    <td style={tdStyle}>{formatDate(l.posting_date)}</td><td style={tdStyle}>{l.entry_number}</td>
+                    <td style={tdStyle}>{formatDate(l.posting_date)}</td><td style={tdStyle}>{data.ledger_hidden ? l.entry_number : <RecLink href={voucherHref(l)}>{l.entry_number}</RecLink>}</td>
                     <td style={tdStyle}>{[l.gl_account_code, l.gl_account_name].filter(Boolean).join(' ') || '—'}</td>
                     <td style={tdStyle}>{l.party_name || l.description || '—'}</td>
                     <td style={numTdStyle}>{inr(l.debit_amount - l.credit_amount)}</td>

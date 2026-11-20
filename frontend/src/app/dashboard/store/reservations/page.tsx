@@ -24,6 +24,7 @@ import { formatDate } from '@/lib/format'
 import { itemOptionDetail } from '@/lib/itemOptions'
 import StorePlantNote from '@/components/store/StorePlantNote'
 import ScopeNote from '@/components/shared/ScopeNote'
+import RecLink, { safePath } from '@/components/store/RecLink'
 
 const STATUS_LABELS: Record<string, string> = { active: 'Active', fulfilled: 'Fulfilled', cancelled: 'Cancelled' }
 const STATUS_COLORS: Record<string, string> = { active: INFO.primary, fulfilled: SUCCESS.primary, cancelled: TEXT.muted }
@@ -431,7 +432,7 @@ export default function StoreStockReservationsPage() {
             {reservations.map((r, idx) => (
               <tr key={r.id} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
                 <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body }}>{r.reservation_number}</td>
-                <td title={`${r.item_code || ''} — ${r.item_name || ''}`} style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.item_code || '—'} — {r.item_name || '—'}</td>
+                <td title={`${r.item_code || ''} — ${r.item_name || ''}`} style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}><RecLink href={safePath('/dashboard/store', r, 'item_id')} title="Open the item" style={{ color: TEXT.secondary, fontWeight: 400 }}>{r.item_code || '—'} — {r.item_name || '—'}</RecLink></td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{r.location_name || '—'}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{Number(r.quantity).toLocaleString('en-IN', { maximumFractionDigits: 3 })} {r.uom || ''}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>

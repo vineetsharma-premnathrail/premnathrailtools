@@ -28,6 +28,7 @@ import { itemOptionDetail } from '@/lib/itemOptions'
 import { extractErrorMessages } from '@/lib/validation'
 import { SERVICE_TYPES } from '@/components/erp/serviceTypes'
 import { recordPath, useRecordId } from '@/lib/recordRef'
+import RecordLink, { CUSTOMER_PAGE, ITEM_PAGE } from '@/components/projects/RecordLink'
 import { useVisibility } from '@/lib/visibility'
 import { VisSection } from '@/lib/visibilityComponents'
 import { sampleMachine, sampleServiceRequest } from '@/lib/erpPreviewSamples'
@@ -476,7 +477,7 @@ function OverviewTab({ sr, project, projectError, canModify, onPatch, onRequestS
             {project ? <Link href={recordPath('/dashboard/projects/service-projects', project)} style={{ color: '#2563eb', fontWeight: 600, textDecoration: 'none' }}>{machineLabel}</Link>
               : projectError ? <span style={{ color: '#b91c1c' }}>{projectError}</span> : 'Loading…'}
           </DetailRow>
-          <DetailRow label="Customer">{project?.client_company}</DetailRow>
+          <DetailRow label="Customer">{project?.client_company ? <RecordLink base={CUSTOMER_PAGE} row={project} idKey="customer_id" title="Open this customer">{project.client_company}</RecordLink> : null}</DetailRow>
           <DetailRow label="Site / location">{project ? [project.site_name, project.site_location].filter(Boolean).join(', ') : null}</DetailRow>
         </DetailGroup>
         </VisSection>
@@ -1238,7 +1239,9 @@ function MaterialsTab({ srId, canEdit, canAdd, canDelete, canRaisePr, canIssueSp
               <Fragment key={m.id}>
               <tr style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
                 <td style={{ padding: '10px 14px', fontSize: 13 }}>
-                  {m.material_name}
+                  {m.store_item_id
+                    ? <RecordLink base={ITEM_PAGE} row={m} idKey="store_item_id" title="Open this item in Store">{m.material_name}</RecordLink>
+                    : m.material_name}
                   {m.description && (
                     <div style={{ fontSize: 11, color: '#a8a29e', marginTop: 2 }}>{m.description}</div>
                   )}

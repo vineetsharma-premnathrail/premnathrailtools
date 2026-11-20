@@ -20,6 +20,7 @@ import { primaryBtnStyle, RowCount } from '@/components/shared/ui'
 import { formatMoney, CURRENCY_OPTIONS } from '@/components/sales/labels'
 import { COUNTRIES } from '@/components/crm/constants'
 import CurrencyConversions from '@/components/products/CurrencyConversions'
+import RecordLink from '@/components/p2p/RecordLink'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { FormSheet, SheetSection, SheetIcon, Req, Optional, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 
@@ -83,7 +84,7 @@ export default function PriceConditionsPanel({ productId, itemKinds, emptyText }
   itemKinds?: PriceItemKind[]
   emptyText?: string
 }) {
-  const { canFeature } = useCan()
+  const { can, canFeature } = useCan()
   // Memoised on the kinds' values: a new array every render made load() re-run in a loop
   // (endless "Loading…" and a flood of requests to the server).
   const kindsKey = productId ? 'product' : (itemKinds || []).join(',')
@@ -254,17 +255,19 @@ export default function PriceConditionsPanel({ productId, itemKinds, emptyText }
             {loading && <tr><td colSpan={10} style={{ ...tdStyle, color: '#a8a29e' }}>Loading…</td></tr>}
             {!loading && rows.length === 0 && <tr><td colSpan={10} style={{ ...tdStyle, color: '#a8a29e' }}>{emptyText || 'No prices'}{currentOnly ? ' valid today' : ''}.</td></tr>}
             {rows.map((c) => (
-              <tr key={c.id}>
+              <tr key={c.id} onClick={canEdit ? () => edit(c) : undefined} title={canEdit ? 'Open to change this price' : undefined} style={canEdit ? { cursor: 'pointer' } : undefined}>
                 {!productId && <td style={tdStyle}><Pill label={TYPE_LABELS[c.condition_type] || c.condition_type} hex={TYPE_HEX[c.condition_type] || '#78716c'} /></td>}
                 {showForCol && <td style={tdStyle}>{c.item_label}</td>}
-                {!productId && <td style={tdStyle}>{c.customer_name || <span style={{ color: '#a8a29e' }}>{c.country ? 'All in country' : 'All (list)'}</span>}</td>}
+                {!productId && <td style={tdStyle}>{c.customer_name
+                  ? <RecordLink base="/dashboard/crm/organizations" row={c} idKey="customer_id" allowed={can('crm', 'organizations', 'view')} title="Open the customer">{c.customer_name}</RecordLink>
+                  : <span style={{ color: '#a8a29e' }}>{c.country ? 'All in country' : 'All (list)'}</span>}</td>}
                 <td style={tdStyle}>{c.country || <span style={{ color: '#a8a29e' }}>{productId ? 'All countries (list price)' : '—'}</span>}</td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap', fontWeight: 600 }} title={hideAmounts ? HIDDEN_AMOUNT_HINT : undefined}>{hideAmounts ? 'Hidden' : valueText(c)}</td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }} title={hideAmounts ? HIDDEN_AMOUNT_HINT : undefined}>{hideAmounts ? 'Hidden' : c.min_price == null ? '—' : formatMoney(c.min_price, c.currency)}</td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatDate(c.valid_from)}</td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{c.valid_to ? formatDate(c.valid_to) : 'Open'}</td>
                 <td style={{ ...tdStyle, maxWidth: 240 }}>{c.remarks || ''}</td>
-                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
                   {canEdit && <span onClick={() => edit(c)} style={{ fontSize: 12, fontWeight: 600, color: '#2563eb', cursor: 'pointer', marginRight: 10 }}>Edit</span>}
                   {canEdit && c.is_current && !c.valid_to && <span onClick={() => endToday(c)} style={{ fontSize: 12, fontWeight: 600, color: '#b45309', cursor: 'pointer', marginRight: 10 }}>End today</span>}
                   {canDel && <span onClick={() => setToDelete(c)} style={{ fontSize: 12, fontWeight: 600, color: '#DC2626', cursor: 'pointer' }}>Delete</span>}

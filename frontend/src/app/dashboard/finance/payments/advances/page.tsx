@@ -25,6 +25,7 @@ import {
   primaryBtnStyle, secondaryBtnStyle, linkBtnStyle, dangerLinkStyle, thStyle, tdStyle, numTd, numTh,
   inr, dmy, todayIso, ErrorBanner, InfoBanner, StatusPill, PageHeader, TableWrap, EmptyRow, SubTabs, ledgerOptions,
 } from '@/components/finance/financeUi'
+import { RecLink, vendorHref, customerHref, poHref } from '@/components/finance/RecordLink'
 import { RowCount } from '@/components/shared/ui'
 
 const TABS = ['Open advances', 'Write-offs'] as const
@@ -205,8 +206,8 @@ export default function AdvancesWriteOffsPage() {
                     <td style={{ ...tdStyle, fontWeight: 700 }}>{a.payment_number}</td>
                     <td style={tdStyle}>{dmy(a.payment_date)}</td>
                     <td style={tdStyle}>{a.party_type === 'customer' ? 'From customer' : 'To supplier'}</td>
-                    <td style={tdStyle}>{a.party_name}</td>
-                    <td style={tdStyle}>{a.sales_order_number || a.purchase_order_number || <span style={{ color: TEXT.muted }}>On account — {a.advance_reason}</span>}</td>
+                    <td style={tdStyle}><RecLink href={a.party_type === 'customer' ? customerHref(a, 'party_id') : vendorHref(a, 'party_id')}>{a.party_name}</RecLink></td>
+                    <td style={tdStyle}>{a.sales_order_number || (a.purchase_order_number ? <RecLink href={poHref(a)}>{a.purchase_order_number}</RecLink> : null) || <span style={{ color: TEXT.muted }}>On account — {a.advance_reason}</span>}</td>
                     <td style={numTd}>{inr(a.amount)}</td>
                     <td style={numTd}>{inr(a.adjusted, { blankZero: true })}</td>
                     <td style={numTd}>{inr(a.balance)}</td>

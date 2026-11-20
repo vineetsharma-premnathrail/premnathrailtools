@@ -7,6 +7,7 @@
 
 import { Fragment, useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { apiClient } from '@/lib/api'
 import { useCan } from '@/lib/permissions'
 import { formatDate } from '@/lib/format'
@@ -117,6 +118,7 @@ type TabProps<T> = { load: () => Promise<T[]>; reloadKey?: string | number }
 // ---- Store Issues --------------------------------------------------------------
 
 export function StoreIssuesHistory({ load, reloadKey }: TabProps<StoreIssueRow>) {
+  const router = useRouter()
   const { can } = useCan()
   const { rows, loading, error } = useRows(load, reloadKey, 'Could not load the material issues — check your connection and reload the page. If it keeps failing, ask an admin to check that your role may see this tab.')
   const [open, setOpen] = useState<number | null>(null)
@@ -140,10 +142,10 @@ export function StoreIssuesHistory({ load, reloadKey }: TabProps<StoreIssueRow>)
           const expanded = open === r.id
           return (
             <Fragment key={r.id}>
-              <tr style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
+              <tr onClick={linkable ? () => router.push(recordPath('/dashboard/store/issues', r)) : undefined} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: linkable ? 'pointer' : undefined }}>
                 <td style={TD}>
                   {linkable
-                    ? <Link href={recordPath('/dashboard/store/issues', r)} style={LINK}>{r.issue_number}</Link>
+                    ? <Link href={recordPath('/dashboard/store/issues', r)} onClick={(e) => e.stopPropagation()} style={LINK}>{r.issue_number}</Link>
                     : <span style={{ fontSize: 13, fontWeight: 600 }}>{r.issue_number}</span>}
                 </td>
                 <td style={TD_SMALL}>{formatDate(r.issue_date)}</td>
@@ -151,7 +153,7 @@ export function StoreIssuesHistory({ load, reloadKey }: TabProps<StoreIssueRow>)
                 <td style={TD}>{r.issued_to || '—'}{r.store_name ? <span style={{ display: 'block', fontSize: 11.5, color: '#a8a29e' }}>from {r.store_name}</span> : null}</td>
                 <td style={TD}>
                   {r.line_count > 0 ? (
-                    <button type="button" aria-expanded={expanded} onClick={() => setOpen(expanded ? null : r.id)}
+                    <button type="button" aria-expanded={expanded} onClick={(e) => { e.stopPropagation(); setOpen(expanded ? null : r.id) }}
                       title={expanded ? 'Hide the items' : 'Show the items'}
                       style={{ border: 'none', background: 'none', padding: 0, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#6366f1', whiteSpace: 'nowrap' }}>
                       {expanded ? '▾' : '▸'} {r.line_count} {r.line_count === 1 ? 'item' : 'items'}
@@ -186,6 +188,7 @@ export function StoreIssuesHistory({ load, reloadKey }: TabProps<StoreIssueRow>)
 // ---- Purchases (PR → PO → GRN) --------------------------------------------------
 
 export function PurchasesHistory({ load, reloadKey }: TabProps<PurchaseRow>) {
+  const router = useRouter()
   const { can } = useCan()
   const { rows, loading, error } = useRows(load, reloadKey, 'Could not load the purchases — check your connection and reload the page. If it keeps failing, ask an admin to check that your role may see this tab.')
 
@@ -197,7 +200,7 @@ export function PurchasesHistory({ load, reloadKey }: TabProps<PurchaseRow>) {
   const linkPo = can('p2p', 'purchase_orders', 'view')
   const linkGrn = can('store', 'grn', 'view')
   const linkOr = (ok: boolean, href: () => string, text: string) =>
-    ok ? <Link href={href()} style={{ ...LINK, fontSize: 12.5 }}>{text}</Link> : <span style={{ fontSize: 12.5, fontWeight: 600 }}>{text}</span>
+    ok ? <Link href={href()} onClick={(e) => e.stopPropagation()} style={{ ...LINK, fontSize: 12.5 }}>{text}</Link> : <span style={{ fontSize: 12.5, fontWeight: 600 }}>{text}</span>
 
   return (
     <Frame tour="proj-hist-purchases" minWidth={760}>
@@ -211,10 +214,10 @@ export function PurchasesHistory({ load, reloadKey }: TabProps<PurchaseRow>) {
       <tbody>
         {rows.map((pr) => (
           <Fragment key={pr.id}>
-            <tr style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
+            <tr onClick={linkPr ? () => router.push(recordPath('/dashboard/p2p', pr)) : undefined} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: linkPr ? 'pointer' : undefined }}>
               <td style={TD}>
                 {linkPr
-                  ? <Link href={recordPath('/dashboard/p2p', pr)} style={LINK}>{pr.pr_number}</Link>
+                  ? <Link href={recordPath('/dashboard/p2p', pr)} onClick={(e) => e.stopPropagation()} style={LINK}>{pr.pr_number}</Link>
                   : <span style={{ fontSize: 13, fontWeight: 600 }}>{pr.pr_number}</span>}
               </td>
               <td style={TD_SMALL}>{formatDate(pr.pr_date)}</td>
@@ -307,9 +310,9 @@ export function TaskHistory({ load, reloadKey }: TabProps<TaskHistoryRow>) {
             const late = isOverdue(t.due_date, t.status, t.completed_at)
             const kind = kindOf(t)
             return (
-              <tr key={keyOf(t)} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
+              <tr key={keyOf(t)} onClick={() => setOpenKey(keyOf(t))} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
                 <td style={{ ...TD, minWidth: 180 }}>
-                  <button type="button" onClick={() => setOpenKey(keyOf(t))} title="View this task"
+                  <button type="button" onClick={(e) => { e.stopPropagation(); setOpenKey(keyOf(t)) }} title="View this task"
                     style={{ ...LINK, border: 'none', background: 'none', padding: 0, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}>{t.title}</button>
                 </td>
                 <td style={TD}><Pill label={KIND_LABEL[kind]} hex={KIND_HEX[kind]} /></td>

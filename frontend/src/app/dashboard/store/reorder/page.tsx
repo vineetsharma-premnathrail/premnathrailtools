@@ -12,6 +12,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import FilterMenu from '@/components/shared/FilterMenu'
 import { primaryBtnStyle, RowCount, inputStyle as sharedInputStyle } from '@/components/shared/ui'
 import { can } from '@/lib/permissions'
+import RecLink, { safePath, stopRow } from '@/components/store/RecLink'
 
 const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
@@ -124,14 +125,14 @@ export default function StoreReorderPage() {
             ) : rows.length === 0 ? (
               <tr><td colSpan={10} style={{ ...td, color: TEXT.muted, textAlign: 'center', padding: 24, whiteSpace: 'normal' }}>{dueOnly ? 'Nothing is due for reorder — every item is above its reorder level.' : 'No items have a reorder level or minimum stock set yet — set them on the item (Planning / plant data).'}</td></tr>
             ) : rows.map((r) => (
-              <tr key={rk(r)}>
-                <td style={td}>
+              <tr key={rk(r)} onClick={() => { const href = safePath('/dashboard/store', r, 'item_id'); if (href) router.push(href) }} title="Open the item" style={{ cursor: 'pointer' }}>
+                <td style={td} onClick={stopRow}>
                   {r.due && canRaisePr && (
                     <input type="checkbox" checked={picked.includes(rk(r))}
                       onChange={(e) => setPicked((p) => (e.target.checked ? [...p, rk(r)] : p.filter((x) => x !== rk(r))))} />
                   )}
                 </td>
-                <td style={{ ...td, whiteSpace: 'normal' }}><strong>{r.item_code}</strong> — {r.item_name}{r.uom ? ` (${r.uom})` : ''}</td>
+                <td style={{ ...td, whiteSpace: 'normal' }}><RecLink href={safePath('/dashboard/store', r, 'item_id')} style={{ color: TEXT.body, fontWeight: 400 }}><strong>{r.item_code}</strong> — {r.item_name}{r.uom ? ` (${r.uom})` : ''}</RecLink></td>
                 <td style={td}>{(r as PlantRow).plant_name || 'All plants'}</td>
                 <td style={tdNum}>{fmt(r.available)}{r.reserved ? <span style={{ color: TEXT.muted, fontSize: 11.5 }}> ({fmt(r.reserved)} reserved)</span> : null}</td>
                 <td style={tdNum} title={r.on_order_docs.join(', ')}>{fmt(r.on_order)}{r.on_order_docs.length ? <span style={{ color: TEXT.muted, fontSize: 11.5 }}> · {r.on_order_docs.length} doc{r.on_order_docs.length === 1 ? '' : 's'}</span> : null}</td>
@@ -139,7 +140,7 @@ export default function StoreReorderPage() {
                 <td style={tdNum}>{fmt(r.reorder_level)}</td>
                 <td style={tdNum}>{fmt(r.minimum_stock)} / {fmt(r.maximum_stock)}</td>
                 <td style={tdNum}>{r.lead_time_days != null ? `${r.lead_time_days} day${r.lead_time_days === 1 ? '' : 's'}` : '—'}</td>
-                <td style={tdNum}>
+                <td style={tdNum} onClick={stopRow}>
                   {r.due ? (
                     <input type="number" min={0} step="any" value={qty[rk(r)] ?? ''} style={{ ...inputStyle, width: 110, textAlign: 'right' }}
                       onChange={(e) => setQty((q) => ({ ...q, [rk(r)]: e.target.value }))} />

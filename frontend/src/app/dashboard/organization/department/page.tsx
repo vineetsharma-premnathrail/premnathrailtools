@@ -12,6 +12,7 @@ import OrganizationNav from '@/components/organization/OrganizationNav'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
+import { RecordLink, useBranchPath, useUserPath } from '@/components/crm/RecordLink'
 import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import { placePopover } from '@/lib/popover'
 import { pillStyle, primaryBtnStyle, RowCount } from '@/components/shared/ui'
@@ -19,6 +20,8 @@ import { pillStyle, primaryBtnStyle, RowCount } from '@/components/shared/ui'
 export default function OrganizationDepartmentPage() {
   const { isAuthorized, isLoading } = useRequireOrgTab('department')
   const { can } = useCan()
+  const userPath = useUserPath()
+  const branchPath = useBranchPath()
   const canCreate = can('organization', 'department', 'create')
   const canEdit = can('organization', 'department', 'edit')
   const [departments, setDepartments] = useState<Department[]>([])
@@ -562,7 +565,7 @@ export default function OrganizationDepartmentPage() {
                       {d.name}
                     </td>
                     <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{d.code}</td>
-                    <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{d.branch_name || '—'}</td>
+                    <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{d.branch_name ? <RecordLink href={branchPath(d, 'branch_id')} style={{ color: TEXT.secondary, fontWeight: 400 }} title="Open the branch">{d.branch_name}</RecordLink> : '—'}</td>
                     <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{d.head_user_name || '—'}</td>
                   </tr>
                   {isOpen && (
@@ -577,13 +580,13 @@ export default function OrganizationDepartmentPage() {
                             {memberTree(list).map(({ m, guides, last, outsideManager }) => (
                               <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, padding: '4px 0', color: TEXT.secondary }}>
                                 <span style={{ color: TEXT.muted, fontFamily: 'monospace', whiteSpace: 'pre' }}>{guides.map((g) => (g ? '   ' : '│  ')).join('')}{last ? '└─' : '├─'}</span>
-                                <span style={{ fontWeight: m.is_head ? 700 : 500, color: m.is_head ? BRAND.primaryActive : TEXT.secondary }}>{m.name}</span>
+                                <span style={{ fontWeight: m.is_head ? 700 : 500, color: m.is_head ? BRAND.primaryActive : TEXT.secondary }}><RecordLink href={userPath(m)} style={{ color: 'inherit', fontWeight: 'inherit' }} title="Open the user">{m.name}</RecordLink></span>
                                 {m.is_head && (
                                   <span style={{ fontSize: 9.5, fontWeight: 700, padding: '2px 6px', borderRadius: 6, background: 'rgba(255,122,69,0.14)', color: BRAND.primaryActive, textTransform: 'uppercase' }}>Head</span>
                                 )}
                                 {m.designation && <span style={{ color: TEXT.muted }}>· {m.designation}</span>}
                                 <span style={{ color: TEXT.muted }}>· {m.email}</span>
-                                {outsideManager && <span style={{ color: TEXT.muted }}>· reports to <span style={{ fontWeight: 600, color: TEXT.secondary }}>{m.reporting_manager_name || `User #${m.reporting_manager_id}`}</span></span>}
+                                {outsideManager && <span style={{ color: TEXT.muted }}>· reports to <span style={{ fontWeight: 600, color: TEXT.secondary }}><RecordLink href={userPath(m, 'reporting_manager_id')} style={{ color: 'inherit', fontWeight: 'inherit' }} title="Open the user">{m.reporting_manager_name || `User #${m.reporting_manager_id}`}</RecordLink></span></span>}
                                 {canEdit && (
                                   <button type="button" onClick={() => openManager(d, m)}
                                     style={{ border: 'none', background: 'none', padding: 0, color: BRAND.primaryActive, cursor: 'pointer', fontSize: 11, fontWeight: 600 }}>

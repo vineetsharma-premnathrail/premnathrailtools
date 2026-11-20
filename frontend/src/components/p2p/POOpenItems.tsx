@@ -12,6 +12,7 @@ import { TEXT, BORDER } from '@/lib/theme'
 import { inputStyle, RowCount, secondaryBtnStyle, segmentBtnStyle, Pill, pillStyle, StatChip } from '@/components/shared/ui'
 import FilterMenu from '@/components/shared/FilterMenu'
 import { PO_CARD, PO_TD, PO_TH, clip, clip2 } from '@/components/p2p/POTrackingShared'
+import RecordLink, { RECORD_BASE } from '@/components/p2p/RecordLink'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
@@ -38,6 +39,8 @@ const qty = (v: number | null | undefined) => (v == null ? '—' : (+v.toFixed(3
 const statusLabel = (s: string | null | undefined) => (s ? s.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase()) : '—')
 
 function POHistoryDialog({ poId, onClose }: { poId: number; onClose: () => void }) {
+  const { can } = useCan()
+  const canOpenGrn = can('store', 'grn', 'view')
   const [data, setData] = useState<any>(null)
   const [error, setError] = useState<string | string[]>('')
   useEffect(() => {
@@ -66,7 +69,9 @@ function POHistoryDialog({ poId, onClose }: { poId: number; onClose: () => void 
                   {l.events.map((e: any, i: number) => (
                     <tr key={i}>
                       <td style={td}><span style={pillStyle(EVENT_HEX[e.type] || '#6b7280')}>{e.label}</span></td>
-                      <td style={{ ...td, fontWeight: 600, color: TEXT.body }}>{e.document_number}</td>
+                      <td style={{ ...td, fontWeight: 600, color: TEXT.body }}>
+                        {e.type === 'grn' ? <RecordLink base={RECORD_BASE.grn} row={e} idKey="document_id" allowed={canOpenGrn} title={`Open ${e.document_number}`}>{e.document_number}</RecordLink> : e.document_number}
+                      </td>
                       <td style={td}>{formatDate(e.date)}</td>
                       <td style={td}>{statusLabel(e.status)}</td>
                       <td style={numTd}>{qty(e.quantity)}</td>
@@ -97,6 +102,8 @@ export default function POOpenItems({ lead }: { lead?: React.ReactNode }) {
   const { can, canFeature } = useCan()
   // Purchase Orders features: PO history popup, and the price switch (the export is a sheet of rates).
   const seeHistory = canFeature('p2p', 'purchase_orders', 'history', 'view')
+  const canOpenVendor = can('p2p', 'vendors', 'view')
+  const canOpenItem = can('store', 'items', 'view')
   const seePrices = canFeature('p2p', 'purchase_orders', 'prices', 'view') || can('p2p', 'purchase_orders', 'edit')
   const [rows, setRows] = useState<Row[]>([])
   // The same lines without the Overdue-only filter: what the count chips count, so they stay totals when a chip is on.
@@ -199,11 +206,13 @@ export default function POOpenItems({ lead }: { lead?: React.ReactNode }) {
               {!loading && rows.length === 0 && <tr><td colSpan={14} style={{ ...td, textAlign: 'center', padding: 24 }}>No open PO lines match — clear the vendor / PO filters, or tick &quot;Include fully delivered lines&quot;.</td></tr>}
               {!loading && rows.map((r) => (
                 <tr key={r.po_item_id} onClick={() => { if (seeHistory) setHistoryFor(r.po_id) }} style={{ cursor: seeHistory ? 'pointer' : 'default' }}>
-                  <td style={{ ...td, fontWeight: 600, color: TEXT.body }}>{r.po_number}</td>
+                  <td style={{ ...td, fontWeight: 600, color: TEXT.body }}><RecordLink base={RECORD_BASE.po} row={r} idKey="po_id" title={`Open ${r.po_number}`}>{r.po_number}</RecordLink></td>
                   <td style={td}>{formatDate(r.po_date)}</td>
-                  <td style={td} title={r.vendor_name || undefined}>{clip(r.vendor_name)}</td>
+                  <td style={td} title={r.vendor_name || undefined}><RecordLink base={RECORD_BASE.vendor} row={r} idKey="vendor_id" allowed={canOpenVendor} title="Open the vendor" style={{ fontWeight: 500 }}>{clip(r.vendor_name)}</RecordLink></td>
                   <td data-fit-clamp style={{ ...td, whiteSpace: 'normal' }}>
-                    <div title={`${r.item_code ? `${r.item_code} — ` : ''}${r.item_name}`} style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{clip2(`${r.item_code ? `${r.item_code} — ` : ''}${r.item_name}`)}</div>
+                    <div title={`${r.item_code ? `${r.item_code} — ` : ''}${r.item_name}`} style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {r.item_code ? <><RecordLink base={RECORD_BASE.item} row={r} idKey="store_item_id" allowed={canOpenItem} title="Open the item" style={{ fontWeight: 500 }}>{r.item_code}</RecordLink>{clip2(` — ${r.item_name}`)}</> : clip2(r.item_name)}
+                    </div>
                   </td>
                   <td style={numTd}>{qty(r.ordered_qty)} {r.unit || ''}</td>
                   <td style={numTd}>{qty(r.received_qty)}</td>
@@ -232,7 +241,12 @@ export default function POOpenItems({ lead }: { lead?: React.ReactNode }) {
               {summary.map((s, i) => (
                 <tr key={i}>
                   <td data-fit-clamp style={{ ...td, fontWeight: 600, color: TEXT.body, whiteSpace: 'normal' }}>
-                    <div title={(group === 'vendor' ? s.vendor_name : s.item_name) || undefined} style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{clip2(group === 'vendor' ? s.vendor_name : s.item_name)}</div>
+                    <div title={(group === 'vendor' ? s.vendor_name : s.item_name) || undefined} style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      <RecordLink base={group === 'vendor' ? RECORD_BASE.vendor : RECORD_BASE.item} row={s} idKey={group === 'vendor' ? 'vendor_id' : 'store_item_id'}
+                        allowed={group === 'vendor' ? canOpenVendor : canOpenItem} title={group === 'vendor' ? 'Open the vendor' : 'Open the item'} style={{ color: TEXT.body }}>
+                        {clip2(group === 'vendor' ? s.vendor_name : s.item_name)}
+                      </RecordLink>
+                    </div>
                   </td>
                   <td style={numTd}>{s.lines.toLocaleString('en-IN')}</td>
                   <td style={numTd}>{qty(s.open_qty)}</td>

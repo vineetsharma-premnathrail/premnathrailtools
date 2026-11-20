@@ -5,6 +5,7 @@
  *  Issued ones are approved by a Finance approver and then a Partner before
  *  the bank application; margin, commission, release and invocation post
  *  through vouchers. Expiry reminders go out 30/15/7/1 days before. */
+import { RecLink, recPath, customerHref, vendorHref, poHref } from '@/components/finance/RecordLink'
 import { useEffect, useState } from 'react'
 import ScopeNote from '@/components/shared/ScopeNote'
 import { accountsApi, crmApi } from '@/lib/api'
@@ -43,6 +44,16 @@ type Action = 'issue' | 'margin' | 'commission' | 'extend' | 'release' | 'invoke
 function expiryTone(d: number | null) {
   if (d == null) return TEXT.secondary
   return d < 0 ? '#dc2626' : d <= 30 ? '#d97706' : TEXT.body
+}
+
+/** The order / tender / purchase order a guarantee is tied to; tender and PO open their own page. */
+function LinkedTo({ bg }: { bg: BankGuarantee }) {
+  const parts: React.ReactNode[] = []
+  if (bg.sales_order_number) parts.push(bg.sales_order_number)
+  if (bg.tender_label) parts.push(<RecLink href={recPath('/dashboard/crm/tenders', bg, 'tender_id')}>{bg.tender_label}</RecLink>)
+  if (bg.purchase_order_number) parts.push(<RecLink href={poHref(bg)}>{bg.purchase_order_number}</RecLink>)
+  if (parts.length === 0) return <>—</>
+  return <>{parts.map((p, i) => <span key={i}>{i > 0 && ' · '}{p}</span>)}</>
 }
 
 export default function GuaranteesTab({ initialId }: { initialId?: number | null }) {
@@ -128,8 +139,10 @@ export default function GuaranteesTab({ initialId }: { initialId?: number | null
             <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => setDetailId(r.id)}>
               <td style={{ ...tdStyle, fontWeight: 700, whiteSpace: 'nowrap' }}>{r.bg_number}<div style={{ fontSize: 10.5, color: TEXT.muted }}>{r.direction === 'issued' ? 'Issued' : 'Received'}</div></td>
               <td style={tdStyle}>{r.instrument_type_label}</td>
-              <td style={tdStyle}>{r.customer_name || r.vendor_name || r.counterparty_name || '—'}</td>
-              <td style={{ ...tdStyle, fontSize: 12 }}>{[r.sales_order_number, r.tender_label, r.purchase_order_number].filter(Boolean).join(' · ') || '—'}</td>
+              <td style={tdStyle}>{r.customer_name ? <RecLink href={customerHref(r)}>{r.customer_name}</RecLink> : r.vendor_name ? <RecLink href={vendorHref(r)}>{r.vendor_name}</RecLink> : r.counterparty_name || '—'}</td>
+              <td style={{ ...tdStyle, fontSize: 12 }}>
+                <LinkedTo bg={r} />
+              </td>
               <td style={{ ...tdStyle, fontSize: 12 }}>{r.bank_account_label || r.issuing_bank_name || '—'}{r.instrument_number ? <div style={{ color: TEXT.muted }}>{r.instrument_number}</div> : null}</td>
               <td style={numTd}>{inr(r.amount)}</td>
               <td style={{ ...tdStyle, whiteSpace: 'nowrap', color: expiryTone(r.days_to_expiry), fontWeight: r.days_to_expiry != null && r.days_to_expiry <= 30 ? 700 : 400 }}>

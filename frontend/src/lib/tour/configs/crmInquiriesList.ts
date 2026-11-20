@@ -65,7 +65,7 @@ const config: TourConfig = {
     {
       target: 'iq-table-rows',
       title: 'Inquiry / Tender rows',
-      purpose: 'Click anywhere on a row (other than the pin icon) to open that record\'s full detail page. If it says "No records found" right now, that just means nothing matches the current search/filters yet — nothing to click until an inquiry or tender exists.',
+      purpose: 'Click anywhere on a row (other than the pin icon) to open that record\'s full detail page. If it says "No records found" right now, that just means nothing matches the current search/filters yet — nothing to click until an inquiry or tender exists. The Customer Organization and Created By names are links of their own (customer page / user page); Ctrl+click opens them in a new tab.',
       after: 'An Inquiry opens its detail page with Info/Quotations/Documents/Follow Ups/Timeline tabs; a Tender opens its own detail page.',
     },
   ],

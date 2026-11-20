@@ -12,6 +12,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { TEXT, BRAND } from '@/lib/theme'
 import { recordHref } from '@/lib/recordRef'
 import { VOUCHER_PATH } from '@/components/finance/voucherLabels'
+import { RecLink, poHref, voucherHref, useRowLink } from '@/components/finance/RecordLink'
 import FilterMenu from '@/components/shared/FilterMenu'
 import {
   inr, dmy, sectionStyle, secondaryBtnStyle, linkBtnStyle, thStyle, tdStyle, numTd, numTh,
@@ -49,6 +50,7 @@ export const IO_STATUS_HEX: Record<string, string> = { open: '#0369a1', in_progr
 const RED = '#dc2626'
 
 function LineItemsTable({ data, loading, tour }: { data: LineItems | null; loading: boolean; tour?: string }) {
+  const go = useRowLink()
   return (
     <TableWrap minWidth={1150} maxHeight="calc(100vh - 260px)" tour={tour}>
       <thead>
@@ -62,7 +64,7 @@ function LineItemsTable({ data, loading, tour }: { data: LineItems | null; loadi
         {!data ? <EmptyRow colSpan={10} text={loading ? 'Loading…' : 'Pick what to show.'} />
           : data.rows.length === 0 ? <EmptyRow colSpan={10} text="No posted line items for this selection." />
           : data.rows.map((r) => (
-            <tr key={r.journal_entry_line_id}>
+            <tr key={r.journal_entry_line_id} {...go(voucherHref(r), 'Open the voucher')}>
               <td style={tdStyle}>{dmy(r.posting_date)}</td>
               <td style={{ ...tdStyle, fontWeight: 600 }}>
                 <Link href={recordHref(VOUCHER_PATH, r, 'journal_entry_id', undefined, 'entry')} style={{ color: BRAND.primaryActive }}>{r.entry_number}</Link>
@@ -315,7 +317,7 @@ export function InternalOrdersReport({ toDate, initialOrderId }: { toDate: strin
               <tbody>
                 {report.commitments.map((c) => (
                   <tr key={c.purchase_order_id}>
-                    <td style={{ ...tdStyle, fontWeight: 600 }}>{c.po_number}</td><td style={tdStyle}>{dmy(c.po_date)}</td>
+                    <td style={{ ...tdStyle, fontWeight: 600 }}><RecLink href={poHref(c)}>{c.po_number}</RecLink></td><td style={tdStyle}>{dmy(c.po_date)}</td>
                     <td style={tdStyle}>{c.vendor_name || '—'}</td><td style={tdStyle}>{c.status.replace(/_/g, ' ')}</td>
                     <td style={numTd}>{inr(c.po_value)}</td><td style={numTd}>{inr(c.invoiced_value)}</td><td style={{ ...numTd, fontWeight: 700 }}>{inr(c.open_value)}</td>
                   </tr>

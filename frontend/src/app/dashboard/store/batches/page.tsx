@@ -11,12 +11,13 @@ import StoreNav from '@/components/store/StoreNav'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { recordPath } from '@/lib/recordRef'
 import { extractErrorMessages } from '@/lib/validation'
+import RecLink, { safePath } from '@/components/store/RecLink'
 
 // Batch management (SAP MSC3N / MMBE by batch): every heat a vendor supplied
 // on a GRN, with its mill TC and where its stock is now.
 
 interface StoreBatchRow {
-  id: number; item_code?: string | null; item_name?: string | null; uom?: string | null; batch_number: string; heat_number?: string | null
+  id: number; item_id?: number; vendor_id?: number | null; grn_id?: number | null; item_code?: string | null; item_name?: string | null; uom?: string | null; batch_number: string; heat_number?: string | null
   vendor_name?: string | null; grn_number?: string | null; received_qty: number; received_date?: string | null; expiry_date?: string | null
   tc_number?: string | null; has_tc_document: boolean; status: string
   total: { free: number; quality: number; blocked: number; vendor: number }
@@ -80,8 +81,8 @@ export default function StoreBatchesPage() {
               <tr key={b.id} onClick={() => router.push(recordPath('/dashboard/store/batches', b))} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
                 <td style={{ ...td, fontWeight: 600, color: TEXT.body }}>{b.batch_number}</td>
                 <td style={td}>{b.heat_number || '—'}</td>
-                <td style={{ ...td, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`${b.item_code || ''} — ${b.item_name || ''}`}>{b.item_code || '—'} — {b.item_name || '—'}</td>
-                <td style={td}>{b.vendor_name || '—'}{b.grn_number && <div style={{ fontSize: 11.5, color: TEXT.muted }}>{b.grn_number}</div>}</td>
+                <td style={{ ...td, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`${b.item_code || ''} — ${b.item_name || ''}`}><RecLink href={safePath('/dashboard/store', b, 'item_id')} title="Open the item" style={{ color: TEXT.secondary, fontWeight: 400 }}>{b.item_code || '—'} — {b.item_name || '—'}</RecLink></td>
+                <td style={td}>{b.vendor_name ? <RecLink href={safePath('/dashboard/p2p/vendors', b, 'vendor_id')} title="Open the vendor" style={{ color: TEXT.secondary, fontWeight: 400 }}>{b.vendor_name}</RecLink> : '—'}{b.grn_number && <div style={{ fontSize: 11.5, color: TEXT.muted }}><RecLink href={safePath('/dashboard/store/grn', b, 'grn_id')} title="Open the goods receipt" style={{ fontWeight: 400 }}>{b.grn_number}</RecLink></div>}</td>
                 <td style={{ ...td, whiteSpace: 'nowrap' }}>{(b.received_qty ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 3 })} {b.uom || ''} · {fmtDate(b.received_date)}{b.expiry_date && <div style={{ fontSize: 11.5, color: TEXT.muted }}>Expires {fmtDate(b.expiry_date)}</div>}</td>
                 <td style={td}>{b.tc_number || '—'}{b.has_tc_document ? ' · scan' : ''}</td>
                 <td style={{ ...tdNum, fontWeight: 600, color: BRAND.primaryActive }}>{fmtQty(b.total.free)}</td>

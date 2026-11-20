@@ -13,6 +13,7 @@ import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, she
 import StoreNav from '@/components/store/StoreNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { useRecordId, recordPath } from '@/lib/recordRef'
+import RecLink, { safePath } from '@/components/store/RecLink'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { formatDate, formatDateTime } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
@@ -322,8 +323,8 @@ export default function StoreGrnDetailPage() {
           </>}
         />
         <DetailGroup title="Order">
-          <DetailRow label="PO Number">{grn.po_number}</DetailRow>
-          <DetailRow label="PR Number">{grn.p2p_number}</DetailRow>
+          <DetailRow label="PO Number">{grn.po_number ? <RecLink href={safePath('/dashboard/p2p/purchase-orders', grn, 'purchase_order_id')} title="Open the purchase order">{grn.po_number}</RecLink> : null}</DetailRow>
+          <DetailRow label="PR Number">{grn.p2p_number ? <RecLink href={grn.p2p_request_id ? safePath('/dashboard/p2p', grn, 'p2p_request_id') : null} title="Open the purchase request">{grn.p2p_number}</RecLink> : null}</DetailRow>
           <DetailRow label="Vendor">{grn.vendor_name}</DetailRow>
           <DetailRow label="Store Location">{grn.store_location_name}</DetailRow>
         </DetailGroup>
@@ -384,7 +385,7 @@ export default function StoreGrnDetailPage() {
                 return (
                   <tr key={it.id}>
                     <td style={tdStyle}>
-                      {it.item_code && <div style={{ fontSize: 11.5, color: TEXT.muted }}>{it.item_code}</div>}
+                      {it.item_code && <div style={{ fontSize: 11.5, color: TEXT.muted }}>{it.store_item_id ? <RecLink href={safePath('/dashboard/store', it, 'store_item_id')} title="Open the item" style={{ fontWeight: 400 }}>{it.item_code}</RecLink> : it.item_code}</div>}
                       {it.item_name}{it.unit ? ` (${it.unit})` : ''}
                       {it.bin_code && <div style={{ fontSize: 11.5, color: TEXT.muted }}>Bin {it.bin_code}</div>}
                       {!!it.serial_numbers?.length && <div style={{ fontSize: 11.5, color: TEXT.muted }}>S/N {it.serial_numbers.join(', ')}</div>}

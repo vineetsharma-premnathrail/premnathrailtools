@@ -18,6 +18,7 @@ import { formatDate } from '@/lib/format'
 import { itemOptionDetail } from '@/lib/itemOptions'
 import { extractErrorMessages } from '@/lib/validation'
 import { useRecordId, recordPath } from '@/lib/recordRef'
+import RecLink, { safePath } from '@/components/store/RecLink'
 import { RowCount, Pill, TableScroll, thStyle, tdStyle, numThStyle, numTdStyle, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import { listAdjustmentApprovers } from '@/components/store/adjustmentApprovers'
 
@@ -137,7 +138,7 @@ export default function PhysicalCountDetailPage() {
             {count.lines_with_difference != null && <DetailRow label="Lines with difference">{count.lines_with_difference.toLocaleString('en-IN')}</DetailRow>}
             {count.adjustment_number && (
               <DetailRow label="Stock Adjustment">
-                <a href={recordPath('/dashboard/store/adjustments', { id: count.adjustment_id })} style={{ fontWeight: 700, color: '#2563eb' }}>{count.adjustment_number}</a>
+                <a href={recordPath('/dashboard/store/adjustments', count, 'adjustment_id')} style={{ fontWeight: 700, color: '#2563eb' }}>{count.adjustment_number}</a>
                 {count.adjustment_status ? ` (${ADJ_STATUS_LABELS[count.adjustment_status] || count.adjustment_status})` : ''}
               </DetailRow>
             )}
@@ -164,7 +165,7 @@ export default function PhysicalCountDetailPage() {
                 <tbody>
                   {count.items.map((l) => (
                     <tr key={l.id}>
-                      <td style={tdStyle}><strong>{l.item_code}</strong> — {l.item_name}</td>
+                      <td style={tdStyle}><RecLink href={safePath('/dashboard/store', l, 'item_id')} title="Open the item" style={{ color: 'inherit', fontWeight: 400 }}><strong>{l.item_code}</strong> — {l.item_name}</RecLink></td>
                       <td style={tdStyle}>{l.uom || '—'}</td>
                       <td style={numTdStyle}>{l.book_quantity != null ? qty(l.book_quantity) : <span style={{ color: SHEET.MUTED }}>hidden</span>}</td>
                       <td style={numTdStyle}>
